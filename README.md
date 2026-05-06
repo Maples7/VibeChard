@@ -66,7 +66,16 @@ vch remove fix-toast
   user already provided, mkdir -p's the isolation dirs, and `execv`s
   the real binary resolved via `/usr/bin/xcrun -f`. Pass-through for
   `xcrun` / `swift`. 7 end-to-end tests + dogfooded on BeanLedger.
-- ⬜ M3  — `vch exec` + `vch <name>` sugar + `vch shellenv`
+- ✅ M3  — `vch exec <name> -- <cmd...>` runs any command inside a task's
+  worktree with `<wt>/.vch/bin` (xcodebuild/xcrun/swift shim symlinks)
+  prepended to PATH and isolation env vars set
+  (`VCH_DERIVED_DATA_PATH`, `VCH_SPM_CLONE_DIR`, `VCH_RESULT_BUNDLE_PATH`,
+  `CLANG_MODULE_CACHE_PATH`, `SWIFTPM_CACHE_DIR`). `vch <name>` is sugar
+  for `vch exec <name> -- $SHELL`. `vch shellenv` emits `vch_cd` and
+  `vch_clean` helpers (bash/zsh). Foreground only; SIGINT/SIGTERM are
+  delivered to the child only. Dogfooded on BeanLedger:
+  `xcodebuild -showBuildSettings -json` writes only into
+  `.agent-build/DerivedData`, leaving `~/Library/Developer/` untouched.
 - ⬜ M4  — `vch build` / `vch test`
 - ⬜ M5  — Simulator isolation (lazy clone)
 - ⬜ M6  — `vch sim`, `vch doctor`

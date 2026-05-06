@@ -15,9 +15,10 @@ final class FixedClock: Clock, @unchecked Sendable {
 final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
     private var files: [String: Data] = [:]
     private var directories: Set<String> = []
+    private var symlinks: [String: String] = [:]
 
     func fileExists(at path: String) -> Bool {
-        files[path] != nil
+        files[path] != nil || symlinks[path] != nil
     }
 
     func directoryExists(at path: String) -> Bool {
@@ -55,11 +56,36 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
 
     func removeItem(at path: String) throws {
         files.removeValue(forKey: path)
+        symlinks.removeValue(forKey: path)
         directories.remove(path)
         // Remove all paths that begin with `path + "/"` too.
         let prefix = path.hasSuffix("/") ? path : path + "/"
         for key in files.keys where key.hasPrefix(prefix) { files.removeValue(forKey: key) }
+        for key in symlinks.keys where key.hasPrefix(prefix) { symlinks.removeValue(forKey: key) }
         directories = directories.filter { !$0.hasPrefix(prefix) }
+    }
+
+    func symlinkDestination(at path: String) -> String? {
+        symlinks[path]
+    }
+
+    func createSymbolicLink(at linkPath: String, withDestination destination: String) throws {
+        if let existing = symlinks[linkPath] {
+            if existing == destination { return }
+            symlinks[linkPath] = destination
+            return
+        }
+        if files[linkPath] != nil || directories.contains(linkPath) {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "createSymbolicLink",
+                exitCode: 17,
+                stderr: "non-symlink already exists at \(linkPath)"
+            )
+        }
+        // Auto-create parent.
+        let parent = (linkPath as NSString).deletingLastPathComponent
+        try createDirectory(at: parent)
+        symlinks[linkPath] = destination
     }
 
     // Test helpers
@@ -71,6 +97,8 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
     }
     var fileKeys: [String] { Array(files.keys).sorted() }
     var directoryKeys: [String] { Array(directories).sorted() }
+    var symlinkKeys: [String] { Array(symlinks.keys).sorted() }
+    func symlink(at path: String) -> String? { symlinks[path] }
 }
 
 /// In-memory `GitClient` whose semantics roughly mirror real git for the

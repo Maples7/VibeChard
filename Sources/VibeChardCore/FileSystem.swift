@@ -16,6 +16,16 @@ public protocol FileSystem: Sendable {
     func writeFileAtomic(_ data: Data, to path: String) throws
 
     func removeItem(at path: String) throws
+
+    /// Returns the destination of a symbolic link, or nil if `path`
+    /// either doesn't exist or isn't a symlink.
+    func symlinkDestination(at path: String) -> String?
+
+    /// Idempotently ensure `linkPath` is a symlink pointing to
+    /// `destination`. If `linkPath` already exists pointing elsewhere,
+    /// it is replaced. If a non-symlink already occupies the path,
+    /// throws.
+    func createSymbolicLink(at linkPath: String, withDestination destination: String) throws
 }
 
 /// Production implementation backed by `FileManager`.
@@ -56,5 +66,30 @@ public struct DiskFileSystem: FileSystem {
 
     public func removeItem(at path: String) throws {
         try FileManager.default.removeItem(atPath: path)
+    }
+
+    public func symlinkDestination(at path: String) -> String? {
+        // `destinationOfSymbolicLink` throws if `path` is not a symlink
+        // or doesn't exist; callers want a simple "is it a link to X" check.
+        return try? FileManager.default.destinationOfSymbolicLink(atPath: path)
+    }
+
+    public func createSymbolicLink(at linkPath: String, withDestination destination: String) throws {
+        let fm = FileManager.default
+        // Idempotent: if the symlink already points at `destination`,
+        // we're done. Otherwise, replace it.
+        if let existing = try? fm.destinationOfSymbolicLink(atPath: linkPath) {
+            if existing == destination { return }
+            try fm.removeItem(atPath: linkPath)
+        } else if fm.fileExists(atPath: linkPath) {
+            // Path is occupied by a regular file/dir. Refuse — vch
+            // should not silently delete user data.
+            throw VibeChardError.externalCommandFailed(
+                cmd: "createSymbolicLink",
+                exitCode: 17,
+                stderr: "non-symlink already exists at \(linkPath)"
+            )
+        }
+        try fm.createSymbolicLink(atPath: linkPath, withDestinationPath: destination)
     }
 }

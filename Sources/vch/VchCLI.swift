@@ -15,12 +15,31 @@ struct VchCLI: ParsableCommand {
             PathCommand.self,
             RemoveCommand.self,
             RepairCommand.self,
-            // M2+ commands land here:
-            //   ExecCommand, BuildCommand, TestCommand, SimCommand,
-            //   DoctorCommand, ShellEnvCommand
+            ExecCommand.self,
+            ShellEnvCommand.self,
+            // M4+ commands land here:
+            //   BuildCommand, TestCommand, SimCommand, DoctorCommand
         ],
         defaultSubcommand: nil
     )
+
+    /// `@main` entry point. We override the default `parseAsRoot()`
+    /// dispatch so that `vch <task-name>` (Q9 entry #5 — sugar for
+    /// `vch exec <name> -- $SHELL`) routes correctly, while every
+    /// other invocation flows through ArgumentParser unchanged.
+    static func main() {
+        let argv = Array(CommandLine.arguments.dropFirst())
+        let env = ProcessInfo.processInfo.environment
+
+        let effective = TaskShortcutDispatcher.rewriteIfSugar(argv, env: env) ?? argv
+
+        do {
+            var command = try parseAsRoot(effective)
+            try command.run()
+        } catch {
+            exit(withError: error)
+        }
+    }
 }
 
 // MARK: - vch version
