@@ -17,6 +17,7 @@ struct VchCLI: ParsableCommand {
             RepairCommand.self,
             ExecCommand.self,
             ShellEnvCommand.self,
+            OpenCommand.self,
             BuildCommand.self,
             TestCommand.self,
             SimCommand.self,

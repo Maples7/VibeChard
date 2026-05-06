@@ -31,10 +31,12 @@ under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
 7. **No config files in v1.** All state goes into per-worktree
    `.vch/state.json`. No `~/.vchrc`, no `.vch.toml`, no env-var-based config
    knobs beyond the documented `VCH_*` set.
-8. **Reserved subcommand names:** `new list ls path exec build test sim
+8. **Reserved subcommand names:** `new list ls path exec open build test sim
    remove rm repair doctor shellenv version help`. `vch new <name>` rejects
    names that match these or start with `-`. `ls` and `rm` are aliases
-   for `list` / `remove` respectively (Q-amend post-v0.1.0).
+   for `list` / `remove` respectively (Q-amend post-v0.1.0). `open` opens
+   a worktree in an IDE (Xcode / VS Code / Cursor / any `open -a` app);
+   added Q-amend post-v0.1.1.
 9. **Don't touch the user's `~/Library/Developer/`.** Every byte vch writes
    must land inside the worktree's `.vch/` or `.agent-build/`. Do not
    regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`

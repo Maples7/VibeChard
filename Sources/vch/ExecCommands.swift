@@ -92,7 +92,7 @@ enum TaskShortcutDispatcher {
     /// registered subcommands).
     private static let knownSubcommands: Set<String> = [
         "version", "new", "list", "ls", "path", "remove", "rm", "repair",
-        "exec", "shellenv",
+        "exec", "shellenv", "open",
         // Reserved for future milestones (so we don't accidentally
         // treat them as task names today and break later).
         "build", "test", "sim", "doctor",

@@ -111,6 +111,7 @@ vch remove add-paywall                # deletes worktree + branch + sim clone
 | `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. Optional `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). |
 | `vch list` | List all tasks in the current workspace. `--json` for machine-readable output. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
+| `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
 | `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. |
