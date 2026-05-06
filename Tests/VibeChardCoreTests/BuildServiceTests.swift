@@ -160,6 +160,89 @@ final class BuildServiceTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - simulator integration (M5)
+
+    func testResolveSimulatorReturnsNilWhenNoSimFlag() throws {
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try emptyState("alpha").jsonData())
+        let simctl = FakeSimctl()
+        let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
+        let service = BuildService(workspace: workspace, fs: fs, simulator: sim)
+        let resolved = try service.resolveSimulator(
+            task: task, requestedDevice: "iPhone 16", noSim: true
+        )
+        XCTAssertNil(resolved)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+    }
+
+    func testResolveSimulatorReturnsNilWhenServiceUnconfigured() throws {
+        let (service, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        // Default service has no SimulatorService injected.
+        let resolved = try service.resolveSimulator(
+            task: try TaskName("alpha"),
+            requestedDevice: "iPhone 16",
+            noSim: false
+        )
+        XCTAssertNil(resolved)
+    }
+
+    func testPrepareBuildEmitsIDDestinationAndSimctlChildEnvWhenResolved() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "App", device: "iPhone 16"),
+            resolvedSimulatorUDID: "CLONE-UDID-1",
+            baseEnv: ["PATH": "/usr/bin"]
+        )
+        // Destination is `id=`, NOT `name=`.
+        XCTAssertTrue(plan.argv.contains("-destination"))
+        let i = plan.argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,id=CLONE-UDID-1")
+        XCTAssertFalse(plan.argv.contains { $0.contains("name=iPhone 16") })
+
+        // SIMCTL_CHILD_SIMULATOR_UDID set so embedded simctl/test
+        // tooling pins to the clone.
+        XCTAssertEqual(plan.env["SIMCTL_CHILD_SIMULATOR_UDID"], "CLONE-UDID-1")
+    }
+
+    func testPrepareBuildFallsBackToNameDestinationWhenNoUDID() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "App", device: "iPhone 16", noSim: true),
+            resolvedSimulatorUDID: nil,
+            baseEnv: [:]
+        )
+        let i = plan.argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,name=iPhone 16")
+        XCTAssertNil(plan.env["SIMCTL_CHILD_SIMULATOR_UDID"])
+    }
+
+    func testBootSimulatorDelegatesToSimctl() throws {
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try emptyState("alpha").jsonData())
+        let simctl = FakeSimctl()
+        let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
+        let service = BuildService(workspace: workspace, fs: fs, simulator: sim)
+        try service.bootSimulator(.init(udid: "U-1", name: "x", createdNow: false))
+        XCTAssertEqual(simctl.bootCalls, ["U-1"])
+    }
 }
 
 // Tiny ergonomic helper local to this file so the assertion above

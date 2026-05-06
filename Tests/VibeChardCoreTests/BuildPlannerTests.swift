@@ -8,6 +8,7 @@ final class BuildPlannerTests: XCTestCase {
         scheme: String? = "App",
         configuration: String? = nil,
         resultBundle: String? = nil,
+        udid: String? = nil,
         device: String? = nil,
         extra: [String] = []
     ) -> BuildPlanner.Inputs {
@@ -18,6 +19,7 @@ final class BuildPlannerTests: XCTestCase {
             derivedDataPath: "/wt/.agent-build/DerivedData",
             clonedSourcePackagesDir: "/wt/.agent-build/SwiftPM",
             resultBundlePath: resultBundle,
+            destinationUDID: udid,
             destinationDevice: device,
             extraArgs: extra
         )
@@ -80,5 +82,22 @@ final class BuildPlannerTests: XCTestCase {
         let argv = BuildPlanner.args(baseInputs(scheme: nil))
         XCTAssertFalse(argv.contains("-scheme"),
                        "absent scheme must produce no -scheme flag")
+    }
+
+    func testUDIDDestinationTakesPrecedenceOverDeviceName() {
+        let argv = BuildPlanner.args(baseInputs(
+            udid: "ABCDEF-1234",
+            device: "iPhone 16"
+        ))
+        let i = argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(argv[i + 1], "platform=iOS Simulator,id=ABCDEF-1234")
+        // The name= form must not also be emitted — xcodebuild would
+        // accept the last but it'd be confusing in test logs.
+        XCTAssertFalse(argv.contains { $0.contains("name=iPhone 16") })
+    }
+
+    func testNoDestinationFlagWhenNeitherUDIDNorDeviceProvided() {
+        let argv = BuildPlanner.args(baseInputs())
+        XCTAssertFalse(argv.contains("-destination"))
     }
 }

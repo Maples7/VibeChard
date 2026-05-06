@@ -91,7 +91,25 @@ vch remove fix-toast
   `** BUILD SUCCEEDED **` with 1.3G DerivedData and 275M SwiftPM in
   the worktree's `.agent-build/`, while `~/Library/Developer/Xcode/DerivedData`
   mtime stays unchanged.
-- ⬜ M5  — Simulator isolation (lazy clone)
+- ✅ M5  — Simulator isolation (lazy clone). `vch build`/`vch test` now
+  resolve `--device "iPhone 16"` to a per-task `xcrun simctl clone`
+  named `iPhone 16 · vch[<task>]`, persist
+  `simulator{cloneUDID, sourceUDID, name}` into `.vch/state.json`,
+  call `xcrun simctl bootstatus <udid> -b`, and pass
+  `-destination 'platform=iOS Simulator,id=<UDID>'` to xcodebuild
+  (id, not name). Subsequent calls reuse the clone silently — even
+  without `--device`. Mismatched `--device` against a bound clone
+  errors with `simulatorAlreadyBound` instead of silently re-cloning.
+  `vch remove` deletes the clone by default; `--keep-sim` preserves
+  it. `--no-sim` opts out and falls back to the M4 `name=` path.
+  `SIMCTL_CHILD_SIMULATOR_UDID` is set in the build env so child
+  `simctl` invocations from tests pin to the clone. Dogfooded on
+  BeanLedger: `vch build poc-m5 --scheme BeanLedger --device "iPhone 16"`
+  cloned + booted in one shot, `** BUILD SUCCEEDED **`,
+  `~/Library/Developer/Xcode/DerivedData` mtime unchanged; reuse
+  via `vch test poc-m5 --scheme BeanLedger -- -only-testing:…`
+  (no `--device` needed); `vch remove poc-m5 --force` deleted the
+  clone cleanly.
 - ⬜ M6  — `vch sim`, `vch doctor`
 - ⬜ M7  — Shell completion + Homebrew formula
 - ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump

@@ -18,6 +18,7 @@ private enum BuildOrTest {
         scheme: String?,
         configuration: String?,
         device: String?,
+        noSim: Bool,
         extraArgs: [String]
     ) throws {
         let task = try TaskName(taskName)
@@ -25,18 +26,49 @@ private enum BuildOrTest {
         let workspace = try WorkspaceLocator.locate(cwd: cwd)
         let baseEnv = ProcessInfo.processInfo.environment
 
-        let service = BuildService(workspace: workspace)
+        let simulator = SimulatorService(
+            workspace: workspace,
+            simctl: DiskSimctlClient()
+        )
+        let service = BuildService(workspace: workspace, simulator: simulator)
         let opts = BuildService.Options(
             scheme: scheme,
             configuration: configuration,
             device: device,
+            noSim: noSim,
             extraArgs: extraArgs
         )
 
+        // M5: lazy-clone simulator if needed, then boot. We do this
+        // BEFORE building the ExecPlan so the resolved UDID gets baked
+        // into argv as `id=<UDID>`.
+        let resolved = try service.resolveSimulator(
+            task: task,
+            requestedDevice: device,
+            noSim: noSim
+        )
+        if let resolved {
+            if resolved.createdNow {
+                CLIBridge.eprintln("→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…)")
+            }
+            CLIBridge.eprintln("→ booting simulator '\(resolved.name)' …")
+            try service.bootSimulator(resolved)
+        }
+
         let plan: ExecPlan
         switch action {
-        case .build: plan = try service.prepareBuild(task: task, options: opts, baseEnv: baseEnv)
-        case .test:  plan = try service.prepareTest(task: task, options: opts, baseEnv: baseEnv)
+        case .build:
+            plan = try service.prepareBuild(
+                task: task, options: opts,
+                resolvedSimulatorUDID: resolved?.udid,
+                baseEnv: baseEnv
+            )
+        case .test:
+            plan = try service.prepareTest(
+                task: task, options: opts,
+                resolvedSimulatorUDID: resolved?.udid,
+                baseEnv: baseEnv
+            )
         }
 
         let result = try PlanLauncher.run(plan)
@@ -79,8 +111,11 @@ struct BuildCommand: ParsableCommand {
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
     var configuration: String?
 
-    @Option(name: .long, help: "Simulator device name (passes -destination 'platform=iOS Simulator,name=<device>').")
+    @Option(name: .long, help: "Simulator device template (lazy-cloned per task on first use).")
     var device: String?
+
+    @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
+    var noSim: Bool = false
 
     @Argument(parsing: .postTerminator,
               help: "Extra args appended to xcodebuild after `--`.")
@@ -94,6 +129,7 @@ struct BuildCommand: ParsableCommand {
                 scheme: scheme,
                 configuration: configuration,
                 device: device,
+                noSim: noSim,
                 extraArgs: extraArgs
             )
         }
@@ -117,8 +153,11 @@ struct TestCommand: ParsableCommand {
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
     var configuration: String?
 
-    @Option(name: .long, help: "Simulator device name (M5 will swap to a per-task clone).")
+    @Option(name: .long, help: "Simulator device template (lazy-cloned per task on first use).")
     var device: String?
+
+    @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
+    var noSim: Bool = false
 
     @Argument(parsing: .postTerminator,
               help: "Extra args appended to xcodebuild after `--`.")
@@ -132,6 +171,7 @@ struct TestCommand: ParsableCommand {
                 scheme: scheme,
                 configuration: configuration,
                 device: device,
+                noSim: noSim,
                 extraArgs: extraArgs
             )
         }

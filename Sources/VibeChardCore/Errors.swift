@@ -17,6 +17,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case unmergedBranch(name: String)
     case stateFileCorrupt(path: String, underlying: String)
     case stateSchemaMismatch(found: Int, expected: Int)
+    case simulatorTemplateNotFound(name: String)
+    case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -41,6 +43,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "state file corrupt at \(path): \(underlying) (run `vch repair`)"
         case let .stateSchemaMismatch(found, expected):
             return "state schema v\(found) does not match this vch (expected v\(expected)); run `vch repair`"
+        case let .simulatorTemplateNotFound(name):
+            return "no available simulator template named '\(name)' (try `xcrun simctl list devices available`)"
+        case let .simulatorAlreadyBound(task, current, requested):
+            return "task '\(task)' is already bound to simulator '\(current)' — refusing to clone '\(requested)' (use `vch sim erase` or remove the task first)"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"

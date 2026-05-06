@@ -22,30 +22,39 @@ public struct BuildOutcome: Equatable, Sendable {
 public struct BuildService: Sendable {
     public let workspace: Workspace
     public let fs: FileSystem
+    public let simulator: SimulatorService?
 
     public init(
         workspace: Workspace,
-        fs: FileSystem = DiskFileSystem()
+        fs: FileSystem = DiskFileSystem(),
+        simulator: SimulatorService? = nil
     ) {
         self.workspace = workspace
         self.fs = fs
+        self.simulator = simulator
     }
 
     public struct Options: Sendable {
         public var scheme: String?
         public var configuration: String?
         public var device: String?
+        /// Opt out of the M5 lazy clone. When true, `--device` (if set)
+        /// is forwarded as `name=<device>` and no `simctl clone`
+        /// happens.
+        public var noSim: Bool
         public var extraArgs: [String]
 
         public init(
             scheme: String? = nil,
             configuration: String? = nil,
             device: String? = nil,
+            noSim: Bool = false,
             extraArgs: [String] = []
         ) {
             self.scheme = scheme
             self.configuration = configuration
             self.device = device
+            self.noSim = noSim
             self.extraArgs = extraArgs
         }
     }
@@ -55,19 +64,25 @@ public struct BuildService: Sendable {
     public func prepareBuild(
         task: TaskName,
         options: Options,
+        resolvedSimulatorUDID: String? = nil,
         baseEnv: [String: String]
     ) throws -> ExecPlan {
         try preparePlan(task: task, action: "build", options: options,
-                        emitsResultBundle: false, baseEnv: baseEnv)
+                        emitsResultBundle: false,
+                        resolvedSimulatorUDID: resolvedSimulatorUDID,
+                        baseEnv: baseEnv)
     }
 
     public func prepareTest(
         task: TaskName,
         options: Options,
+        resolvedSimulatorUDID: String? = nil,
         baseEnv: [String: String]
     ) throws -> ExecPlan {
         try preparePlan(task: task, action: "test", options: options,
-                        emitsResultBundle: true, baseEnv: baseEnv)
+                        emitsResultBundle: true,
+                        resolvedSimulatorUDID: resolvedSimulatorUDID,
+                        baseEnv: baseEnv)
     }
 
     private func preparePlan(
@@ -75,6 +90,7 @@ public struct BuildService: Sendable {
         action: String,
         options: Options,
         emitsResultBundle: Bool,
+        resolvedSimulatorUDID: String?,
         baseEnv: [String: String]
     ) throws -> ExecPlan {
         let wt = workspace.worktreePath(for: task)
@@ -98,6 +114,10 @@ public struct BuildService: Sendable {
             }
         }
 
+        // Destination resolution priority:
+        //   1. resolvedSimulatorUDID (M5: per-task clone) → `id=<UDID>`
+        //   2. else options.device                       → `name=<device>`
+        //   3. else no -destination                       (host build)
         let argv = ["xcodebuild"] + BuildPlanner.args(.init(
             action: action,
             scheme: options.scheme,
@@ -105,7 +125,8 @@ public struct BuildService: Sendable {
             derivedDataPath: workspace.derivedDataDir(for: task),
             clonedSourcePackagesDir: workspace.swiftpmCacheDir(for: task),
             resultBundlePath: emitsResultBundle ? workspace.resultBundlePath(for: task) : nil,
-            destinationDevice: options.device,
+            destinationUDID: resolvedSimulatorUDID,
+            destinationDevice: resolvedSimulatorUDID == nil ? options.device : nil,
             extraArgs: options.extraArgs
         ))
 
@@ -115,6 +136,12 @@ public struct BuildService: Sendable {
         // the equivalent flags are already in argv.
         env["CLANG_MODULE_CACHE_PATH"] = workspace.moduleCacheDir(for: task)
         env["SWIFTPM_CACHE_DIR"]       = workspace.swiftpmCacheDir(for: task)
+        // M5: pin child simctl invocations (tests, embedded scripts) to
+        // the per-task clone so they don't bleed into the user's
+        // default booted device.
+        if let udid = resolvedSimulatorUDID {
+            env["SIMCTL_CHILD_SIMULATOR_UDID"] = udid
+        }
         // Descriptive (matches ExecService set so AGENTS.md scripts are
         // uniform whether invoked via vch exec or vch build/test).
         env["VCH_TASK_NAME"]           = task.raw
@@ -123,6 +150,33 @@ public struct BuildService: Sendable {
             (workspace.resultBundlePath(for: task) as NSString).deletingLastPathComponent
 
         return ExecPlan(cwd: wt, argv: argv, env: env, installedShimSymlinks: [])
+    }
+
+    // MARK: - simulator orchestration (M5)
+
+    /// Lazy-clone or reuse the per-task simulator. Returns nil when:
+    ///   • `noSim` is true (user explicitly opted out), or
+    ///   • this `BuildService` was constructed without a
+    ///     `SimulatorService` (unit tests, future host-only builds), or
+    ///   • the task has no bound simulator and the user didn't pass
+    ///     `--device`.
+    /// The CLI is expected to forward `resolved?.udid` into
+    /// `prepareBuild` / `prepareTest`.
+    public func resolveSimulator(
+        task: TaskName,
+        requestedDevice: String?,
+        noSim: Bool
+    ) throws -> SimulatorService.Resolved? {
+        if noSim { return nil }
+        guard let simulator else { return nil }
+        return try simulator.ensureClone(task: task, requestedDevice: requestedDevice)
+    }
+
+    /// Run `simctl bootstatus -b` so xcodebuild can immediately pin its
+    /// destination to the booted device. Idempotent.
+    public func bootSimulator(_ resolved: SimulatorService.Resolved) throws {
+        guard let simulator else { return }
+        try simulator.bootIfNeeded(udid: resolved.udid)
     }
 
     // MARK: - record outcome

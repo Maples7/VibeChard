@@ -178,12 +178,20 @@ struct RemoveCommand: ParsableCommand {
     )
     var force: Int
 
+    @Flag(name: .long, help: "Keep the per-task simulator clone (default: delete it).")
+    var keepSim: Bool = false
+
     func run() throws {
         try CLIBridge.run {
             let task = try TaskName(name)
             let cwd = FileManager.default.currentDirectoryPath
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
             let service = TaskService(workspace: workspace, git: DiskGitClient())
+
+            // Read state.json BEFORE git tears the worktree down so we
+            // can clean up the simulator clone afterwards. Best-effort
+            // — a missing/corrupt state.json must not block removal.
+            let simRecord = readSimulatorRecord(workspace: workspace, task: task)
 
             let opts: TaskService.RemoveOptions
             switch force {
@@ -192,8 +200,29 @@ struct RemoveCommand: ParsableCommand {
             default: opts = .forceAll
             }
             try service.removeTask(task, options: opts)
+
+            if !keepSim, let sim = simRecord {
+                let simctl = DiskSimctlClient()
+                do {
+                    try simctl.delete(udid: sim.cloneUDID)
+                    CLIBridge.eprintln("→ deleted simulator clone '\(sim.name)'")
+                } catch {
+                    // Worktree is already gone; surface but don't fail.
+                    CLIBridge.eprintln("warning: could not delete simulator clone \(sim.cloneUDID): \(error)")
+                }
+            }
+
             print("removed \(task.raw)")
         }
+    }
+
+    private func readSimulatorRecord(
+        workspace: Workspace, task: TaskName
+    ) -> TaskState.SimulatorRecord? {
+        let p = workspace.statePath(for: task)
+        guard FileManager.default.fileExists(atPath: p) else { return nil }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: p)) else { return nil }
+        return (try? TaskState.parse(data))?.simulator
     }
 }
 

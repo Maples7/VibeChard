@@ -15,6 +15,10 @@ public enum BuildPlanner {
         public let derivedDataPath: String
         public let clonedSourcePackagesDir: String
         public let resultBundlePath: String?
+        /// Per-task cloned simulator UDID (M5). When set, takes
+        /// precedence over `destinationDevice` and emits
+        /// `-destination 'platform=iOS Simulator,id=<UDID>'`.
+        public let destinationUDID: String?
         public let destinationDevice: String?
         public let extraArgs: [String]
 
@@ -25,6 +29,7 @@ public enum BuildPlanner {
             derivedDataPath: String,
             clonedSourcePackagesDir: String,
             resultBundlePath: String?,
+            destinationUDID: String? = nil,
             destinationDevice: String?,
             extraArgs: [String]
         ) {
@@ -34,6 +39,7 @@ public enum BuildPlanner {
             self.derivedDataPath = derivedDataPath
             self.clonedSourcePackagesDir = clonedSourcePackagesDir
             self.resultBundlePath = resultBundlePath
+            self.destinationUDID = destinationUDID
             self.destinationDevice = destinationDevice
             self.extraArgs = extraArgs
         }
@@ -59,9 +65,13 @@ public enum BuildPlanner {
         if let bundle = input.resultBundlePath {
             argv += ["-resultBundlePath", bundle]
         }
-        if let device = input.destinationDevice {
-            // M4 ships `name=` (any matching template). M5 will swap to
-            // `id=<UDID>` once `xcrun simctl clone` lands.
+        if let udid = input.destinationUDID {
+            // M5 path — bound to a per-task `xcrun simctl clone`.
+            argv += ["-destination", "platform=iOS Simulator,id=\(udid)"]
+        } else if let device = input.destinationDevice {
+            // Fallback when the user explicitly opts out of the lazy
+            // clone via `--no-sim`. xcodebuild picks any matching
+            // simulator by name (last-wins runtime).
             argv += ["-destination", "platform=iOS Simulator,name=\(device)"]
         }
         // Pass the user's extras BEFORE the action so flags like
