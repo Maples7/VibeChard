@@ -1,6 +1,6 @@
 # VibeChard
 
-[English](README.md) · **简体中文**
+[English](README.md) · **简体中文** · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 > **为 AI 编程代理设计的 Apple 平台并行 worktree 隔离工具。**
 > 在同一个 Xcode 项目里同时跑多个 Claude / Codex / Copilot / Cursor 会话，

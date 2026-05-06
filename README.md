@@ -1,6 +1,6 @@
 # VibeChard
 
-**English** · [简体中文](README.zh-CN.md)
+**English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
 > **Per-task isolated worktrees for parallel Apple development with AI agents.**
 > Run multiple Claude / Codex / Copilot / Cursor sessions on the same Xcode
