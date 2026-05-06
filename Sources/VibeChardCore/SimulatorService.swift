@@ -92,6 +92,43 @@ public struct SimulatorService: Sendable {
         try simctl.bootstatusBoot(udid: udid)
     }
 
+    /// `xcrun simctl shutdown <udid>`. Idempotent at the simctl layer
+    /// (no-ops on an already-shutdown device).
+    public func shutdown(udid: String) throws {
+        try simctl.shutdown(udid: udid)
+    }
+
+    /// Shutdown-then-erase the bound clone for `task`. `simctl erase`
+    /// rejects booted devices, so this is the safe ordering.
+    public func eraseClone(udid: String) throws {
+        try simctl.shutdown(udid: udid)
+        try simctl.erase(udid: udid)
+    }
+
+    /// Read `state.simulator` for `task`, returning nil when there's
+    /// no binding. Throws when state.json is missing/corrupt.
+    public func lookupBound(task: TaskName) throws -> TaskState.SimulatorRecord? {
+        let statePath = workspace.statePath(for: task)
+        guard fs.fileExists(at: statePath) else {
+            throw VibeChardError.stateFileCorrupt(
+                path: statePath,
+                underlying: "missing — run `vch repair`"
+            )
+        }
+        let data = try fs.readFile(at: statePath)
+        let state = try TaskState.parse(data)
+        return state.simulator
+    }
+
+    /// Look up live state for a UDID via `simctl list devices --json`
+    /// (the unfiltered variant). Returns nil when the device is gone
+    /// from simctl entirely (e.g. someone deleted it out-of-band) —
+    /// `vch doctor` flags this as a stale binding.
+    public func info(udid: String) throws -> SimDevice? {
+        let all = try simctl.allDevices()
+        return all.first(where: { $0.udid == udid })
+    }
+
     /// Best-effort delete used by `vch remove`. Returns true if the
     /// clone was successfully deleted (or never existed).
     @discardableResult

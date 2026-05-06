@@ -217,24 +217,124 @@ final class SimulatorServiceTests: XCTestCase {
         try service.deleteClone(udid: "CLONE-1")
         XCTAssertEqual(simctl.deleteCalls, ["CLONE-1"])
     }
+
+    // MARK: - lookupBound (M6)
+
+    func testLookupBoundReturnsNilWhenNoBinding() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        let bound = try service.lookupBound(task: try TaskName("alpha"))
+        XCTAssertNil(bound)
+    }
+
+    func testLookupBoundReturnsRecordWhenBound() throws {
+        var seed = emptyState("alpha")
+        seed.simulator = TaskState.SimulatorRecord(
+            cloneUDID: "C-1", sourceUDID: "S-1",
+            name: "iPhone 16 · vch[alpha]"
+        )
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: seed
+        )
+        let bound = try service.lookupBound(task: try TaskName("alpha"))
+        XCTAssertEqual(bound?.cloneUDID, "C-1")
+        XCTAssertEqual(bound?.sourceUDID, "S-1")
+        XCTAssertEqual(bound?.name, "iPhone 16 · vch[alpha]")
+    }
+
+    func testLookupBoundThrowsWhenStateMissing() throws {
+        let (service, _, _) = makeService(seedingTask: "alpha") // no state
+        XCTAssertThrowsError(try service.lookupBound(task: try TaskName("alpha"))) { err in
+            guard case VibeChardError.stateFileCorrupt = err else {
+                return XCTFail("expected stateFileCorrupt, got \(err)")
+            }
+        }
+    }
+
+    // MARK: - shutdown / erase (M6)
+
+    func testShutdownDelegatesToSimctl() throws {
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        try service.shutdown(udid: "C-1")
+        XCTAssertEqual(simctl.shutdownCalls, ["C-1"])
+        XCTAssertEqual(simctl.eraseCalls, [])
+    }
+
+    func testEraseChainsShutdownThenErase() throws {
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        try service.eraseClone(udid: "C-1")
+        XCTAssertEqual(simctl.shutdownCalls, ["C-1"])
+        XCTAssertEqual(simctl.eraseCalls, ["C-1"])
+    }
+
+    // MARK: - info (M6)
+
+    func testInfoReturnsLiveSimDevice() throws {
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        simctl.devices = [
+            SimDevice(udid: "C-1", name: "iPhone 16 · vch[alpha]",
+                      runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                      runtimeVersion: .init(major: 26, minor: 4),
+                      isAvailable: true,
+                      state: "Booted"),
+        ]
+        let live = try service.info(udid: "C-1")
+        XCTAssertEqual(live?.udid, "C-1")
+        XCTAssertEqual(live?.state, "Booted")
+    }
+
+    func testInfoReturnsNilWhenSimctlForgotTheUDID() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        let live = try service.info(udid: "GHOST")
+        XCTAssertNil(live)
+    }
 }
 
 // MARK: - test double
 
 final class FakeSimctl: SimctlClient, @unchecked Sendable {
     var devices: [SimDevice] = []
+    /// Used by `allDevices()`. Defaults to `devices` (so existing tests
+    /// don't have to set both); set explicitly when you need them to
+    /// differ (e.g. simulating an unavailable runtime).
+    var allDevicesOverride: [SimDevice]?
     var cloneReturnsUDID: String = ""
     var bootCalls: [String] = []
     var deleteCalls: [String] = []
+    var shutdownCalls: [String] = []
+    var eraseCalls: [String] = []
     var cloneCalls: [(source: String, newName: String)] = []
     var availableThrows: VibeChardError?
+    var allThrows: VibeChardError?
     var cloneThrows: VibeChardError?
     var bootThrows: VibeChardError?
+    var shutdownThrows: VibeChardError?
+    var eraseThrows: VibeChardError?
     var deleteThrows: VibeChardError?
 
     func availableDevices() throws -> [SimDevice] {
         if let err = availableThrows { throw err }
         return devices
+    }
+
+    func allDevices() throws -> [SimDevice] {
+        if let err = allThrows { throw err }
+        return allDevicesOverride ?? devices
     }
 
     func clone(sourceUDID: String, newName: String) throws -> String {
@@ -246,6 +346,16 @@ final class FakeSimctl: SimctlClient, @unchecked Sendable {
     func bootstatusBoot(udid: String) throws {
         if let err = bootThrows { throw err }
         bootCalls.append(udid)
+    }
+
+    func shutdown(udid: String) throws {
+        if let err = shutdownThrows { throw err }
+        shutdownCalls.append(udid)
+    }
+
+    func erase(udid: String) throws {
+        if let err = eraseThrows { throw err }
+        eraseCalls.append(udid)
     }
 
     func delete(udid: String) throws {

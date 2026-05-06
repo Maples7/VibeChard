@@ -110,7 +110,26 @@ vch remove fix-toast
   via `vch test poc-m5 --scheme BeanLedger -- -only-testing:…`
   (no `--device` needed); `vch remove poc-m5 --force` deleted the
   clone cleanly.
-- ⬜ M6  — `vch sim`, `vch doctor`
+- ✅ M6  — `vch sim {clone,erase,shutdown,info} <name>` and
+  `vch doctor [--clean] [--json]`. `sim clone` force-creates the
+  per-task clone (idempotent — re-running without `--device` is a
+  no-op once bound). `sim shutdown` is idempotent at the simctl
+  layer (swallows "already shut down"). `sim erase` chains
+  shutdown→erase so it works on a Booted clone. `sim info`
+  prints the recorded clone + live `simctl` state, including
+  `(missing — run vch doctor)` when the device was deleted
+  out-of-band. `vch doctor` prunes stale git worktree entries,
+  surfaces `state.json` problems, detects orphan `vch[*]`
+  simulator clones (e.g. left by `--keep-sim`) and stale state
+  bindings (clone gone from simctl), and exits non-zero on any
+  finding. `--clean` deletes orphan clones (never auto). `--json`
+  emits a machine-readable report. Dogfooded on BeanLedger:
+  poc-m6 explicit `vch sim clone` + `sim info` (Shutdown→Booted)
+  + `sim shutdown` (idempotent) + `sim erase` (Booted → Shutdown
+  + erased); poc-m6b created an orphan via `--keep-sim` →
+  `vch doctor` flagged it → `--clean` deleted it; an out-of-band
+  `simctl delete` of poc-m6's clone made `vch doctor` report a
+  stale binding without false positives.
 - ⬜ M7  — Shell completion + Homebrew formula
 - ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump
 

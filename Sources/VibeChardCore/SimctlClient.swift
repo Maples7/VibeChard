@@ -12,19 +12,25 @@ public struct SimDevice: Equatable, Sendable {
     /// first" sorting. `nil` for non-iOS or unparseable runtimes.
     public let runtimeVersion: SimRuntimeVersion?
     public let isAvailable: Bool
+    /// Live state from `simctl list` — `"Booted"`, `"Shutdown"`,
+    /// `"Creating"`, etc. `nil` when not present in the JSON
+    /// (`available`-only listings sometimes omit it on older Xcode).
+    public let state: String?
 
     public init(
         udid: String,
         name: String,
         runtime: String,
         runtimeVersion: SimRuntimeVersion?,
-        isAvailable: Bool
+        isAvailable: Bool,
+        state: String? = nil
     ) {
         self.udid = udid
         self.name = name
         self.runtime = runtime
         self.runtimeVersion = runtimeVersion
         self.isAvailable = isAvailable
+        self.state = state
     }
 }
 
@@ -71,6 +77,13 @@ public protocol SimctlClient: Sendable {
     /// Equivalent to `xcrun simctl list devices available --json`.
     func availableDevices() throws -> [SimDevice]
 
+    /// Every device known to simctl, including ones whose runtime is
+    /// no longer available (e.g. an iOS 17 clone after the iOS 17
+    /// runtime was uninstalled). `vch doctor` needs this superset to
+    /// surface clones that would otherwise be invisible to the picker.
+    /// Equivalent to `xcrun simctl list devices --json`.
+    func allDevices() throws -> [SimDevice]
+
     /// Clone an existing device. Returns the new device's UDID.
     /// Equivalent to `xcrun simctl clone <sourceUDID> "<newName>"`.
     func clone(sourceUDID: String, newName: String) throws -> String
@@ -78,6 +91,15 @@ public protocol SimctlClient: Sendable {
     /// Boot the device if needed and wait for boot completion. Idempotent.
     /// Equivalent to `xcrun simctl bootstatus <udid> -b`.
     func bootstatusBoot(udid: String) throws
+
+    /// `xcrun simctl shutdown <udid>`. Idempotent at the caller layer
+    /// (the production impl swallows "already shut down" stderr).
+    func shutdown(udid: String) throws
+
+    /// `xcrun simctl erase <udid>`. Caller is responsible for
+    /// shutting the device down first; vch's `SimulatorService.erase`
+    /// chains shutdown→erase.
+    func erase(udid: String) throws
 
     /// Delete a device. Best-effort caller behavior is recommended —
     /// e.g. `vch remove` swallows failures so the worktree still goes
@@ -106,6 +128,21 @@ public struct DiskSimctlClient: SimctlClient {
         guard result.succeeded else {
             throw VibeChardError.externalCommandFailed(
                 cmd: "xcrun simctl list devices available --json",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+        return try SimctlListParser.parse(result.stdout)
+    }
+
+    public func allDevices() throws -> [SimDevice] {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "list", "devices", "--json"]
+        )
+        guard result.succeeded else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl list devices --json",
                 exitCode: result.exitCode,
                 stderr: result.stderr
             )
@@ -145,6 +182,41 @@ public struct DiskSimctlClient: SimctlClient {
         guard result.succeeded else {
             throw VibeChardError.externalCommandFailed(
                 cmd: "xcrun simctl bootstatus \(udid) -b",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+    }
+
+    public func shutdown(udid: String) throws {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "shutdown", udid]
+        )
+        if result.succeeded { return }
+        // simctl returns non-zero when the device is already shut down,
+        // which is the no-op we want. Swallow only that specific case.
+        let blob = result.stderr.lowercased()
+        if blob.contains("current state: shutdown")
+            || blob.contains("unable to shutdown device in current state")
+            || blob.contains("already shut down") {
+            return
+        }
+        throw VibeChardError.externalCommandFailed(
+            cmd: "xcrun simctl shutdown \(udid)",
+            exitCode: result.exitCode,
+            stderr: result.stderr
+        )
+    }
+
+    public func erase(udid: String) throws {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "erase", udid]
+        )
+        guard result.succeeded else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl erase \(udid)",
                 exitCode: result.exitCode,
                 stderr: result.stderr
             )
@@ -206,12 +278,14 @@ enum SimctlListParser {
                     let name = d["name"] as? String
                 else { continue }
                 let isAvailable = (d["isAvailable"] as? Bool) ?? true
+                let state = d["state"] as? String
                 out.append(SimDevice(
                     udid: udid,
                     name: name,
                     runtime: runtime,
                     runtimeVersion: version,
-                    isAvailable: isAvailable
+                    isAvailable: isAvailable,
+                    state: state
                 ))
             }
         }

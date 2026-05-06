@@ -19,8 +19,9 @@ struct VchCLI: ParsableCommand {
             ShellEnvCommand.self,
             BuildCommand.self,
             TestCommand.self,
-            // M5+ commands land here:
-            //   SimCommand, DoctorCommand
+            // M6 commands:
+            SimCommand.self,
+            DoctorCommand.self,
         ],
         defaultSubcommand: nil
     )
