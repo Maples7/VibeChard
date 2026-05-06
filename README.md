@@ -57,12 +57,14 @@ vch remove fix-toast
   See [scripts/poc/m0_5-shim/](scripts/poc/m0_5-shim/README.md).
 - ✅ M0  — SwiftPM scaffolding. `swift build -c release` succeeds;
   `vch version` prints toolchain info.
-- ⬜ M1  — git + state.json (new / list / path / remove / repair)
+- ✅ M1  — git + state.json (`vch new` / `list` / `path` / `remove` / `repair`).
+  Dirty-worktree guard, `--force` / `--force --force` semantics,
+  schema-v1 `.vch/state.json`, table & `--json` output.
 - ⬜ M2  — Swift port of the bash shim
 - ⬜ M3  — `vch exec` + `vch <name>` sugar + `vch shellenv`
 - ⬜ M4  — `vch build` / `vch test`
 - ⬜ M5  — Simulator isolation (lazy clone)
-- ⬜ M6  — `vch sim`, `vch doctor`, `vch remove` dirty-guard
+- ⬜ M6  — `vch sim`, `vch doctor`
 - ⬜ M7  — Shell completion + Homebrew formula
 - ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump
 

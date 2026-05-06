@@ -10,11 +10,14 @@ struct VchCLI: ParsableCommand {
         version: VibeChard.version,
         subcommands: [
             VersionCommand.self,
-            // M1+ commands land here:
-            //   NewCommand, ListCommand, PathCommand, ExecCommand,
-            //   BuildCommand, TestCommand, SimCommand,
-            //   RemoveCommand, RepairCommand, DoctorCommand,
-            //   ShellEnvCommand
+            NewCommand.self,
+            ListCommand.self,
+            PathCommand.self,
+            RemoveCommand.self,
+            RepairCommand.self,
+            // M2+ commands land here:
+            //   ExecCommand, BuildCommand, TestCommand, SimCommand,
+            //   DoctorCommand, ShellEnvCommand
         ],
         defaultSubcommand: nil
     )
