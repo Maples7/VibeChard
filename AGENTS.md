@@ -35,8 +35,9 @@ under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
    remove repair doctor shellenv version help`. `vch new <name>` rejects
    names that match these or start with `-`.
 9. **Don't touch the user's `~/Library/Developer/`.** Every byte vch writes
-   must land inside the worktree's `.vch/` or `.agent-build/`. Verified by
-   the M0.5 PoC; do not regress.
+   must land inside the worktree's `.vch/` or `.agent-build/`. Do not
+   regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`
+   exec path on every push.
 
 ## Architecture map
 
@@ -57,7 +58,7 @@ and exit-code mapping. Every behavior must be unit-testable from
 |---|---|---|---|
 | Unit | `Tests/VibeChardCoreTests/` | yes | No IO; protocol fakes only |
 | Integration | (later) `Tests/VibeChardCoreTests/Integration/` | yes | Temp git repo + real `/usr/bin/git`; may invoke `xcrun` lazily |
-| E2E | `scripts/poc/` and manual | no | Touches real Xcode + simulators |
+| E2E | manual dogfood against a real Apple project | no | Touches real Xcode + simulators |
 
 ## When you change Q-decisions
 
@@ -73,11 +74,6 @@ swift build -c release         # produce .build/release/{vch,vch-xcodebuild-shim
 swift test --parallel
 ./.build/release/vch version
 ./.build/release/vch version --json
-
-# M0.5 PATH-shim PoC against BeanLedger:
-./scripts/poc/m0_5-shim/run-poc.sh --probe   # cheap, no compile
-./scripts/poc/m0_5-shim/run-poc.sh           # full compile + assert isolation
-./scripts/poc/m0_5-shim/run-poc.sh --clean   # remove worktree + branch
 ```
 
 ## License

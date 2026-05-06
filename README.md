@@ -1,20 +1,36 @@
 # VibeChard
 
-> **Apple-only parallel worktree orchestrator for AI coding agents.**
-> Isolates git worktrees, `DerivedData`, the Clang module cache, the SwiftPM
-> cache, the result bundle, and even per-task simulator clones — so multiple
-> AI coding agents can run `xcodebuild` and `swift test` concurrently without
-> tripping `build.db` locks or contaminating each other's state.
+> **Per-task isolated worktrees for parallel Apple development with AI agents.**
+> Run multiple Claude / Codex / Copilot / Cursor sessions on the same Xcode
+> project without `build.db` locks, `DerivedData` thrash, or simulator
+> collisions.
 
-> ⚠️ **Status: pre-alpha (v0.0.1).** APIs, CLI surface, and on-disk state
-> formats are *not* stable. Wait for v1.0 if you need stability.
+```sh
+brew install maples7/tap/vch
+```
 
-## Why
+Then, in any Apple project:
 
-Generic git-worktree managers (Rift, Emdash, Taskpods, Workie, …) stop at
-"isolate the source tree." Apple's toolchain has at least seven *more*
-shared resources that, when contended by parallel `xcodebuild` runs, cause
-non-deterministic failures:
+```sh
+vch new add-paywall          # creates an isolated worktree + agent branch
+vch add-paywall              # drops you into a shell with isolation active
+                             # → run xcodebuild / swift test as usual
+vch test add-paywall --device "iPhone 16"
+vch remove add-paywall
+```
+
+That's it. Every agent gets its own worktree, its own `DerivedData`, its
+own simulator clone — and your `~/Library/Developer/` stays untouched.
+
+> **Status: alpha (v0.1.0).** The CLI surface is settling but not yet
+> frozen; on-disk `.vch/state.json` may gain fields. Pin a tag if you
+> need stability.
+
+## Why a CLI just for this?
+
+Generic git-worktree managers stop at "isolate the source tree." Apple's
+toolchain has at least seven *more* shared resources that, when contended
+by parallel `xcodebuild` runs, cause non-deterministic failures:
 
 | Resource | What goes wrong | VibeChard's answer |
 |---|---|---|
@@ -27,169 +43,133 @@ non-deterministic failures:
 | Source tree | Standard | `git worktree` + `agent/<name>` branch |
 
 You **bring your own AI agent** — Claude, Codex, Copilot, Cursor, anything
-that speaks shell. VibeChard is *not* an AI vendor wrapper.
+that speaks shell. VibeChard is *not* an AI vendor wrapper. No telemetry,
+no network calls, no SDK lock-in.
 
-## How it will look (v1, in progress)
+## Install
+
+### Homebrew (recommended)
 
 ```sh
-brew install maples7/tap/vch        # available once tap publishes
-
-cd ~/src/MyApp
-vch new add-paywall                 # creates ../MyApp-add-paywall on agent/add-paywall
-vch add-paywall                     # drops you into a shell with PATH shim active
-                                    # → agents/users in there can just run `xcodebuild`
-                                    #   and isolation happens transparently
-
-# In another terminal:
-vch new fix-toast --exec "claude"   # spawns claude inside an isolated worktree
-
-# Background-style:
-vch test  add-paywall --device "iPhone 16"
-vch build fix-toast
-
-vch list
-vch remove fix-toast
+brew install maples7/tap/vch
 ```
 
-## Status
+The formula installs:
 
-- ✅ M0.5 — PATH-shim PoC validated against a real Apple project (BeanLedger).
-  See [scripts/poc/m0_5-shim/](scripts/poc/m0_5-shim/README.md).
-- ✅ M0  — SwiftPM scaffolding. `swift build -c release` succeeds;
-  `vch version` prints toolchain info.
-- ✅ M1  — git + state.json (`vch new` / `list` / `path` / `remove` / `repair`).
-  Dirty-worktree guard, `--force` / `--force --force` semantics,
-  schema-v1 `.vch/state.json`, table & `--json` output.
-- ✅ M2  — Swift port of the bash shim. `vch-xcodebuild-shim` injects
-  `-derivedDataPath` / `-clonedSourcePackagesDirPath` / `-resultBundlePath`
-  from `VCH_*` env vars when invoked as `xcodebuild`, skips flags the
-  user already provided, mkdir -p's the isolation dirs, and `execv`s
-  the real binary resolved via `/usr/bin/xcrun -f`. Pass-through for
-  `xcrun` / `swift`. 7 end-to-end tests + dogfooded on BeanLedger.
-- ✅ M3  — `vch exec <name> -- <cmd...>` runs any command inside a task's
-  worktree with `<wt>/.vch/bin` (xcodebuild/xcrun/swift shim symlinks)
-  prepended to PATH and isolation env vars set
-  (`VCH_DERIVED_DATA_PATH`, `VCH_SPM_CLONE_DIR`, `VCH_RESULT_BUNDLE_PATH`,
-  `CLANG_MODULE_CACHE_PATH`, `SWIFTPM_CACHE_DIR`). `vch <name>` is sugar
-  for `vch exec <name> -- $SHELL`. `vch shellenv` emits `vch_cd` and
-  `vch_clean` helpers (bash/zsh). Foreground only; SIGINT/SIGTERM are
-  delivered to the child only. Dogfooded on BeanLedger:
-  `xcodebuild -showBuildSettings -json` writes only into
-  `.agent-build/DerivedData`, leaving `~/Library/Developer/` untouched.
-- ✅ M4  — `vch build <name> [--scheme] [--configuration] [--device] [-- xcodebuild-extras]`
-  and `vch test <name>` invoke `xcodebuild` directly (no shim) with
-  `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected, plus
-  `-resultBundlePath` for `test`. The cwd is the worktree, and
-  `CLANG_MODULE_CACHE_PATH` / `SWIFTPM_CACHE_DIR` are set in the env
-  so SwiftPM and clang isolate even if the user's `extraArgs` bypass
-  some xcodebuild flag. Stale `Result.xcresult` is wiped on each test
-  run. After the child exits, vch persists `lastBuild` / `lastTest`
-  (and the `scheme` if passed) into `.vch/state.json`. Foreground
-  only, signals delivered to the child; vch maps the child's exit
-  code through. Dogfooded on BeanLedger:
-  `vch build poc-m4 --scheme BeanLedger --device "iPhone 17 Pro"` →
-  `** BUILD SUCCEEDED **` with 1.3G DerivedData and 275M SwiftPM in
-  the worktree's `.agent-build/`, while `~/Library/Developer/Xcode/DerivedData`
-  mtime stays unchanged.
-- ✅ M5  — Simulator isolation (lazy clone). `vch build`/`vch test` now
-  resolve `--device "iPhone 16"` to a per-task `xcrun simctl clone`
-  named `iPhone 16 · vch[<task>]`, persist
-  `simulator{cloneUDID, sourceUDID, name}` into `.vch/state.json`,
-  call `xcrun simctl bootstatus <udid> -b`, and pass
-  `-destination 'platform=iOS Simulator,id=<UDID>'` to xcodebuild
-  (id, not name). Subsequent calls reuse the clone silently — even
-  without `--device`. Mismatched `--device` against a bound clone
-  errors with `simulatorAlreadyBound` instead of silently re-cloning.
-  `vch remove` deletes the clone by default; `--keep-sim` preserves
-  it. `--no-sim` opts out and falls back to the M4 `name=` path.
-  `SIMCTL_CHILD_SIMULATOR_UDID` is set in the build env so child
-  `simctl` invocations from tests pin to the clone. Dogfooded on
-  BeanLedger: `vch build poc-m5 --scheme BeanLedger --device "iPhone 16"`
-  cloned + booted in one shot, `** BUILD SUCCEEDED **`,
-  `~/Library/Developer/Xcode/DerivedData` mtime unchanged; reuse
-  via `vch test poc-m5 --scheme BeanLedger -- -only-testing:…`
-  (no `--device` needed); `vch remove poc-m5 --force` deleted the
-  clone cleanly.
-- ✅ M6  — `vch sim {clone,erase,shutdown,info} <name>` and
-  `vch doctor [--clean] [--json]`. `sim clone` force-creates the
-  per-task clone (idempotent — re-running without `--device` is a
-  no-op once bound). `sim shutdown` is idempotent at the simctl
-  layer (swallows "already shut down"). `sim erase` chains
-  shutdown→erase so it works on a Booted clone. `sim info`
-  prints the recorded clone + live `simctl` state, including
-  `(missing — run vch doctor)` when the device was deleted
-  out-of-band. `vch doctor` prunes stale git worktree entries,
-  surfaces `state.json` problems, detects orphan `vch[*]`
-  simulator clones (e.g. left by `--keep-sim`) and stale state
-  bindings (clone gone from simctl), and exits non-zero on any
-  finding. `--clean` deletes orphan clones (never auto). `--json`
-  emits a machine-readable report. Dogfooded on BeanLedger:
-  poc-m6 explicit `vch sim clone` + `sim info` (Shutdown→Booted)
-  + `sim shutdown` (idempotent) + `sim erase` (Booted → Shutdown
-  + erased); poc-m6b created an orphan via `--keep-sim` →
-  `vch doctor` flagged it → `--clean` deleted it; an out-of-band
-  `simctl delete` of poc-m6's clone made `vch doctor` report a
-  stale binding without false positives.
-- ✅ M7  — Shell completion + Homebrew formula. Every command that
-  takes a task name (`path`, `remove`, `exec`, `build`, `test`,
-  `sim clone`/`erase`/`shutdown`/`info`) now offers TAB-completion
-  of real task names via ArgumentParser's `.custom` handler in
-  [Sources/vch/TaskNameCompletion.swift](Sources/vch/TaskNameCompletion.swift)
-  — invoked through `vch`'s built-in `--generate-completion-script
-  {bash,zsh,fish}`, no extra subcommand needed. Outside a git
-  workspace the handler returns `[]` so the user's shell falls back
-  to default completion silently. `Formula/vch.rb` ships a
-  HEAD-installable Homebrew formula (`brew install --HEAD
-  maples7/tap/vch`); `url`/`sha256`/`version` are placeholders that
-  M8's release workflow will rewrite via
-  `mislav/bump-homebrew-formula-action`. The shim lands in
-  `libexec/`, **never** in `bin/` (Q10 invariant — the formula
-  `test do` block enforces this). Dogfooded on BeanLedger:
-  `vch ---completion path -- positional@0 1 0` returned both real
-  task names; the same call from `/tmp` returned empty + exit 0.
-  `brew style Formula/vch.rb` clean.
-- ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump.
-  Workflow at [.github/workflows/release.yml](.github/workflows/release.yml)
-  fires on any `v*` tag push: re-runs the full build/test gauntlet
-  on `macos-14`, smoke-checks `vch version` and the shim's
-  `xcrun -f xcodebuild` resolution, creates the GitHub Release
-  (auto-generated notes; tags containing `-` are flagged
-  prerelease), then calls
-  `mislav/bump-homebrew-formula-action@v3` to rewrite
-  `url` / `version` / `sha256` in `maples7/homebrew-tap`'s
-  `vch.rb` (kept at repo root). The bump step is gated on a
-  `HOMEBREW_TAP_TOKEN` secret (PAT with `repo` scope on the tap)
-  so absence of that secret skips the bump but still ships the
-  release. **Pending user action**: push tag `v0.1.0` from
-  `master` (`maples7/homebrew-tap` already seeded;
-  `HOMEBREW_TAP_TOKEN` already configured). `actionlint` clean.
+- `vch` into Homebrew's `bin/` (on `PATH`)
+- `vch-xcodebuild-shim` into `libexec/` (intentionally **not** on `PATH`
+  — it should only ever be reached by the symlink `vch exec` plants in
+  the per-task `.vch/bin/`)
+- Bash, Zsh, and Fish completions
 
-The full v1 plan (Q1–Q11 decisions, acceptance criteria, parking lot) is
-recorded in agent memory under `/memories/repo/vibechard-plan.md` and
-mirrored as inline rationale in `AGENTS.md`.
-
-## Build from source
+### From source
 
 Requirements: macOS 13+, Xcode 15.3+ (Swift 5.10+).
 
 ```sh
+git clone https://github.com/maples7/VibeChard.git
+cd VibeChard
 swift build -c release
-./.build/release/vch version
-swift test --parallel
+ln -s "$PWD/.build/release/vch" /usr/local/bin/vch    # or wherever you keep CLI bins
 ```
 
-## Install via Homebrew (HEAD until v0.1.0)
+## Quickstart
+
+From inside any git-tracked Apple project:
 
 ```sh
-brew tap maples7/tap            # one-time
-brew install --HEAD maples7/tap/vch
+# 1. Spin up an isolated worktree on agent/add-paywall
+vch new add-paywall
+
+# 2. Open a shell inside it (PATH shim is active here)
+vch add-paywall
+# inside that shell:
+#   xcodebuild build              ← gets -derivedDataPath injected automatically
+#   swift test                    ← isolated module cache + SwiftPM clone dir
+#   exit                          ← back to the host shell
+
+# 3. Or run xcodebuild directly without entering the shell:
+vch build add-paywall --scheme MyApp
+vch test  add-paywall --scheme MyApp --device "iPhone 16"
+
+# 4. Driving an agent inside the worktree:
+vch new fix-toast --exec "claude"     # spawns claude inside the isolated worktree
+vch exec fix-toast -- npm run lint    # one-shot command in the worktree
+
+# 5. Inspect & clean up
+vch list
+vch path add-paywall                  # absolute path of the worktree
+vch remove add-paywall                # deletes worktree + branch + sim clone
 ```
 
-The formula installs `vch` to `bin/` and `vch-xcodebuild-shim` to
-`libexec/` (intentionally **not** in `PATH`). Bash, Zsh, and Fish
-completions are generated and installed automatically. Once v0.1.0
-is tagged (M8), `brew install maples7/tap/vch` (without `--HEAD`)
-will work too.
+## Commands
+
+| Command | What it does |
+|---|---|
+| `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. Optional `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). |
+| `vch list` | List all tasks in the current workspace. `--json` for machine-readable output. |
+| `vch path <name>` | Print the absolute path of a task's worktree. |
+| `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
+| `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. |
+| `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
+| `vch remove <name> [--force [--force]] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. Two `--force`s allow dirty trees + unmerged branches. |
+| `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
+| `vch doctor [--clean] [--json]` | Detect orphan simulator clones, stale state bindings, and corrupt `state.json`s. Exits non-zero on any finding. |
+| `vch shellenv` | Emit `vch_cd` / `vch_clean` shell helpers (bash/zsh). |
+| `vch version` | Print version + toolchain info (`--json` for machine-readable). |
+
+All commands that take a `<name>` complete it from the current
+workspace — install completions and hit `<TAB>`.
+
+## How isolation works
+
+Inside a task's worktree, `<wt>/.vch/bin/` is prepended to `PATH`, and
+contains symlinks `xcodebuild`, `xcrun`, `swift` → `vch-xcodebuild-shim`.
+
+The shim reads three env vars (`VCH_DERIVED_DATA_PATH`,
+`VCH_SPM_CLONE_DIR`, `VCH_RESULT_BUNDLE_PATH`), injects matching flags
+into the `xcodebuild` argv if the user hasn't already passed them,
+`mkdir -p`'s the directories, then `execv`'s the real binary resolved
+via `/usr/bin/xcrun -f xcodebuild` (bypasses `PATH`, no recursion). For
+`xcrun` and `swift` the shim is a transparent passthrough.
+
+Result: any tool an agent might run — `xcodebuild`, `swift test`,
+`Tuist`, custom scripts, anything that calls `xcodebuild` internally —
+gets isolated automatically. No flag-passing required.
+
+`vch build` and `vch test` skip the PATH shim and call `xcodebuild`
+directly with the same flags, since they know the args at the call site.
+
+## Configuration
+
+None. All per-task state lives at `<worktree>/.vch/state.json`. There
+are no `~/.vchrc`, no `.vch.toml`, no global config files. The only
+runtime knobs are the `VCH_*` env vars listed above (typically set by
+`vch exec` itself; you rarely set them by hand).
+
+## What VibeChard is not
+
+- **Not an AI vendor wrapper.** No SDK, no API key, no model
+  abstraction. Use whatever agent you like — VibeChard just makes
+  parallel sessions safe.
+- **Not cross-platform.** Apple-only by design. The whole point is
+  depth on the Xcode toolchain.
+- **Not a CI orchestrator.** It runs locally, in your terminal,
+  against worktrees on your disk. CI matrices are a different
+  problem.
+
+## Build & test from source
+
+```sh
+swift build -c release
+./.build/release/vch version
+swift test --parallel             # 116 tests, ~9s on M-series
+```
+
+CI runs the same commands plus a shim smoke probe on every push:
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 ## License
 

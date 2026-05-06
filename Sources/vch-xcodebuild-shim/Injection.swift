@@ -20,9 +20,7 @@ public enum ShimFlag {
     public static let resultBundlePath = "-resultBundlePath"
 }
 
-/// Names of the env vars vch reads. These match what the validated bash
-/// PoC at `scripts/poc/m0_5-shim/shim/xcodebuild` reads, so M2 is a
-/// drop-in replacement.
+/// Names of the env vars vch reads.
 public enum ShimEnv {
     public static let derivedDataPath = "VCH_DERIVED_DATA_PATH"
     public static let spmCloneDir = "VCH_SPM_CLONE_DIR"
