@@ -148,7 +148,23 @@ vch remove fix-toast
   `vch ---completion path -- positional@0 1 0` returned both real
   task names; the same call from `/tmp` returned empty + exit 0.
   `brew style Formula/vch.rb` clean.
-- ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump
+- ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump.
+  Workflow at [.github/workflows/release.yml](.github/workflows/release.yml)
+  fires on any `v*` tag push: re-runs the full build/test gauntlet
+  on `macos-14`, smoke-checks `vch version` and the shim's
+  `xcrun -f xcodebuild` resolution, creates the GitHub Release
+  (auto-generated notes; tags containing `-` are flagged
+  prerelease), then calls
+  `mislav/bump-homebrew-formula-action@v3` to rewrite
+  `url` / `version` / `sha256` in `maples7/homebrew-tap`'s
+  `Formula/vch.rb`. The bump step is gated on a
+  `HOMEBREW_TAP_TOKEN` secret (PAT with `repo` scope on the tap)
+  so absence of that secret skips the bump but still ships the
+  release. **Pending user action**: (a) create the
+  `maples7/homebrew-tap` repo with a `main` branch containing
+  `Formula/vch.rb` (this file copied verbatim makes a fine seed),
+  (b) add the `HOMEBREW_TAP_TOKEN` secret on this repo's
+  Settings → Secrets, (c) push tag `v0.1.0`. `actionlint` clean.
 
 The full v1 plan (Q1–Q11 decisions, acceptance criteria, parking lot) is
 recorded in agent memory under `/memories/repo/vibechard-plan.md` and

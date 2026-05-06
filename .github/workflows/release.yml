@@ -1,0 +1,91 @@
+name: Release
+
+# Triggered when a `v*` tag is pushed (e.g. `v0.1.0`, `v0.2.0-beta1`).
+# Builds + tests release-mode binaries as a sanity check, creates the
+# GitHub Release, then bumps `Formula/vch.rb` in `maples7/homebrew-tap`
+# via mislav/bump-homebrew-formula-action so `brew install
+# maples7/tap/vch` picks up the new version automatically.
+#
+# Required secret (set on the VibeChard repo, not the tap):
+#   HOMEBREW_TAP_TOKEN  — a PAT with `repo` scope on the tap repo.
+#                         The default GITHUB_TOKEN can't push to other
+#                         repositories, so this PAT is mandatory.
+#                         If unset, the tap-bump step is skipped and
+#                         the rest of the release still completes.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release & bump tap
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      # Hoist the secret to a job-level env var so per-step `if:`
+      # expressions can compare against it (the `secrets` context is
+      # not allowed inside `if:`).
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve packages
+        run: swift package resolve
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test --parallel
+
+      - name: Smoke vch version
+        run: ./.build/release/vch version
+
+      - name: Smoke shim resolves real xcodebuild
+        run: |
+          # Same invariant as ci.yml: shim must exec the real
+          # xcodebuild via `xcrun -f`. -version is a cheap probe.
+          VCH_SHIM_DEBUG=1 ./.build/release/vch-xcodebuild-shim -version
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          # Anything like `v0.1.0-beta1` is treated as a prerelease.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Bump Homebrew formula in tap
+        if: env.TAP_TOKEN != ''
+        uses: mislav/bump-homebrew-formula-action@v3
+        env:
+          # The action picks up COMMITTER_TOKEN from env to push the
+          # formula edit to the tap repo on the user's behalf.
+          COMMITTER_TOKEN: ${{ env.TAP_TOKEN }}
+        with:
+          formula-name: vch
+          formula-path: Formula/vch.rb
+          homebrew-tap: maples7/homebrew-tap
+          base-branch: main
+          # Auto-generated source tarball URL — matches the
+          # placeholder schema in `Formula/vch.rb` so the action's
+          # URL/version/sha256 rewrite Just Works. The action
+          # downloads this URL itself to compute the sha256.
+          download-url: https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz
+          commit-message: |
+            {{formulaName}} {{version}}
+
+            Auto-bumped from VibeChard ${{ github.ref_name }} via
+            mislav/bump-homebrew-formula-action.
