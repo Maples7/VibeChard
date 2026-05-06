@@ -76,7 +76,21 @@ vch remove fix-toast
   delivered to the child only. Dogfooded on BeanLedger:
   `xcodebuild -showBuildSettings -json` writes only into
   `.agent-build/DerivedData`, leaving `~/Library/Developer/` untouched.
-- ⬜ M4  — `vch build` / `vch test`
+- ✅ M4  — `vch build <name> [--scheme] [--configuration] [--device] [-- xcodebuild-extras]`
+  and `vch test <name>` invoke `xcodebuild` directly (no shim) with
+  `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected, plus
+  `-resultBundlePath` for `test`. The cwd is the worktree, and
+  `CLANG_MODULE_CACHE_PATH` / `SWIFTPM_CACHE_DIR` are set in the env
+  so SwiftPM and clang isolate even if the user's `extraArgs` bypass
+  some xcodebuild flag. Stale `Result.xcresult` is wiped on each test
+  run. After the child exits, vch persists `lastBuild` / `lastTest`
+  (and the `scheme` if passed) into `.vch/state.json`. Foreground
+  only, signals delivered to the child; vch maps the child's exit
+  code through. Dogfooded on BeanLedger:
+  `vch build poc-m4 --scheme BeanLedger --device "iPhone 17 Pro"` →
+  `** BUILD SUCCEEDED **` with 1.3G DerivedData and 275M SwiftPM in
+  the worktree's `.agent-build/`, while `~/Library/Developer/Xcode/DerivedData`
+  mtime stays unchanged.
 - ⬜ M5  — Simulator isolation (lazy clone)
 - ⬜ M6  — `vch sim`, `vch doctor`
 - ⬜ M7  — Shell completion + Homebrew formula

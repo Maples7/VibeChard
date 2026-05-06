@@ -1,9 +1,6 @@
 import ArgumentParser
 import Foundation
 import VibeChardCore
-#if canImport(Darwin)
-import Darwin
-#endif
 
 // MARK: - vch exec
 
@@ -40,8 +37,8 @@ struct ExecCommand: ParsableCommand {
                 baseEnv: env
             )
 
-            let exitCode = try runPlan(plan)
-            throw ArgumentParser.ExitCode(exitCode)
+            let result = try PlanLauncher.run(plan)
+            throw ArgumentParser.ExitCode(result.exitCode)
         }
     }
 
@@ -59,52 +56,9 @@ struct ExecCommand: ParsableCommand {
     }
 }
 
-/// Run an `ExecPlan` with inherited stdio. Returns the child's exit
-/// code (or 128+signal if it died from a signal). Ignores SIGINT
-/// /SIGTERM in vch itself so terminal Ctrl+C is delivered to the
-/// child only, then restores handlers before returning.
-private func runPlan(_ plan: ExecPlan) throws -> Int32 {
-    // Launch via `/usr/bin/env` so PATH lookup honors `plan.env` —
-    // including the prepended `<wt>/.vch/bin/` that holds the shim
-    // symlinks. If argv[0] is already an absolute or explicit path
-    // we still funnel through env (it handles both cases) so the
-    // signal/exit semantics are uniform.
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    proc.arguments = plan.argv
-    proc.currentDirectoryURL = URL(fileURLWithPath: plan.cwd)
-    proc.environment = plan.env
-    // Inherit stdin/stdout/stderr from vch — `Process` already does
-    // this when we don't override the *Pipe* properties.
-
-    // Suppress vch's own SIGINT/SIGTERM handling so Ctrl+C goes to
-    // the child only. Save previous handlers; we restore them before
-    // returning so a subsequent `vch` invocation in the same shell
-    // session (unusual but possible in tests) sees the default state.
-    let prevInt  = signal(SIGINT,  SIG_IGN)
-    let prevTerm = signal(SIGTERM, SIG_IGN)
-    defer {
-        signal(SIGINT,  prevInt)
-        signal(SIGTERM, prevTerm)
-    }
-
-    do {
-        try proc.run()
-    } catch {
-        throw VibeChardError.externalCommandFailed(
-            cmd: plan.argv.joined(separator: " "),
-            exitCode: 127,
-            stderr: "failed to launch: \(error.localizedDescription)"
-        )
-    }
-    proc.waitUntilExit()
-
-    switch proc.terminationReason {
-    case .exit:           return proc.terminationStatus
-    case .uncaughtSignal: return 128 + proc.terminationStatus
-    @unknown default:     return proc.terminationStatus
-    }
-}
+/// Run an `ExecPlan` and return the child's exit code (or 128+signal
+/// if it died from a signal). Implementation lives in
+/// `PlanLauncher.run` so M4 (`vch build` / `vch test`) shares it.
 
 // MARK: - vch shellenv
 

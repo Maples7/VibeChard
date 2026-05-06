@@ -1,0 +1,84 @@
+import XCTest
+@testable import VibeChardCore
+
+final class BuildPlannerTests: XCTestCase {
+
+    private func baseInputs(
+        action: String = "build",
+        scheme: String? = "App",
+        configuration: String? = nil,
+        resultBundle: String? = nil,
+        device: String? = nil,
+        extra: [String] = []
+    ) -> BuildPlanner.Inputs {
+        BuildPlanner.Inputs(
+            action: action,
+            scheme: scheme,
+            configuration: configuration,
+            derivedDataPath: "/wt/.agent-build/DerivedData",
+            clonedSourcePackagesDir: "/wt/.agent-build/SwiftPM",
+            resultBundlePath: resultBundle,
+            destinationDevice: device,
+            extraArgs: extra
+        )
+    }
+
+    func testMinimalBuildInjectsSchemeAndIsolationFlagsInExpectedOrder() {
+        let argv = BuildPlanner.args(baseInputs())
+        XCTAssertEqual(argv, [
+            "-scheme", "App",
+            "-derivedDataPath", "/wt/.agent-build/DerivedData",
+            "-clonedSourcePackagesDirPath", "/wt/.agent-build/SwiftPM",
+            "build",
+        ])
+    }
+
+    func testTestActionIncludesResultBundle() {
+        let argv = BuildPlanner.args(baseInputs(
+            action: "test",
+            resultBundle: "/wt/.agent-build/Result.xcresult"
+        ))
+        XCTAssertTrue(argv.contains("-resultBundlePath"),
+                      "test action must request a result bundle")
+        let i = argv.firstIndex(of: "-resultBundlePath")!
+        XCTAssertEqual(argv[i + 1], "/wt/.agent-build/Result.xcresult")
+        XCTAssertEqual(argv.last, "test")
+    }
+
+    func testBuildOmitsResultBundle() {
+        let argv = BuildPlanner.args(baseInputs(action: "build"))
+        XCTAssertFalse(argv.contains("-resultBundlePath"),
+                       "build action must not pass -resultBundlePath")
+    }
+
+    func testDeviceFlagBecomesNameDestination() {
+        let argv = BuildPlanner.args(baseInputs(device: "iPhone 16"))
+        XCTAssertTrue(argv.contains("-destination"))
+        let i = argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(argv[i + 1], "platform=iOS Simulator,name=iPhone 16")
+    }
+
+    func testConfigurationIsPassedThroughBeforeIsolationFlags() {
+        let argv = BuildPlanner.args(baseInputs(configuration: "Release"))
+        XCTAssertTrue(argv.contains("Release"))
+        let cfgIdx = argv.firstIndex(of: "-configuration")!
+        let dataIdx = argv.firstIndex(of: "-derivedDataPath")!
+        XCTAssertLessThan(cfgIdx, dataIdx,
+                          "-configuration must come before vch's injected flags")
+    }
+
+    func testExtraArgsAppearBeforeAction() {
+        let argv = BuildPlanner.args(baseInputs(extra: ["-quiet", "-skipMacroValidation"]))
+        XCTAssertEqual(argv.last, "build")
+        let quietIdx = argv.firstIndex(of: "-quiet")!
+        let buildIdx = argv.firstIndex(of: "build")!
+        XCTAssertLessThan(quietIdx, buildIdx,
+                          "user extras must precede the action verb")
+    }
+
+    func testNilSchemeEmitsNoSchemeFlag() {
+        let argv = BuildPlanner.args(baseInputs(scheme: nil))
+        XCTAssertFalse(argv.contains("-scheme"),
+                       "absent scheme must produce no -scheme flag")
+    }
+}
