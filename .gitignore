@@ -1,0 +1,24 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode user state (we don't ship an .xcodeproj but generated indices may appear)
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# vch's own per-worktree scratch (shouldn't exist in this repo, but be safe)
+.vch/
+.agent-build/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Bash PoC artifacts
+*.log
