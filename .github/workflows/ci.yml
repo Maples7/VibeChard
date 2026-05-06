@@ -31,3 +31,10 @@ jobs:
 
       - name: Smoke vch version
         run: ./.build/release/vch version
+
+      - name: Smoke shim resolves real xcodebuild
+        run: |
+          # The shim should resolve the real xcodebuild via xcrun -f and
+          # exec it. We pass -version (cheap, no project required); a
+          # successful exec replaces the shim with xcodebuild itself.
+          VCH_SHIM_DEBUG=1 ./.build/release/vch-xcodebuild-shim -version

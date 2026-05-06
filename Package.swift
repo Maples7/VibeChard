@@ -49,5 +49,21 @@ let package = Package(
             name: "VibeChardCoreTests",
             dependencies: ["VibeChardCore"]
         ),
+        // Shim integration tests. Built against the actual shim binary
+        // (a separate executable target — Swift cannot @testable import
+        // an executable target's symbols, and the AGENTS.md "three
+        // targets, fixed" rule forbids extracting a library). These
+        // tests exec the binary under controlled env to verify argv
+        // injection end-to-end.
+        //
+        // Declaring the executable as a dependency makes SwiftPM build
+        // it automatically before running tests; the test then locates
+        // it next to its own xctest bundle. We do NOT shell out to
+        // `swift build` from inside the test (would deadlock on the
+        // package build lock).
+        .testTarget(
+            name: "ShimIntegrationTests",
+            dependencies: ["vch-xcodebuild-shim"]
+        ),
     ]
 )

@@ -60,7 +60,12 @@ vch remove fix-toast
 - ✅ M1  — git + state.json (`vch new` / `list` / `path` / `remove` / `repair`).
   Dirty-worktree guard, `--force` / `--force --force` semantics,
   schema-v1 `.vch/state.json`, table & `--json` output.
-- ⬜ M2  — Swift port of the bash shim
+- ✅ M2  — Swift port of the bash shim. `vch-xcodebuild-shim` injects
+  `-derivedDataPath` / `-clonedSourcePackagesDirPath` / `-resultBundlePath`
+  from `VCH_*` env vars when invoked as `xcodebuild`, skips flags the
+  user already provided, mkdir -p's the isolation dirs, and `execv`s
+  the real binary resolved via `/usr/bin/xcrun -f`. Pass-through for
+  `xcrun` / `swift`. 7 end-to-end tests + dogfooded on BeanLedger.
 - ⬜ M3  — `vch exec` + `vch <name>` sugar + `vch shellenv`
 - ⬜ M4  — `vch build` / `vch test`
 - ⬜ M5  — Simulator isolation (lazy clone)
