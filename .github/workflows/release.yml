@@ -77,7 +77,8 @@ jobs:
           VCH_SHIM_DEBUG=1 ./.build/release/vch-xcodebuild-shim -version
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        # v3 = first Node 24 major (April 2026); inputs unchanged from v2.
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           draft: false
@@ -86,7 +87,8 @@ jobs:
 
       - name: Bump Homebrew formula in tap
         if: env.TAP_TOKEN != ''
-        uses: mislav/bump-homebrew-formula-action@v3
+        # v4 = first Node 24 major (March 2026); inputs unchanged from v3.
+        uses: mislav/bump-homebrew-formula-action@v4
         env:
           # The action picks up COMMITTER_TOKEN from env to push the
           # formula edit to the tap repo on the user's behalf.
