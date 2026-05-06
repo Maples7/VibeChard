@@ -107,8 +107,9 @@ vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副�
 | 指令 | 作用 |
 |---|---|
 | `vch new <name>` | 在 `../<repo>-<name>` 建立 worktree，分支為 `agent/<name>`。`--exec "<cmd>"` 在 worktree 內直接執行指令（例如 AI agent）。`--copy-untracked` 會連同未追蹤、未被忽略的檔案（如 `.env`、`.vscode/settings.json`）一起複製過來。 |
-| `vch list` | 列出目前工作區下所有任務。`--json` 為機器可讀格式。 |
+| `vch list` | 列出目前工作區下所有任務。`--json` 為機器可讀格式；`-v`/`--verbose` 增加 `BASE` 與 `PATH` 欄位。 |
 | `vch path <name>` | 印出任務 worktree 的絕對路徑。 |
+| `vch state <name>` | 漂亮印出任務的 `.vch/state.json`。`--json` 輸出原始檔案內容。 |
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中開啟 worktree。自動偵測 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（專案檔走 Xcode，其他走 VS Code）。`--with` 支援 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名稱（透傳給 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆寫預設值。未指定 `<name>` 時使用 `$PWD` 所在的 worktree。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` 的語法糖——開一個 shell，隔離環境變數 + `.vch/bin` PATH shim 已就緒。 |
 | `vch exec <name> -- <cmd...>` | 在任務 worktree 內執行任意指令，隔離已生效。 |
@@ -118,7 +119,8 @@ vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副�
 | `vch remove <name> [--force [--force]] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。兩次 `--force` 才允許髒樹 + 未合併分支。 |
 | `vch repair` | 用 `git worktree list` 的實際狀態重新對齊 `.vch/state.json`。 |
 | `vch doctor [--clean] [--json]` | 偵測孤兒模擬器副本、失效綁定、毀損的 `state.json`。有發現就以非零退出。 |
-| `vch shellenv` | 輸出 `vch_cd` / `vch_clean` shell 輔助函式（bash/zsh）。 |
+| `vch shellenv` | 輸出 `vch_cd` / `vch_new` / `vch_clean` shell 輔助函式（bash/zsh）。 |
+| `vch completions install [--shell <s>]` | 安裝 `zsh` / `bash` / `fish` 的補全腳本（預設從 `$SHELL` 自動識別）。`--print` 預覽；`--force` 覆寫已有檔案。 |
 | `vch version` | 印出版本與工具鏈資訊（`--json` 為機器可讀格式）。 |
 
 所有接受 `<name>` 的指令都會從目前工作區的任務名做補全——

@@ -216,6 +216,61 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(path, "/Users/me/Repo-foo")
     }
 
+    // MARK: - state
+
+    func testStateThrowsTaskNotFoundWhenWorktreeMissing() throws {
+        let (service, _, _, _) = makeService()
+        XCTAssertThrowsError(try service.stateForTask(TaskName("ghost"))) { error in
+            guard case VibeChardError.taskNotFound = error else {
+                return XCTFail("expected taskNotFound, got \(error)")
+            }
+        }
+    }
+
+    func testStateThrowsStateFileMissingWhenWorktreeExistsButNoStateFile() throws {
+        let (service, _, fs, _) = makeService()
+        // Worktree dir exists but the user (or a half-finished checkout)
+        // never wrote .vch/state.json.
+        fs.seedDirectory("/Users/me/Repo-foo")
+        XCTAssertThrowsError(try service.stateForTask(TaskName("foo"))) { error in
+            guard case let VibeChardError.stateFileMissing(path) = error else {
+                return XCTFail("expected stateFileMissing, got \(error)")
+            }
+            XCTAssertEqual(path, "/Users/me/Repo-foo/.vch/state.json")
+        }
+    }
+
+    func testStateThrowsStateFileCorruptWithRealPathOnBadJSON() throws {
+        let (service, _, fs, _) = makeService()
+        fs.seedDirectory("/Users/me/Repo-foo/.vch")
+        try fs.writeFileAtomic(Data("not json".utf8),
+                               to: "/Users/me/Repo-foo/.vch/state.json")
+        XCTAssertThrowsError(try service.stateForTask(TaskName("foo"))) { error in
+            guard case let VibeChardError.stateFileCorrupt(path, _) = error else {
+                return XCTFail("expected stateFileCorrupt, got \(error)")
+            }
+            XCTAssertEqual(path, "/Users/me/Repo-foo/.vch/state.json",
+                           "should re-throw with the real filesystem path, not '<in-memory>'")
+        }
+    }
+
+    func testStateReturnsParsedStateForExistingTask() throws {
+        let (service, _, fs, clock) = makeService()
+        fs.seedDirectory("/Users/me/Repo-foo/.vch")
+        let state = TaskState(
+            name: "foo",
+            branch: "agent/foo",
+            createdAt: clock.now(),
+            baseRef: "abc1234"
+        )
+        try fs.writeFileAtomic(state.jsonData(),
+                               to: "/Users/me/Repo-foo/.vch/state.json")
+        let read = try service.stateForTask(TaskName("foo"))
+        XCTAssertEqual(read.name, "foo")
+        XCTAssertEqual(read.branch, "agent/foo")
+        XCTAssertEqual(read.baseRef, "abc1234")
+    }
+
     // MARK: - remove
 
     func testRemoveRefusesDirtyWorktreeByDefault() throws {

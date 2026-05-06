@@ -110,8 +110,9 @@ vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 �
 | 명령어 | 동작 |
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. |
-| `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. |
+| `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
+| `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. |
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
 | `vch <name>` | `vch exec <name> -- $SHELL` 의 단축형 — 격리 환경 변수 + `.vch/bin` PATH shim 이 활성화된 셸 진입. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
@@ -121,7 +122,8 @@ vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 �
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--force` 두 번이면 더티 트리 + 머지되지 않은 브랜치도 허용. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
 | `vch doctor [--clean] [--json]` | 고아 시뮬레이터 클론, 오래된 상태 바인딩, 손상된 `state.json` 탐지. 발견 시 비정상 종료. |
-| `vch shellenv` | `vch_cd` / `vch_clean` 셸 헬퍼 출력 (bash/zsh). |
+| `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` 셰 헬퍼 출력 (bash/zsh). |
+| `vch completions install [--shell <s>]` | `zsh` / `bash` / `fish` 용 완성 스크립트 설치 (`$SHELL` 에서 자동 감지). `--print` 는 미리보기, `--force` 는 덮어쓰기. |
 | `vch version` | 버전과 툴체인 정보 출력 (`--json` 으로 기계 판독). |
 
 `<name>` 을 받는 모든 명령은 현재 워크스페이스의 작업 이름으로 자동완성됩니다 —

@@ -68,7 +68,7 @@ struct ExecCommand: ParsableCommand {
 struct ShellEnvCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "shellenv",
-        abstract: "Print eval-able shell helpers (vch_cd, vch_clean)."
+        abstract: "Print eval-able shell helpers (vch_cd, vch_new, vch_clean)."
     )
 
     func run() throws {
@@ -92,7 +92,7 @@ enum TaskShortcutDispatcher {
     /// registered subcommands).
     private static let knownSubcommands: Set<String> = [
         "version", "new", "list", "ls", "path", "remove", "rm", "repair",
-        "exec", "shellenv", "open",
+        "exec", "shellenv", "open", "state", "completions",
         // Reserved for future milestones (so we don't accidentally
         // treat them as task names today and break later).
         "build", "test", "sim", "doctor",

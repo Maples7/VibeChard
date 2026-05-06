@@ -92,6 +92,9 @@ struct ListCommand: ParsableCommand {
     @Flag(name: .long, help: "Emit machine-readable JSON instead of a table.")
     var json: Bool = false
 
+    @Flag(name: .shortAndLong, help: "Add columns: PATH, BASE.")
+    var verbose: Bool = false
+
     func run() throws {
         try CLIBridge.run {
             let cwd = FileManager.default.currentDirectoryPath
@@ -104,7 +107,7 @@ struct ListCommand: ParsableCommand {
             if json {
                 try printSummariesJSON(summaries)
             } else {
-                printSummariesTable(summaries)
+                printSummariesTable(summaries, verbose: verbose)
             }
         }
     }
@@ -120,21 +123,38 @@ struct ListCommand: ParsableCommand {
         }
     }
 
-    private func printSummariesTable(_ summaries: [TaskSummary]) {
+    private func printSummariesTable(_ summaries: [TaskSummary], verbose: Bool) {
         if summaries.isEmpty {
             print("(no vch tasks; use `vch new <name>`)")
             return
         }
-        let rows = summaries.map { s -> [String] in
-            [
-                s.name,
-                s.branch,
-                s.simulatorName ?? "-",
-                s.createdAt.map(humanDate) ?? "-",
-                buildStatusLabel(s),
-            ]
+        let header: [String]
+        let rows: [[String]]
+        if verbose {
+            header = ["NAME", "BRANCH", "BASE", "SIM", "CREATED", "BUILD", "PATH"]
+            rows = summaries.map { s in
+                [
+                    s.name,
+                    s.branch,
+                    s.baseRef ?? "-",
+                    s.simulatorName ?? "-",
+                    s.createdAt.map(humanDate) ?? "-",
+                    buildStatusLabel(s),
+                    s.path,
+                ]
+            }
+        } else {
+            header = ["NAME", "BRANCH", "SIM", "CREATED", "BUILD"]
+            rows = summaries.map { s in
+                [
+                    s.name,
+                    s.branch,
+                    s.simulatorName ?? "-",
+                    s.createdAt.map(humanDate) ?? "-",
+                    buildStatusLabel(s),
+                ]
+            }
         }
-        let header = ["NAME", "BRANCH", "SIM", "CREATED", "BUILD"]
         let widths: [Int] = (0..<header.count).map { col in
             max(header[col].count, rows.map { $0[col].count }.max() ?? 0)
         }
@@ -212,7 +232,86 @@ struct PathCommand: ParsableCommand {
     }
 }
 
-// MARK: - vch remove
+// MARK: - vch state
+
+struct StateCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "state",
+        abstract: "Show a task's persisted state (.vch/state.json)."
+    )
+
+    @Argument(help: "Task name to inspect.",
+              completion: .custom(TaskNameCompletion.candidates))
+    var name: String
+
+    @Flag(name: .long, help: "Emit raw JSON (the full state.json contents).")
+    var json: Bool = false
+
+    func run() throws {
+        try CLIBridge.run {
+            let task = try TaskName(name)
+            let cwd = FileManager.default.currentDirectoryPath
+            let workspace = try WorkspaceLocator.locate(cwd: cwd)
+            let service = TaskService(workspace: workspace, git: DiskGitClient())
+            let state = try service.stateForTask(task)
+            let path = workspace.worktreePath(for: task)
+            if json {
+                let data = try state.jsonData()
+                if let str = String(data: data, encoding: .utf8) {
+                    print(str)
+                }
+            } else {
+                printHumanReadable(state, worktreePath: path)
+            }
+        }
+    }
+
+    private func printHumanReadable(_ s: TaskState, worktreePath: String) {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        var lines: [(String, String)] = [
+            ("name", s.name),
+            ("branch", s.branch),
+            ("path", worktreePath),
+            ("base", s.baseRef),
+            ("created", f.string(from: s.createdAt)),
+            ("schema", "v\(s.schemaVersion)"),
+        ]
+        if let scheme = s.scheme {
+            lines.append(("scheme", scheme))
+        }
+        if let sim = s.simulator {
+            lines.append(("sim", "\(sim.name) (\(sim.cloneUDID))"))
+        }
+        if let b = s.lastBuild {
+            let status = b.success ? "ok" : "fail"
+            lines.append(("last build", "\(status) at \(f.string(from: b.finishedAt)) (\(formatDuration(b.durationSeconds)))"))
+        }
+        if let t = s.lastTest {
+            let status = t.success ? "ok" : "fail"
+            lines.append(("last test", "\(status) at \(f.string(from: t.finishedAt)) (\(formatDuration(t.durationSeconds)))"))
+        }
+        if let e = s.lastExec {
+            if let exit = e.exitCode, let ended = e.exitedAt {
+                lines.append(("last exec", "\(e.command) → exit \(exit) at \(f.string(from: ended))"))
+            } else {
+                lines.append(("last exec", "\(e.command) (started \(f.string(from: e.startedAt)))"))
+            }
+        }
+        let width = lines.map { $0.0.count }.max() ?? 0
+        for (k, v) in lines {
+            let padded = k.padding(toLength: width, withPad: " ", startingAt: 0)
+            print("\(padded)  \(v)")
+        }
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        if seconds < 10 {
+            return String(format: "%.2fs", seconds)
+        }
+        return String(format: "%.1fs", seconds)
+    }
+}
 
 struct RemoveCommand: ParsableCommand {
     static let configuration = CommandConfiguration(

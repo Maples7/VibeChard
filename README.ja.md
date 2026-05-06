@@ -111,8 +111,9 @@ vch remove add-paywall                # worktree + ブランチ + シミュレ�
 | コマンド | 役割 |
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。 |
-| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。 |
+| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |
+| `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。 |
 | `vch open [<name>] [--with <ide>]` | worktree を IDE で開く。`*.xcworkspace` / `*.xcodeproj` / `Package.swift` を自動検出（プロジェクトファイルは Xcode、それ以外は VS Code）。`--with` は `xcode`、`code`/`vscode`、`cursor`、または任意のアプリ名（`open -a` に渡す）に対応。`VCH_OPEN_DEFAULT` でデフォルトを上書き可能。`<name>` 省略時は `$PWD` のある worktree を使う。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` のシュガー。隔離環境変数 + `.vch/bin` PATH シムが有効なシェルが立ち上がる。 |
 | `vch exec <name> -- <cmd...>` | タスク worktree 内で任意のコマンドを実行（隔離有効）。 |
@@ -122,7 +123,8 @@ vch remove add-paywall                # worktree + ブランチ + シミュレ�
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--force` 2 回でダーティツリー＋未マージブランチも許容。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
 | `vch doctor [--clean] [--json]` | 孤児シミュレータークローン、古いステートバインディング、破損 `state.json` を検出。検出時は非ゼロ終了。 |
-| `vch shellenv` | `vch_cd` / `vch_clean` のシェルヘルパーを出力（bash/zsh）。 |
+| `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` のシェルヘルパーを出力（bash/zsh）。 |
+| `vch completions install [--shell <s>]` | `zsh` / `bash` / `fish` の補完スクリプトをインストール（`$SHELL` から自動検出）。`--print` でプレビュー、`--force` で上書き。 |
 | `vch version` | バージョンとツールチェイン情報を出力（`--json` で機械可読）。 |
 
 `<name>` を取るすべてのコマンドはワークスペース内のタスクから補完されます——

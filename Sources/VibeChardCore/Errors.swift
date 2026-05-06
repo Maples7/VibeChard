@@ -17,6 +17,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case unmergedBranch(name: String)
     case stateFileCorrupt(path: String, underlying: String)
     case stateSchemaMismatch(found: Int, expected: Int)
+    case stateFileMissing(path: String)
     case simulatorTemplateNotFound(name: String)
     case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
 
@@ -43,6 +44,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "state file corrupt at \(path): \(underlying) (run `vch repair`)"
         case let .stateSchemaMismatch(found, expected):
             return "state schema v\(found) does not match this vch (expected v\(expected)); run `vch repair`"
+        case let .stateFileMissing(path):
+            return "state file missing at \(path) (run `vch repair`)"
         case let .simulatorTemplateNotFound(name):
             return "no available simulator template named '\(name)' (try `xcrun simctl list devices available`)"
         case let .simulatorAlreadyBound(task, current, requested):

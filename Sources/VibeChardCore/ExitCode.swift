@@ -28,6 +28,7 @@ public extension VibeChardError {
              .unmergedBranch,
              .stateFileCorrupt,
              .stateSchemaMismatch,
+             .stateFileMissing,
              .simulatorTemplateNotFound,
              .simulatorAlreadyBound:
             return ExitCode.business

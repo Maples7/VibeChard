@@ -225,6 +225,31 @@ public struct TaskService: Sendable {
         return p
     }
 
+    // MARK: - state
+
+    /// Read and parse `<wt>/.vch/state.json` for a task. Throws
+    /// `taskNotFound` if the worktree does not exist, or
+    /// `stateFileMissing` / `stateFileCorrupt` if the file is gone or
+    /// malformed.
+    public func stateForTask(_ task: TaskName) throws -> TaskState {
+        let wtPath = workspace.worktreePath(for: task)
+        if !fs.directoryExists(at: wtPath) {
+            throw VibeChardError.taskNotFound(name: task.raw)
+        }
+        let statePath = workspace.statePath(for: task)
+        if !fs.fileExists(at: statePath) {
+            throw VibeChardError.stateFileMissing(path: statePath)
+        }
+        let data = try fs.readFile(at: statePath)
+        do {
+            return try TaskState.parse(data)
+        } catch VibeChardError.stateFileCorrupt(_, let underlying) {
+            // Re-throw with the actual filesystem path for better
+            // diagnostics — `TaskState.parse` only knows "<in-memory>".
+            throw VibeChardError.stateFileCorrupt(path: statePath, underlying: underlying)
+        }
+    }
+
     // MARK: - remove
 
     public struct RemoveOptions: Sendable {

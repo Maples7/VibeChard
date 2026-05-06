@@ -7,8 +7,27 @@ final class ShellEnvScriptTests: XCTestCase {
         let script = ShellEnvScript.zshBash
         XCTAssertTrue(script.contains("vch_cd()"),
                       "missing vch_cd function")
+        XCTAssertTrue(script.contains("vch_new()"),
+                      "missing vch_new function")
         XCTAssertTrue(script.contains("vch_clean()"),
                       "missing vch_clean function")
+    }
+
+    func testVchNewDelegatesWhenExecFlagPresent() {
+        // When `--exec` is requested vch replaces itself with the agent
+        // via execve; capturing stdout to `cd` would interleave the
+        // path with the agent's output. The helper must detect this
+        // and forward the call without `cd`.
+        let script = ShellEnvScript.zshBash
+        XCTAssertTrue(script.contains("--exec|--exec=*"),
+                      "vch_new must short-circuit when --exec is in argv")
+    }
+
+    func testVchNewUsesCommandVchToAvoidAliasRecursion() {
+        // Same reason as vch_cd: the helper should not call itself if
+        // a user aliases `vch`.
+        XCTAssertTrue(ShellEnvScript.zshBash.contains("command vch new"),
+                      "vch_new must call `command vch new` to bypass shell aliases")
     }
 
     func testZshBashUsesCommandVchToAvoidRecursionFromAlias() {

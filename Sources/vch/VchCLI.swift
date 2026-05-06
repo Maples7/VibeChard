@@ -13,6 +13,7 @@ struct VchCLI: ParsableCommand {
             NewCommand.self,
             ListCommand.self,
             PathCommand.self,
+            StateCommand.self,
             RemoveCommand.self,
             RepairCommand.self,
             ExecCommand.self,
@@ -22,6 +23,7 @@ struct VchCLI: ParsableCommand {
             TestCommand.self,
             SimCommand.self,
             DoctorCommand.self,
+            CompletionsCommand.self,
         ],
         defaultSubcommand: nil
     )

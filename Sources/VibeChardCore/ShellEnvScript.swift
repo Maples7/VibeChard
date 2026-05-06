@@ -33,6 +33,26 @@ public enum ShellEnvScript {
         cd "$_vch_path"
     }
 
+    # Create a new vch worktree and cd into it. Forwards all flags to
+    # `vch new`, so `vch_new fix --base main --copy-untracked` works.
+    # When --exec is requested, vch execve's into the agent and cd is
+    # not meaningful — we delegate transparently in that case.
+    #   vch_new <task-name> [--base <ref>] [--copy-untracked] [--exec <cmd>]
+    vch_new() {
+        local _arg
+        for _arg in "$@"; do
+            case "$_arg" in
+                --exec|--exec=*)
+                    command vch new "$@"
+                    return $?
+                    ;;
+            esac
+        done
+        local _vch_path
+        _vch_path="$(command vch new "$@")" || return $?
+        cd "$_vch_path"
+    }
+
     # Wipe the current worktree's .agent-build/ scratch dir.
     # Run from inside the worktree.
     vch_clean() {

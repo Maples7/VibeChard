@@ -9,6 +9,26 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch state <name>` — pretty-print a task's `.vch/state.json` (name,
+  branch, path, base, scheme, sim ID, last build / test / exec
+  timestamps). `--json` emits the raw file contents. Distinguishes
+  `taskNotFound` (worktree absent) from `stateFileMissing` (worktree
+  present, state file gone — pointing the user at `vch repair`).
+- `vch list -v` / `--verbose` — adds `BASE` and `PATH` columns to the
+  table view. Pairs with the existing `--json` output for piping.
+- `vch completions install [--shell <s>] [--print] [--force]` —
+  installs the shell completion script under the standard XDG /
+  user location for `zsh` (`~/.zsh/completions/_vch`), `bash`
+  (`~/.local/share/bash-completion/completions/vch`), or `fish`
+  (`~/.config/fish/completions/vch.fish`). Auto-detects the active
+  shell from `$SHELL`. `--print` previews the install path + script
+  + post-install hint without writing; `--force` overwrites an
+  existing file.
+- `vch_new` shell helper in `vch shellenv` — runs `vch new` and `cd`s
+  into the new worktree in one step. Detects `--exec` / `--exec=*`
+  in `$@` and short-circuits to `command vch new "$@"` (since execve
+  replaces the shell, no cd is possible after handoff). Always uses
+  `command vch` to avoid recursion through user aliases.
 - `vch new <name> --copy-untracked` — also copies every git-untracked,
   non-ignored file (e.g. `.env`, `.vscode/settings.json`,
   `scripts/local.sh`) from the main worktree into the new worktree,
@@ -38,11 +58,24 @@ The English README is the source of truth; localized READMEs may lag.
   unified across all five locales.
 
 ### Changed
-- Reserved subcommand list now includes `open` (previously: `new list
-  ls path exec build test sim remove rm repair doctor shellenv version
-  help`). `vch new open` is rejected at parse time.
+- Reserved subcommand list now includes `open`, `state`, and
+  `completions` (previously: `new list ls path exec build test sim
+  remove rm repair doctor shellenv version help`). `vch new state`
+  / `vch new completions` are rejected at parse time.
 
 ### Tests
+- 4 new `TaskService` tests for `stateForTask` (taskNotFound when
+  worktree absent; stateFileMissing when worktree present but state
+  file gone; stateFileCorrupt carries the real path; happy path
+  returns parsed `TaskState`).
+- 13 new `CompletionsInstallerTests` covering `CompletionShell.detect`
+  (zsh / bash / fish, case insensitive, nil for missing/empty/unknown)
+  and `CompletionsInstaller.plan` (path + post-install hint per
+  shell, trailing-slash + root-home edge cases).
+- 3 new / updated `ShellEnvScript` tests asserting all three helpers
+  (`vch_cd`, `vch_new`, `vch_clean`) are emitted, that `vch_new` short-
+  circuits when `--exec` is present, and that it uses `command vch`
+  to bypass user aliases.
 - 5 new `TaskService` tests for `--copy-untracked` (off by default;
   copies preserve relative layout; skips `.vch/` + `.agent-build/`;
   rejects `/abs` and `../escape` paths; no-op on empty listing).

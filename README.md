@@ -110,8 +110,9 @@ vch remove add-paywall                # deletes worktree + branch + sim clone
 | Command | What it does |
 |---|---|
 | `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. |
-| `vch list` | List all tasks in the current workspace. `--json` for machine-readable output. |
+| `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
+| `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. |
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
 | `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
@@ -121,7 +122,8 @@ vch remove add-paywall                # deletes worktree + branch + sim clone
 | `vch remove <name> [--force [--force]] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. Two `--force`s allow dirty trees + unmerged branches. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
 | `vch doctor [--clean] [--json]` | Detect orphan simulator clones, stale state bindings, and corrupt `state.json`s. Exits non-zero on any finding. |
-| `vch shellenv` | Emit `vch_cd` / `vch_clean` shell helpers (bash/zsh). |
+| `vch shellenv` | Emit `vch_cd` / `vch_new` / `vch_clean` shell helpers (bash/zsh). |
+| `vch completions install [--shell <s>]` | Install the completion script for `zsh` / `bash` / `fish` (auto-detected from `$SHELL`). `--print` previews; `--force` overwrites. |
 | `vch version` | Print version + toolchain info (`--json` for machine-readable). |
 
 All commands that take a `<name>` complete it from the current
