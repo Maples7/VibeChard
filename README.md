@@ -1,5 +1,7 @@
 # VibeChard
 
+**English** · [简体中文](README.zh-CN.md)
+
 > **Per-task isolated worktrees for parallel Apple development with AI agents.**
 > Run multiple Claude / Codex / Copilot / Cursor sessions on the same Xcode
 > project without `build.db` locks, `DerivedData` thrash, or simulator
