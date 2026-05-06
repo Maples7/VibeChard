@@ -157,14 +157,12 @@ vch remove fix-toast
   prerelease), then calls
   `mislav/bump-homebrew-formula-action@v3` to rewrite
   `url` / `version` / `sha256` in `maples7/homebrew-tap`'s
-  `Formula/vch.rb`. The bump step is gated on a
+  `vch.rb` (kept at repo root). The bump step is gated on a
   `HOMEBREW_TAP_TOKEN` secret (PAT with `repo` scope on the tap)
   so absence of that secret skips the bump but still ships the
-  release. **Pending user action**: (a) create the
-  `maples7/homebrew-tap` repo with a `main` branch containing
-  `Formula/vch.rb` (this file copied verbatim makes a fine seed),
-  (b) add the `HOMEBREW_TAP_TOKEN` secret on this repo's
-  Settings → Secrets, (c) push tag `v0.1.0`. `actionlint` clean.
+  release. **Pending user action**: push tag `v0.1.0` from
+  `master` (`maples7/homebrew-tap` already seeded;
+  `HOMEBREW_TAP_TOKEN` already configured). `actionlint` clean.
 
 The full v1 plan (Q1–Q11 decisions, acceptance criteria, parking lot) is
 recorded in agent memory under `/memories/repo/vibechard-plan.md` and
