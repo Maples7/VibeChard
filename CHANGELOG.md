@@ -9,6 +9,14 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch new <name> --copy-untracked` — also copies every git-untracked,
+  non-ignored file (e.g. `.env`, `.vscode/settings.json`,
+  `scripts/local.sh`) from the main worktree into the new worktree,
+  preserving permissions and symlinks. Files matched by `.gitignore`
+  / `.git/info/exclude` (e.g. `node_modules/`, build outputs) are
+  skipped, as are vch's own `.vch/` and `.agent-build/` scratch dirs.
+  Combine with `--exec` to ship a fully-configured worktree to an
+  agent in one shot: `vch new fix --copy-untracked --exec "claude"`.
 - `vch new <name> --exec "<cmd>"` — once the new worktree is ready,
   hand off to `/bin/sh -c "<cmd>"` via `execve`, replacing vch with the
   agent. Restores parity with the README, which has documented this
@@ -35,6 +43,9 @@ The English README is the source of truth; localized READMEs may lag.
   help`). `vch new open` is rejected at parse time.
 
 ### Tests
+- 5 new `TaskService` tests for `--copy-untracked` (off by default;
+  copies preserve relative layout; skips `.vch/` + `.agent-build/`;
+  rejects `/abs` and `../escape` paths; no-op on empty listing).
 - 21 new `OpenServiceTests` covering project-kind detection, IDE
   selection priority (explicit > env > auto), and argv assembly across
   all IDE × project-kind combinations.
