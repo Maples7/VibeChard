@@ -4,13 +4,21 @@ import VibeChardCore
 import Darwin
 #endif
 
-/// Shared launcher for any `ExecPlan`. Used by `vch exec` (M3) and
-/// `vch build` / `vch test` (M4). Inherits stdio, ignores SIGINT
-/// /SIGTERM in vch itself so Ctrl+C reaches the child only.
+/// Shared launcher for any `ExecPlan`.
 ///
-/// Returns the child's exit code (or 128+signal if it died from a
-/// signal). Also returns the wall-clock duration so callers like M4
-/// can persist `lastBuild` / `lastTest` records.
+/// Two modes:
+///
+/// * `run(_:)`  — fork+wait via `Process()`. Used by `vch build` and
+///   `vch test` because they need the wall-clock duration to persist
+///   `lastBuild` / `lastTest` records into `state.json`. Suitable for
+///   non-interactive children that don't need the controlling tty.
+///
+/// * `runReplacing(_:)` — `execve`-replace the vch process. Used by
+///   `vch exec` (and its `vch <name>` sugar form). The child becomes
+///   the SAME process — same pid, same pgrp, same controlling tty —
+///   so an interactive shell can drive the terminal normally and a
+///   real ^C reaches it without the SIG_IGN inheritance trap that
+///   `Process()` falls into.
 enum PlanLauncher {
 
     struct RunResult {
@@ -60,5 +68,56 @@ enum PlanLauncher {
         @unknown default:     code = proc.terminationStatus
         }
         return RunResult(exitCode: code, durationSeconds: duration)
+    }
+
+    /// `execve`-replace the vch process with the plan's argv.
+    ///
+    /// Why not `Process()` + `waitUntilExit()`?
+    ///
+    /// 1. `Process()` does not transfer the controlling terminal to
+    ///    the child. An interactive shell launched that way never
+    ///    becomes the foreground process group, so it can't draw a
+    ///    prompt or read user input — looks like "vch hung".
+    /// 2. To keep ^C from killing vch itself, the `run(_:)` path
+    ///    sets `SIGINT` / `SIGTERM` to `SIG_IGN` before spawning.
+    ///    POSIX preserves `SIG_IGN` across `exec`, so an interactive
+    ///    child shell would inherit a permanently-ignored ^C.
+    ///
+    /// Replacing via `execve` sidesteps both: the child IS vch (same
+    /// pid, same pgrp, same controlling tty), with default signal
+    /// dispositions because we never touch them on this path.
+    ///
+    /// Spawned through `/usr/bin/env` so the prepended `<wt>/.vch/bin`
+    /// in `plan.env["PATH"]` is honored when resolving the actual
+    /// command — same convention as `run(_:)`.
+    static func runReplacing(_ plan: ExecPlan) -> Never {
+        // execve doesn't accept a working directory, so chdir first.
+        if chdir(plan.cwd) != 0 {
+            let err = String(cString: strerror(errno))
+            FileHandle.standardError.write(
+                Data("vch: chdir(\(plan.cwd)): \(err)\n".utf8)
+            )
+            exit(127)
+        }
+
+        let exe = "/usr/bin/env"
+        let argvStrs = [exe] + plan.argv
+        var cArgv: [UnsafeMutablePointer<CChar>?] = argvStrs.map { strdup($0) }
+        cArgv.append(nil)
+
+        // Sort env pairs for deterministic ordering (mostly cosmetic;
+        // helps when debugging a misbehaving child via `truss`/`dtruss`).
+        let envPairs = plan.env.map { "\($0.key)=\($0.value)" }.sorted()
+        var cEnv: [UnsafeMutablePointer<CChar>?] = envPairs.map { strdup($0) }
+        cEnv.append(nil)
+
+        _ = execve(exe, cArgv, cEnv)
+
+        // execve only returns on failure — if we got here, exec didn't.
+        let err = String(cString: strerror(errno))
+        FileHandle.standardError.write(
+            Data("vch: execve(\(exe)): \(err)\n".utf8)
+        )
+        exit(127)
     }
 }

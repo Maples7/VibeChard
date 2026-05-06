@@ -38,8 +38,10 @@ struct ExecCommand: ParsableCommand {
                 baseEnv: env
             )
 
-            let result = try PlanLauncher.run(plan)
-            throw ArgumentParser.ExitCode(result.exitCode)
+            // Replace vch with the child via `execve` — see
+            // `PlanLauncher.runReplacing` for the rationale (interactive
+            // shell needs the controlling tty + default ^C handling).
+            PlanLauncher.runReplacing(plan)
         }
     }
 
