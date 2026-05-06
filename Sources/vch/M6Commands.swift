@@ -29,7 +29,8 @@ struct SimCloneCommand: ParsableCommand {
         abstract: "Force-create the per-task simulator clone now (idempotent)."
     )
 
-    @Argument(help: "Task name.")
+    @Argument(help: "Task name.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     @Option(name: .long, help: "Simulator device template (e.g. \"iPhone 16\"). Required when no clone is bound yet.")
@@ -80,7 +81,8 @@ struct SimEraseCommand: ParsableCommand {
         abstract: "Shut down and erase the bound clone (state binding is preserved)."
     )
 
-    @Argument(help: "Task name.")
+    @Argument(help: "Task name.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     func run() throws {
@@ -111,7 +113,8 @@ struct SimShutdownCommand: ParsableCommand {
         abstract: "Shut down the bound clone (idempotent)."
     )
 
-    @Argument(help: "Task name.")
+    @Argument(help: "Task name.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     func run() throws {
@@ -141,7 +144,8 @@ struct SimInfoCommand: ParsableCommand {
         abstract: "Print the bound clone's record + live simctl state."
     )
 
-    @Argument(help: "Task name.")
+    @Argument(help: "Task name.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     @Flag(name: .long, help: "Emit machine-readable JSON.")

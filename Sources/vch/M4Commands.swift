@@ -102,7 +102,8 @@ struct BuildCommand: ParsableCommand {
         abstract: "Run `xcodebuild build` inside a task's worktree with isolation flags injected."
     )
 
-    @Argument(help: "Task name to build.")
+    @Argument(help: "Task name to build.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     @Option(name: .long, help: "Scheme to build. If omitted, xcodebuild's default applies.")
@@ -144,7 +145,8 @@ struct TestCommand: ParsableCommand {
         abstract: "Run `xcodebuild test` inside a task's worktree with -resultBundlePath set."
     )
 
-    @Argument(help: "Task name to test.")
+    @Argument(help: "Task name to test.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     @Option(name: .long, help: "Scheme to test.")

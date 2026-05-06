@@ -130,7 +130,24 @@ vch remove fix-toast
   `vch doctor` flagged it → `--clean` deleted it; an out-of-band
   `simctl delete` of poc-m6's clone made `vch doctor` report a
   stale binding without false positives.
-- ⬜ M7  — Shell completion + Homebrew formula
+- ✅ M7  — Shell completion + Homebrew formula. Every command that
+  takes a task name (`path`, `remove`, `exec`, `build`, `test`,
+  `sim clone`/`erase`/`shutdown`/`info`) now offers TAB-completion
+  of real task names via ArgumentParser's `.custom` handler in
+  [Sources/vch/TaskNameCompletion.swift](Sources/vch/TaskNameCompletion.swift)
+  — invoked through `vch`'s built-in `--generate-completion-script
+  {bash,zsh,fish}`, no extra subcommand needed. Outside a git
+  workspace the handler returns `[]` so the user's shell falls back
+  to default completion silently. `Formula/vch.rb` ships a
+  HEAD-installable Homebrew formula (`brew install --HEAD
+  maples7/tap/vch`); `url`/`sha256`/`version` are placeholders that
+  M8's release workflow will rewrite via
+  `mislav/bump-homebrew-formula-action`. The shim lands in
+  `libexec/`, **never** in `bin/` (Q10 invariant — the formula
+  `test do` block enforces this). Dogfooded on BeanLedger:
+  `vch ---completion path -- positional@0 1 0` returned both real
+  task names; the same call from `/tmp` returned empty + exit 0.
+  `brew style Formula/vch.rb` clean.
 - ⬜ M8  — `release.yml` → tag v0.1.0 → tap formula auto-bump
 
 The full v1 plan (Q1–Q11 decisions, acceptance criteria, parking lot) is
@@ -146,6 +163,19 @@ swift build -c release
 ./.build/release/vch version
 swift test --parallel
 ```
+
+## Install via Homebrew (HEAD until v0.1.0)
+
+```sh
+brew tap maples7/tap            # one-time
+brew install --HEAD maples7/tap/vch
+```
+
+The formula installs `vch` to `bin/` and `vch-xcodebuild-shim` to
+`libexec/` (intentionally **not** in `PATH`). Bash, Zsh, and Fish
+completions are generated and installed automatically. Once v0.1.0
+is tagged (M8), `brew install maples7/tap/vch` (without `--HEAD`)
+will work too.
 
 ## License
 

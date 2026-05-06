@@ -146,7 +146,8 @@ struct PathCommand: ParsableCommand {
         abstract: "Print the absolute path of a task's worktree."
     )
 
-    @Argument(help: "Task name to resolve.")
+    @Argument(help: "Task name to resolve.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     func run() throws {
@@ -169,7 +170,8 @@ struct RemoveCommand: ParsableCommand {
         abstract: "Remove a task's worktree and delete its branch."
     )
 
-    @Argument(help: "Task name to remove.")
+    @Argument(help: "Task name to remove.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     @Flag(

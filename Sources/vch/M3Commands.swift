@@ -13,7 +13,8 @@ struct ExecCommand: ParsableCommand {
         abstract: "Run a command inside a task's isolated worktree."
     )
 
-    @Argument(help: "Task name to enter.")
+    @Argument(help: "Task name to enter.",
+              completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
     @Argument(parsing: .captureForPassthrough,
