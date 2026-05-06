@@ -48,13 +48,18 @@ final class ShimLocatorTests: XCTestCase {
 
     func testFallsBackToBrewLibexecLayout() {
         let fs = StubFS()
-        fs.existing = ["/opt/homebrew/libexec/vch-xcodebuild-shim"]
+        // Use a fake brew prefix (`/opt/vch-test/...`) so `realpath(3)`
+        // can't resolve it to a real Cellar path on a developer's
+        // machine that already has `vch` installed via the tap. With
+        // a real `/opt/homebrew/bin/vch` symlink present, realpath
+        // would return the Cellar path and break the layout inference.
+        fs.existing = ["/opt/vch-test/libexec/vch-xcodebuild-shim"]
         let path = ShimLocator.locate(
-            vchExecutablePath: "/opt/homebrew/bin/vch",
+            vchExecutablePath: "/opt/vch-test/bin/vch",
             env: [:],
             fs: fs
         )
-        XCTAssertEqual(path, "/opt/homebrew/libexec/vch-xcodebuild-shim")
+        XCTAssertEqual(path, "/opt/vch-test/libexec/vch-xcodebuild-shim")
     }
 
     func testReturnsNilWhenNothingFound() {

@@ -33,7 +33,24 @@ jobs:
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Verify tag matches source version
+        run: |
+          # Fail fast if someone pushes `v1.2.3` while
+          # `VibeChard.version` still says `1.2.2`. Without this
+          # guard the release ships, the tap gets bumped, and
+          # `brew install` quietly serves a binary whose `vch
+          # version` disagrees with the tag.
+          tag="${GITHUB_REF_NAME#v}"
+          src=$(grep -oE 'public static let version = "[^"]+"' \
+            Sources/VibeChardCore/VibeChard.swift \
+            | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "tag=$tag src=$src"
+          if [ "$tag" != "$src" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match VibeChard.version=$src" >&2
+            exit 1
+          fi
 
       - name: Show toolchain
         run: |
