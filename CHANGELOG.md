@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-06
+
 ### Added
 - `vch state <name>` — pretty-print a task's `.vch/state.json` (name,
   branch, path, base, scheme, sim ID, last build / test / exec

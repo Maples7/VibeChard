@@ -36,7 +36,8 @@ under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
    names that match these or start with `-`. `ls` and `rm` are aliases
    for `list` / `remove` respectively (Q-amend post-v0.1.0). `open` opens
    a worktree in an IDE (Xcode / VS Code / Cursor / any `open -a` app);
-   added Q-amend post-v0.1.1.
+   added Q-amend post-v0.1.1. `state` shows a task's persisted state and
+   `completions` installs shell completions; both added Q-amend post-v0.1.1.
 9. **Don't touch the user's `~/Library/Developer/`.** Every byte vch writes
    must land inside the worktree's `.vch/` or `.agent-build/`. Do not
    regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`
