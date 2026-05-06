@@ -19,9 +19,9 @@ public struct TaskName: Hashable, Sendable {
     /// Subcommand and flag names that may never be used as a task name.
     /// Keep in sync with `AGENTS.md` rule #8.
     public static let reserved: Set<String> = [
-        "new", "list", "path", "exec",
+        "new", "list", "ls", "path", "exec",
         "build", "test", "sim",
-        "remove", "repair", "doctor",
+        "remove", "rm", "repair", "doctor",
         "shellenv", "version", "help",
     ]
 

@@ -36,7 +36,8 @@ struct NewCommand: ParsableCommand {
 struct ListCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
-        abstract: "List vch-managed worktrees."
+        abstract: "List vch-managed worktrees.",
+        aliases: ["ls"]
     )
 
     @Flag(name: .long, help: "Emit machine-readable JSON instead of a table.")
@@ -167,7 +168,8 @@ struct PathCommand: ParsableCommand {
 struct RemoveCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remove",
-        abstract: "Remove a task's worktree and delete its branch."
+        abstract: "Remove a task's worktree and delete its branch.",
+        aliases: ["rm"]
     )
 
     @Argument(help: "Task name to remove.",

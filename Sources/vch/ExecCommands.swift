@@ -91,7 +91,7 @@ enum TaskShortcutDispatcher {
     /// Reserved subcommand tokens (matches Q4.5 + this CLI's actual
     /// registered subcommands).
     private static let knownSubcommands: Set<String> = [
-        "version", "new", "list", "path", "remove", "repair",
+        "version", "new", "list", "ls", "path", "remove", "rm", "repair",
         "exec", "shellenv",
         // Reserved for future milestones (so we don't accidentally
         // treat them as task names today and break later).
