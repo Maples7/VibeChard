@@ -1,0 +1,12 @@
+{
+  "name": "vch-render-docs-images",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Renders the localized PNGs in docs/images/ used by the top-level READMEs.",
+  "scripts": {
+    "render": "node build.js"
+  },
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}
