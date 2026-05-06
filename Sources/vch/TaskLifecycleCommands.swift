@@ -16,6 +16,17 @@ struct NewCommand: ParsableCommand {
     @Option(name: .long, help: "Base ref for the new branch (default: HEAD).")
     var base: String?
 
+    @Option(
+        name: .long,
+        help: ArgumentHelp(
+            "Command to run inside the new worktree once it's ready. "
+                + "Passed to `/bin/sh -c`, so quoting works as in the shell. "
+                + "Replaces vch via execve — vch is no longer the parent.",
+            valueName: "cmd"
+        )
+    )
+    var exec: String?
+
     func run() throws {
         try CLIBridge.run {
             let task = try TaskName(name)
@@ -27,6 +38,28 @@ struct NewCommand: ParsableCommand {
             )
             let path = try service.newTask(task, baseRef: base)
             print(path)
+
+            // BYO Agent integration point (AGENTS.md rule #2):
+            // hand off to /bin/sh -c "<cmd>" inside the new worktree
+            // with isolation env active. We `execve` instead of fork+
+            // wait so the agent IS vch (same pid/pgrp/tty), matching
+            // `vch exec` semantics.
+            if let cmd = exec?.trimmingCharacters(in: .whitespaces),
+               !cmd.isEmpty {
+                let env = ProcessInfo.processInfo.environment
+                let shimPath = try ExecCommand.resolveShimPath(env: env)
+                let execService = ExecService(
+                    workspace: workspace,
+                    git: DiskGitClient()
+                )
+                let plan = try execService.prepare(
+                    task: task,
+                    command: ["/bin/sh", "-c", cmd],
+                    shimPath: shimPath,
+                    baseEnv: env
+                )
+                PlanLauncher.runReplacing(plan)
+            }
         }
     }
 }
