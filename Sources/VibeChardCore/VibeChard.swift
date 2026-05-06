@@ -11,7 +11,7 @@ public enum VibeChard {
     /// Semantic version of the `vch` binary.
     /// Bumped manually in `git tag v*` releases. The release workflow
     /// fails fast if this constant doesn't match the pushed tag.
-    public static let version = "0.1.2"
+    public static let version = "0.1.1"
 
     /// Marketing tagline. Surfaces in `vch help` and `vch version --json`.
     public static let tagline =
