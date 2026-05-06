@@ -26,6 +26,10 @@ vch remove add-paywall
 専用のシミュレータークローンを持ちます——あなたの `~/Library/Developer/`
 は 1 バイトも変更されません。
 
+<p align="center">
+  <img src="docs/images/vch-list.ja.png" alt="vch list の出力: 3 つのエージェントタスクを並列実行、ok 2 つ ・ fail 1 つ、そして vch state の詳細" width="720">
+</p>
+
 > **ステータス: alpha (v0.1.0)。** CLI のインターフェースはほぼ落ち着いていますが
 > まだ凍結されていません。`.vch/state.json` のスキーマには今後フィールドが
 > 追加される可能性があります。安定が必要ならタグを固定してください。
@@ -133,7 +137,9 @@ vch remove add-paywall                # worktree + ブランチ + シミュレ�
 補完スクリプトを入れて `<TAB>` を押してください。
 
 ## 隔離の仕組み
-
+<p align="center">
+  <img src="docs/images/architecture.ja.png" alt="アーキテクチャ図: エージェント → メインリポ → worktree → PATH shim → 専用 DerivedData + Sim クローン" width="720">
+</p>
 タスクの worktree 内では `<wt>/.vch/bin/` が `PATH` の先頭に挿入され、
 そこに `xcodebuild`、`xcrun`、`swift` のシンボリックリンクがあり、すべて
 `vch-xcodebuild-shim` を指しています。

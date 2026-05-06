@@ -26,6 +26,10 @@ vch remove add-paywall
 That's it. Every agent gets its own worktree, its own `DerivedData`, its
 own simulator clone — and your `~/Library/Developer/` stays untouched.
 
+<p align="center">
+  <img src="docs/images/vch-list.en.png" alt="vch list output: three parallel agent tasks, two ok one fail, with vch state details" width="720">
+</p>
+
 > **Status: alpha (v0.1.0).** The CLI surface is settling but not yet
 > frozen; on-disk `.vch/state.json` may gain fields. Pin a tag if you
 > need stability.
@@ -132,6 +136,10 @@ All commands that take a `<name>` complete it from the current
 workspace — install completions and hit `<TAB>`.
 
 ## How isolation works
+
+<p align="center">
+  <img src="docs/images/architecture.en.png" alt="Architecture: agents → main repo → worktrees → PATH shim → isolated DerivedData + Sim clones" width="720">
+</p>
 
 Inside a task's worktree, `<wt>/.vch/bin/` is prepended to `PATH`, and
 contains symlinks `xcodebuild`, `xcrun`, `swift` → `vch-xcodebuild-shim`.

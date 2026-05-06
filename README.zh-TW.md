@@ -25,6 +25,10 @@ vch remove add-paywall
 就這樣。每個 agent 都拿到自己專屬的 worktree、專屬的 `DerivedData`、
 專屬的模擬器副本——你的 `~/Library/Developer/` 一個位元組都不會被動。
 
+<p align="center">
+  <img src="docs/images/vch-list.zh-TW.png" alt="vch list 輸出：3 個 agent 任務並行，2 個 ok 1 個 fail，以及 vch state 詳情" width="720">
+</p>
+
 > **狀態：alpha (v0.1.0)。** CLI 介面已大致穩定但尚未凍結；
 > `.vch/state.json` 的 schema 之後還可能新增欄位。需要穩定請固定 tag。
 
@@ -129,6 +133,10 @@ vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副�
 裝好補全指令稿，按 `<TAB>` 即可。
 
 ## 隔離的運作方式
+
+<p align="center">
+  <img src="docs/images/architecture.zh-TW.png" alt="架構圖：agent → 主倉 → worktree → PATH shim → 獨立 DerivedData + Sim 副本" width="720">
+</p>
 
 任務 worktree 內的 `<wt>/.vch/bin/` 會被前置到 `PATH` 上，裡面有
 三個符號連結 `xcodebuild`、`xcrun`、`swift` 都指向 `vch-xcodebuild-shim`。

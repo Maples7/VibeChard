@@ -26,6 +26,10 @@ vch remove add-paywall
 자신만의 시뮬레이터 클론을 가지며 — 사용자의 `~/Library/Developer/`는
 1 바이트도 건드리지 않습니다.
 
+<p align="center">
+  <img src="docs/images/vch-list.ko.png" alt="vch list 출력: 3개의 에이전트 task 병렬 실행, ok 2개 · fail 1개, 그리고 vch state 세부 정보" width="720">
+</p>
+
 > **상태: alpha (v0.1.0).** CLI 표면은 거의 안정화되었지만 아직 동결되지
 > 않았습니다. `.vch/state.json` 스키마에는 이후 필드가 추가될 수 있습니다.
 > 안정성이 필요하면 태그를 고정하세요.
@@ -132,6 +136,10 @@ vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 �
 자동완성 스크립트를 설치하고 `<TAB>` 을 누르세요.
 
 ## 격리 동작 원리
+
+<p align="center">
+  <img src="docs/images/architecture.ko.png" alt="아키텍처 다이어그램: 에이전트 → 메인 저장소 → worktree → PATH shim → 전용 DerivedData + Sim 클론" width="720">
+</p>
 
 작업 worktree 안에서 `<wt>/.vch/bin/` 이 `PATH` 의 맨 앞에 추가되며,
 이 디렉터리에는 `xcodebuild`, `xcrun`, `swift` 세 개의 심볼릭 링크가

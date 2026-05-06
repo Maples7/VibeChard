@@ -22,3 +22,6 @@ DerivedData/
 
 # Bash PoC artifacts
 *.log
+
+# Local marketing / promo asset scratch (HTML mockups, exported PNGs)
+marketing-assets/
