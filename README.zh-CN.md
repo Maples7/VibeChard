@@ -93,6 +93,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 
 # 4. 在 worktree 里直接驱动 agent：
 vch new fix-toast --exec "claude"     # 在隔离的 worktree 里启动 claude
+vch new triage --copy-untracked       # 顺便拷贝 .env / .vscode 等未跟踪文件
 vch exec fix-toast -- npm run lint    # 在 worktree 里跑一次性命令
 
 # 5. 查看与清理
@@ -105,7 +106,7 @@ vch remove add-paywall                # 删除 worktree + 分支 + 模拟器克�
 
 | 命令 | 作用 |
 |---|---|
-| `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。可选 `--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。 |
+| `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。 |
 | `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式。 |
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中打开 worktree。自动识别 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（项目文件用 Xcode，否则用 VS Code）。`--with` 支持 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名（透传给 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆盖默认值。不传 `<name>` 时使用 `$PWD` 所在的 worktree。 |

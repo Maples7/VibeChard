@@ -16,6 +16,18 @@ struct NewCommand: ParsableCommand {
     @Option(name: .long, help: "Base ref for the new branch (default: HEAD).")
     var base: String?
 
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "Also copy git-untracked, non-ignored files (e.g. .env, "
+                + ".vscode/settings.json) from the main worktree into the "
+                + "new one. Tracked files come from the branch checkout; "
+                + "ignored files (build outputs, node_modules, etc.) are "
+                + "skipped."
+        )
+    )
+    var copyUntracked: Bool = false
+
     @Option(
         name: .long,
         help: ArgumentHelp(
@@ -36,7 +48,11 @@ struct NewCommand: ParsableCommand {
                 workspace: workspace,
                 git: DiskGitClient()
             )
-            let path = try service.newTask(task, baseRef: base)
+            let path = try service.newTask(
+                task,
+                baseRef: base,
+                copyUntracked: copyUntracked
+            )
             print(path)
 
             // BYO Agent integration point (AGENTS.md rule #2):

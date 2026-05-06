@@ -96,6 +96,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 
 # 4. Driving an agent inside the worktree:
 vch new fix-toast --exec "claude"     # spawns claude inside the isolated worktree
+vch new triage --copy-untracked       # also bring over .env / .vscode / etc.
 vch exec fix-toast -- npm run lint    # one-shot command in the worktree
 
 # 5. Inspect & clean up
@@ -108,7 +109,7 @@ vch remove add-paywall                # deletes worktree + branch + sim clone
 
 | Command | What it does |
 |---|---|
-| `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. Optional `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). |
+| `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. |
 | `vch list` | List all tasks in the current workspace. `--json` for machine-readable output. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |

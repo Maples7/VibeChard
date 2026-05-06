@@ -66,6 +66,105 @@ final class TaskServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - new --copy-untracked
+
+    func testNewTaskWithoutCopyUntrackedDoesNotListUntracked() throws {
+        let (service, git, _, _) = makeService()
+        _ = try service.newTask(TaskName("foo"))
+        XCTAssertEqual(git.listUntrackedCalls, [],
+            "untracked listing should be skipped when --copy-untracked is off")
+    }
+
+    func testNewTaskCopyUntrackedCopiesFilesPreservingLayout() throws {
+        let (service, git, fs, _) = makeService(repoPath: "/Users/me/Repo")
+        // Seed the source's untracked files.
+        git.untrackedFilesByCwd["/Users/me/Repo"] = [
+            ".env",
+            ".vscode/settings.json",
+            "scripts/local-only.sh",
+        ]
+        fs.seedFile("/Users/me/Repo/.env", data: Data("API_KEY=hunter2".utf8))
+        fs.seedFile("/Users/me/Repo/.vscode/settings.json", data: Data("{}".utf8))
+        fs.seedFile("/Users/me/Repo/scripts/local-only.sh", data: Data("#!/bin/sh\n".utf8))
+
+        _ = try service.newTask(TaskName("foo"), copyUntracked: true)
+
+        XCTAssertEqual(git.listUntrackedCalls, ["/Users/me/Repo"])
+        // Each untracked file landed at the same relative path under
+        // the new worktree.
+        XCTAssertEqual(
+            try fs.readFile(at: "/Users/me/Repo-foo/.env"),
+            Data("API_KEY=hunter2".utf8)
+        )
+        XCTAssertEqual(
+            try fs.readFile(at: "/Users/me/Repo-foo/.vscode/settings.json"),
+            Data("{}".utf8)
+        )
+        XCTAssertEqual(
+            try fs.readFile(at: "/Users/me/Repo-foo/scripts/local-only.sh"),
+            Data("#!/bin/sh\n".utf8)
+        )
+    }
+
+    func testNewTaskCopyUntrackedSkipsVchAndAgentBuild() throws {
+        let (service, git, fs, _) = makeService()
+        // Use names that aren't created by newTask itself — newTask
+        // legitimately writes /Users/me/Repo-foo/.vch/state.json, so we
+        // pick distinct paths so a "did we copy?" assertion isn't
+        // confused by vch's own bookkeeping.
+        git.untrackedFilesByCwd["/Users/me/Repo"] = [
+            ".vch/leftover.json",
+            ".vch/bin/xcodebuild",
+            ".agent-build/cache/foo.o",
+            ".env",
+        ]
+        fs.seedFile("/Users/me/Repo/.vch/leftover.json", data: Data("nope".utf8))
+        fs.seedFile("/Users/me/Repo/.vch/bin/xcodebuild", data: Data("nope".utf8))
+        fs.seedFile("/Users/me/Repo/.agent-build/cache/foo.o", data: Data("nope".utf8))
+        fs.seedFile("/Users/me/Repo/.env", data: Data("ok".utf8))
+
+        _ = try service.newTask(TaskName("foo"), copyUntracked: true)
+
+        XCTAssertEqual(
+            try fs.readFile(at: "/Users/me/Repo-foo/.env"),
+            Data("ok".utf8)
+        )
+        XCTAssertFalse(fs.fileExists(at: "/Users/me/Repo-foo/.vch/leftover.json"),
+            "stray .vch/* files in the source should never be copied across")
+        XCTAssertFalse(fs.fileExists(at: "/Users/me/Repo-foo/.vch/bin/xcodebuild"),
+            "vch's own scratch dir should never be copied across")
+        XCTAssertFalse(fs.fileExists(at: "/Users/me/Repo-foo/.agent-build/cache/foo.o"),
+            ".agent-build/ should never be copied across")
+    }
+
+    func testNewTaskCopyUntrackedRejectsPathEscapes() throws {
+        let (service, git, fs, _) = makeService()
+        git.untrackedFilesByCwd["/Users/me/Repo"] = [
+            "/etc/passwd",          // absolute
+            "../sibling-secret",    // path traversal
+            "ok.txt",
+        ]
+        fs.seedFile("/Users/me/Repo/ok.txt", data: Data("ok".utf8))
+
+        // Path-escape entries are silently dropped; the legitimate one
+        // lands as expected. The state.json + worktree should still
+        // exist, i.e. `vch new` doesn't fail on a hostile listing.
+        _ = try service.newTask(TaskName("foo"), copyUntracked: true)
+        XCTAssertEqual(
+            try fs.readFile(at: "/Users/me/Repo-foo/ok.txt"),
+            Data("ok".utf8)
+        )
+        XCTAssertFalse(fs.fileExists(at: "/Users/me/Repo-foo/../sibling-secret"))
+    }
+
+    func testNewTaskCopyUntrackedNoOpOnEmptyList() throws {
+        let (service, git, _, _) = makeService()
+        // No entry in `untrackedFilesByCwd` => fake returns [].
+        let path = try service.newTask(TaskName("foo"), copyUntracked: true)
+        XCTAssertEqual(path, "/Users/me/Repo-foo")
+        XCTAssertEqual(git.listUntrackedCalls, ["/Users/me/Repo"])
+    }
+
     // MARK: - list
 
     func testListReturnsManagedWorktreesNewestFirst() throws {

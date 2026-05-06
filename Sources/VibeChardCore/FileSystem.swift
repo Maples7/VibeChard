@@ -26,6 +26,12 @@ public protocol FileSystem: Sendable {
     /// it is replaced. If a non-symlink already occupies the path,
     /// throws.
     func createSymbolicLink(at linkPath: String, withDestination destination: String) throws
+
+    /// Copy a file (or symlink) from `source` to `destination`,
+    /// preserving permissions and symlink semantics (symlinks are
+    /// copied as-is, not followed). Parent of `destination` must
+    /// already exist. Throws if `destination` already exists.
+    func copyItem(from source: String, to destination: String) throws
 }
 
 /// Production implementation backed by `FileManager`.
@@ -91,5 +97,9 @@ public struct DiskFileSystem: FileSystem {
             )
         }
         try fm.createSymbolicLink(atPath: linkPath, withDestinationPath: destination)
+    }
+
+    public func copyItem(from source: String, to destination: String) throws {
+        try FileManager.default.copyItem(atPath: source, toPath: destination)
     }
 }

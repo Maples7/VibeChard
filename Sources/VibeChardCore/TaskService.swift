@@ -62,8 +62,17 @@ public struct TaskService: Sendable {
     /// if the target directory already exists or if the branch already
     /// exists (to keep state consistent). Returns the absolute worktree
     /// path on success.
+    ///
+    /// When `copyUntracked` is true, also copies every untracked +
+    /// non-ignored file from the main worktree into the new worktree.
+    /// Useful for files like `.env` and `.vscode/settings.json` that
+    /// agents need but that aren't in git.
     @discardableResult
-    public func newTask(_ task: TaskName, baseRef: String? = nil) throws -> String {
+    public func newTask(
+        _ task: TaskName,
+        baseRef: String? = nil,
+        copyUntracked: Bool = false
+    ) throws -> String {
         let wtPath = workspace.worktreePath(for: task)
 
         if fs.directoryExists(at: wtPath) || fs.fileExists(at: wtPath) {
@@ -106,7 +115,58 @@ public struct TaskService: Sendable {
         )
         try fs.writeFileAtomic(state.jsonData(), to: workspace.statePath(for: task))
 
+        if copyUntracked {
+            _ = try copyUntrackedFiles(
+                from: workspace.mainWorktreePath,
+                to: wtPath
+            )
+        }
+
         return wtPath
+    }
+
+    /// Copy every untracked + non-ignored file from `sourceWorktree`
+    /// into `destWorktree`, preserving the relative directory layout.
+    /// Returns the count of files actually copied. Defensive against
+    /// path-escape (`/foo`, `../foo`) and skips vch's own scratch
+    /// directories.
+    @discardableResult
+    func copyUntrackedFiles(
+        from sourceWorktree: String,
+        to destWorktree: String
+    ) throws -> Int {
+        let entries = try git.listUntrackedFiles(worktreeCwd: sourceWorktree)
+        // Belt-and-braces: `--exclude-standard` should already drop these
+        // once `appendLocalExcludes` has been called at least once, but
+        // skip them explicitly so a fresh repo's first `vch new` still
+        // does the right thing.
+        let skipPrefixes = [".vch/", ".agent-build/"]
+
+        var copied = 0
+        for rel in entries {
+            if rel.isEmpty { continue }
+            if rel.hasPrefix("/") { continue }
+            if rel.contains("../") || rel == ".." { continue }
+            if skipPrefixes.contains(where: { rel.hasPrefix($0) }) { continue }
+
+            let src = "\(sourceWorktree)/\(rel)"
+            let dst = "\(destWorktree)/\(rel)"
+
+            // Make sure the destination's parent exists; the new
+            // worktree only has whatever git checked out, so untracked
+            // subdirs may not be there yet.
+            let parent = (dst as NSString).deletingLastPathComponent
+            try fs.createDirectory(at: parent)
+
+            // If something already lives at `dst` (e.g. a tracked file
+            // happens to share a name with a transient untracked one
+            // because of a symlinked layout), don't clobber it.
+            if fs.fileExists(at: dst) || fs.directoryExists(at: dst) { continue }
+
+            try fs.copyItem(from: src, to: dst)
+            copied += 1
+        }
+        return copied
     }
 
     // MARK: - list

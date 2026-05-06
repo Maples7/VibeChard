@@ -16,6 +16,7 @@ final class ShimLocatorTests: XCTestCase {
         func removeItem(at path: String) throws {}
         func symlinkDestination(at path: String) -> String? { nil }
         func createSymbolicLink(at linkPath: String, withDestination destination: String) throws {}
+        func copyItem(from source: String, to destination: String) throws {}
     }
 
     func testEnvOverrideWinsAhead() {

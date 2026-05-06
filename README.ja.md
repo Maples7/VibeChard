@@ -97,6 +97,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 
 # 4. worktree 内で直接エージェントを走らせる：
 vch new fix-toast --exec "claude"     # 隔離された worktree 内で claude を起動
+vch new triage --copy-untracked       # .env / .vscode など未追跡ファイルも一緒にコピー
 vch exec fix-toast -- npm run lint    # worktree 内でワンショット実行
 
 # 5. 確認とクリーンアップ
@@ -109,7 +110,7 @@ vch remove add-paywall                # worktree + ブランチ + シミュレ�
 
 | コマンド | 役割 |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。 |
+| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。 |
 | `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |
 | `vch open [<name>] [--with <ide>]` | worktree を IDE で開く。`*.xcworkspace` / `*.xcodeproj` / `Package.swift` を自動検出（プロジェクトファイルは Xcode、それ以外は VS Code）。`--with` は `xcode`、`code`/`vscode`、`cursor`、または任意のアプリ名（`open -a` に渡す）に対応。`VCH_OPEN_DEFAULT` でデフォルトを上書き可能。`<name>` 省略時は `$PWD` のある worktree を使う。 |

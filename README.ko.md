@@ -96,6 +96,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 
 # 4. worktree 안에서 직접 에이전트 구동:
 vch new fix-toast --exec "claude"     # 격리된 worktree 에서 claude 실행
+vch new triage --copy-untracked       # .env / .vscode 등 추적되지 않은 파일도 함께 복사
 vch exec fix-toast -- npm run lint    # worktree 안에서 일회성 명령 실행
 
 # 5. 점검과 정리
@@ -108,7 +109,7 @@ vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 �
 
 | 명령어 | 동작 |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). |
+| `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. |
 | `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |

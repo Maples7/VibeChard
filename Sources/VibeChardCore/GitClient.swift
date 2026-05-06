@@ -69,6 +69,12 @@ public protocol GitClient: Sendable {
     /// since they're vch's own scratch dirs and never wanted by anyone.
     /// Idempotent: a pattern already present is not duplicated.
     func appendLocalExcludes(worktreeCwd: String, patterns: [String]) throws
+
+    /// `git ls-files --others --exclude-standard -z` parsed into
+    /// repo-relative paths. Excludes both tracked files and anything
+    /// matched by `.gitignore` / `.git/info/exclude` / global excludes.
+    /// Used by `vch new --copy-untracked`.
+    func listUntrackedFiles(worktreeCwd: String) throws -> [String]
 }
 
 // MARK: - Real implementation
@@ -210,6 +216,23 @@ public struct DiskGitClient: GitClient {
             newContent.append("\n")
         }
         try newContent.write(to: URL(fileURLWithPath: excludePath), atomically: true, encoding: .utf8)
+    }
+
+    public func listUntrackedFiles(worktreeCwd: String) throws -> [String] {
+        // -z separates entries with NUL so paths with newlines / quotes
+        // come through verbatim. --exclude-standard honors .gitignore +
+        // .git/info/exclude + ~/.config/git/ignore.
+        let result = try runner.run(
+            gitPath,
+            args: ["ls-files", "--others", "--exclude-standard", "-z"],
+            cwd: worktreeCwd
+        )
+        try requireSuccess(result, label: "git ls-files --others --exclude-standard -z")
+        // stdout is a NUL-terminated list; split on NUL and drop the
+        // trailing empty token.
+        return result.stdout
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
     }
 
     private func requireSuccess(_ result: ProcessResult, label: String) throws {

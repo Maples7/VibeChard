@@ -88,6 +88,24 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
         symlinks[linkPath] = destination
     }
 
+    func copyItem(from source: String, to destination: String) throws {
+        if files[destination] != nil || directories.contains(destination) || symlinks[destination] != nil {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "copyItem",
+                exitCode: 17,
+                stderr: "destination already exists at \(destination)"
+            )
+        }
+        if let target = symlinks[source] {
+            symlinks[destination] = target
+            return
+        }
+        guard let data = files[source] else {
+            throw NSError(domain: "InMemoryFS", code: 2, userInfo: [NSLocalizedDescriptionKey: "no such file: \(source)"])
+        }
+        files[destination] = data
+    }
+
     // Test helpers
     func seedDirectory(_ path: String) { directories.insert(path) }
     func seedFile(_ path: String, data: Data) {
@@ -117,6 +135,9 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
     var branchDeleteCalls: [String] = []
     var branchDeleteForceCalls: [String] = []
     var appendExcludesCalls: [(worktreeCwd: String, patterns: [String])] = []
+    var listUntrackedCalls: [String] = []
+    /// Per-cwd untracked file list returned by `listUntrackedFiles`.
+    var untrackedFilesByCwd: [String: [String]] = [:]
 
     func worktreeList(repoCwd: String) throws -> [WorktreeEntry] { entries }
 
@@ -171,5 +192,10 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
 
     func appendLocalExcludes(worktreeCwd: String, patterns: [String]) throws {
         appendExcludesCalls.append((worktreeCwd, patterns))
+    }
+
+    func listUntrackedFiles(worktreeCwd: String) throws -> [String] {
+        listUntrackedCalls.append(worktreeCwd)
+        return untrackedFilesByCwd[worktreeCwd] ?? []
     }
 }
