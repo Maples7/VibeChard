@@ -20,7 +20,7 @@ public struct TaskName: Hashable, Sendable {
     /// Keep in sync with `AGENTS.md` rule #8.
     public static let reserved: Set<String> = [
         "new", "list", "ls", "path", "exec", "open",
-        "build", "test", "logs", "sim", "state", "completions",
+        "build", "test", "run", "logs", "sim", "state", "completions",
         "remove", "rm", "repair", "doctor", "land",
         "shellenv", "version", "help",
     ]

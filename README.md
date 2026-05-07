@@ -209,6 +209,7 @@ vch exec task-a -- xcodebuild test \
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` pins the simulator runtime. |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. Same scheme auto-pick + `--runtime` rules as `vch build`. By default prints only a concise summary (one line per suite, failing tests expanded with file:line and assertion message); `--verbose` mirrors xcodebuild's full output to the terminal. The full firehose is always tee'd to `<wt>/.vch/last-test.log`. |
+| `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
 | `vch logs <name> [--test]` | Print the full xcodebuild log from the task's most recent run. Useful when the concise `vch test` summary points at a failure and you want the surrounding context. Currently `--test` is the only flavor; the `vch test` log is overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. |
@@ -242,8 +243,9 @@ Result: any tool an agent might run — `xcodebuild`, `swift test`,
 `Tuist`, custom scripts, anything that calls `xcodebuild` internally —
 gets isolated automatically. No flag-passing required.
 
-`vch build` and `vch test` skip the PATH shim and call `xcodebuild`
-directly with the same flags, since they know the args at the call site.
+`vch build`, `vch test`, and `vch run` skip the PATH shim and call
+`xcodebuild` directly with the same flags, since they know the args at
+the call site.
 
 ## Configuration
 

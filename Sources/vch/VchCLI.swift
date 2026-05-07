@@ -23,6 +23,7 @@ struct VchCLI: ParsableCommand {
             ExecCommand.self,
             BuildCommand.self,
             TestCommand.self,
+            RunCommand.self,
             LogsCommand.self,
             SimCommand.self,
             // Graduate a task: merge + cleanup, or just remove.

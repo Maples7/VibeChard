@@ -48,6 +48,14 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// `vch land` was invoked with more than one strategy flag among
     /// `--no-ff`, `--ff-only`, `--squash`. (#7)
     case landConflictingStrategies
+    /// `vch run` could not extract `PRODUCT_BUNDLE_IDENTIFIER` from
+    /// `xcodebuild -showBuildSettings -json` for the resolved scheme
+    /// — typically because the scheme has no app target. (#18)
+    case runBundleIDNotFound(scheme: String)
+    /// `vch run` could not find the just-built `.app` bundle on disk
+    /// at the path xcodebuild reported. Usually means the build
+    /// targeted a different destination than expected. (#18)
+    case runAppBundleNotFound(path: String)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -98,6 +106,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "refusing to land: branch '\(branch)' does not exist (was it deleted outside vch?)"
         case .landConflictingStrategies:
             return "--no-ff, --ff-only, --squash are mutually exclusive"
+        case let .runBundleIDNotFound(scheme):
+            return "could not resolve PRODUCT_BUNDLE_IDENTIFIER for scheme '\(scheme)' — does this scheme build an app?"
+        case let .runAppBundleNotFound(path):
+            return "built app bundle not found at \(path) — was the build targeted at iOS Simulator?"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"

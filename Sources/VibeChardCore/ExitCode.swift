@@ -37,7 +37,9 @@ public extension VibeChardError {
              .landMergeOverlap,
              .landNoOp,
              .landNoIntoInferred,
-             .landBranchMissing:
+             .landBranchMissing,
+             .runBundleIDNotFound,
+             .runAppBundleNotFound:
             return ExitCode.business
         case .externalCommandFailed:
             return ExitCode.external
