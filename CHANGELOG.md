@@ -60,7 +60,21 @@ The English README is the source of truth; localized READMEs may lag.
   `→ booting simulator 'iPhone 16 · vch[alpha]', runtime: iOS 26.4`.
   Surfaces silent runtime drift for free. Part of #11.
 
+### Tests
+- New `LsofParserTests` (7), `TaskStateFieldTests` (8), and
+  `SchemeResolverTests` (9). `SimulatorServiceTests` gained 4 cases
+  for the `--runtime` filter and reuse-time mismatch error.
+  `BuildPlannerTests` / `BuildServiceTests` updated for the
+  `arch=arm64` field that destinations now pin. Total: 188 → 218.
+
 ### Docs
+- README "Workflow: a series of tasks" section across all five
+  locales (`en` / `zh-CN` / `zh-TW` / `ja` / `ko`), walking through
+  the full `vch new` → edit → `build` / `test` → review →
+  `git merge --no-ff agent/<task>` → `vch rm` cycle, the
+  parallel-isolation guarantee, and a script-friendly example using
+  the new `--field` accessor. Also documents `--runtime` and the
+  scheme auto-pick rules in the command tables. Closes #12.
 - `CONTRIBUTING.md` documents the branching model (GitHub flow, no
   `develop` / `release/*` / `hotfix/*`), Conventional Commits scope
   list, PR rules, the test layering against `Tests/`, the

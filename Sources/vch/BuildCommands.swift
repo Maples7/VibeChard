@@ -136,7 +136,7 @@ struct BuildCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
-    @Option(name: .long, help: "Scheme to build. If omitted, xcodebuild's default applies.")
+    @Option(name: .long, help: "Scheme to build. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
     var scheme: String?
 
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
@@ -183,7 +183,7 @@ struct TestCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
-    @Option(name: .long, help: "Scheme to test.")
+    @Option(name: .long, help: "Scheme to test. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
     var scheme: String?
 
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
