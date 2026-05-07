@@ -6,21 +6,23 @@ when README copy changes, a new locale is added, or a font tweak is needed.
 
 ## What it produces
 
-Two PNGs per locale (`en`, `zh-CN`, `zh-TW`, `ja`, `ko`), written to
+Three PNGs per locale (`en`, `zh-CN`, `zh-TW`, `ja`, `ko`), written to
 `<repo>/docs/images/`:
 
+- `hero.<locale>.png` — wide “without vch / with vch” README banner
 - `vch-list.<locale>.png` — terminal mockup of `vch list` + `vch state`
 - `architecture.<locale>.png` — 5-layer isolation diagram
 
-All are `1080×1440 @2x` (effective `2160×2880`) with a dark gradient
-background.
+The square images (`vch-list`, `architecture`) are `1080×1440 @2x`
+(effective `2160×2880`). The hero is `1920×800 @2x`
+(effective `3840×1600`). All have a dark gradient background.
 
 ## Run it
 
 ```sh
 cd scripts/render-docs-images
 npm install                     # pulls Playwright + Chromium
-node build.js                   # writes 10 PNGs into ../../docs/images/
+node build.js                   # writes 15 PNGs into ../../docs/images/
 ```
 
 You'll see one line per produced file:
@@ -33,14 +35,16 @@ architecture.en.png  (421.5 KB)
 
 ## Editing copy
 
-All locale-specific strings live in two tables at the top of `build.js`:
+All locale-specific strings live in three tables at the top of `build.js`:
 
+- `THERO` — text for `hero.<locale>.png`
 - `T2` — text for `vch-list.<locale>.png`
 - `T3` — text for `architecture.<locale>.png`
 
-`H1_SIZE` lets you per-locale tune the H1 font size if a longer
-translation overflows the canvas. The CJK locales force a `<br/>` between
-the leading phrase and the `<em>` highlight to avoid mid-word breaks.
+`H1_SIZE` (square images) and `HERO_SIZE` (hero banner) let you per-locale
+tune the title font size if a longer translation overflows the canvas.
+The CJK locales force a `<br/>` between the leading phrase and the `<em>`
+highlight to avoid mid-word breaks.
 
 ## Why a Node script in a Swift repo?
 
@@ -54,7 +58,8 @@ runtime, build, or test surface.
 ## Adding a new locale
 
 1. Add the locale code to `LOCALES`.
-2. Add an entry to `T2`, `T3`, and `H1_SIZE`.
-3. Add the matching `<img src="docs/images/vch-list.<locale>.png">` and
-   `architecture.<locale>.png` references to `README.<locale>.md`.
+2. Add an entry to `THERO`, `T2`, `T3`, `H1_SIZE`, and `HERO_SIZE`.
+3. Add the matching `<img src="docs/images/hero.<locale>.png">`,
+   `vch-list.<locale>.png`, and `architecture.<locale>.png` references
+   to `README.<locale>.md`.
 4. `node build.js`.

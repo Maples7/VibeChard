@@ -4,6 +4,10 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · **日本語** · [한국어](README.ko.md)
 
+<p align="center">
+  <a href="docs/images/hero.ja.png"><img src="docs/images/hero.ja.png" alt="vch なし: 並列の xcodebuild 3 つが build.db / モジュールキャッシュ / シミュレータを取り合う。vch あり: 各エージェントが自分専用 worktree、専用 DerivedData + 専用シミュレータクローン" width="960"></a>
+</p>
+
 > **AI コーディングエージェント向け、Apple 開発のためのタスク単位で隔離された worktree。**
 > 同じ Xcode プロジェクトに対して Claude / Codex / Copilot / Cursor を複数同時に走らせても、
 > `build.db` のロック、`DerivedData` の取り合い、シミュレーターの衝突が起きません。
@@ -11,6 +15,10 @@
 ```sh
 brew install maples7/tap/vch
 ```
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="vch new → vch list → vch state → vch exec → vch removeを 25 秒で、すべて隔離状態で" width="720">
+</p>
 
 あとはどの Apple プロジェクトでも：
 
@@ -54,6 +62,36 @@ vch remove add-paywall
 **BYO Agent (Bring Your Own Agent)** です——Claude、Codex、Copilot、Cursor、
 シェルが叩けるものなら何でも。VibeChard は AI ベンダーのラッパーでは
 *ありません*。テレメトリなし、ネットワーク通信なし、SDK 依存なし。
+
+<details>
+<summary><strong>「<code>git worktree</code> と 5 行のシェル関数で十分じゃない？」</strong></summary>
+
+<br/>
+
+もっともな疑問です——最初は私もそうしました。ソースツリーは隠離できます
+が、エージェントが worktree 内で叩く `xcodebuild` は依然として
+以下の**グローバル**な場所を参照します：
+
+- `~/Library/Developer/Xcode/DerivedData/MyApp-<hash>/`（グローバル既定値）
+- `~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/`（グローバル）
+- `~/Library/Caches/org.swift.swiftpm/`（グローバル）
+- `~/Library/Developer/CoreSimulator/Devices/<UDID>/`（グローバル）
+
+これらのいずれかが共有されている限り、並列の `xcodebuild` は競合します。
+解決策は二つ：
+
+1. **毎回正しいフラグを渡す。** すべての `xcodebuild` と `swift test` で
+   `-derivedDataPath` / `-clonedSourcePackagesDirPath` / `-resultBundlePath`
+   を忘れずに。Tuist、Fastlane、各カスタムテストスクリプト、シェル
+   アウトする `Package.swift` プラグインにも教え込む。そして *AI エージェント*
+   にも忘れないよう念を押す——絶対に忘れます。
+2. **`xcodebuild` の前に PATH シムを置く。** 誰がどんな方法で呼んでも、
+   フラグが必ず効く状態にする。
+
+VibeChard は (2) を採っています。これが「`.zshrc` のスニペット」では
+なく CLI である唯一の理由です。
+
+</details>
 
 ## インストール
 
@@ -175,6 +213,70 @@ Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的�
   プロジェクトの価値は Xcode ツールチェインへの深さにあり、広さにはありません。
 - **CI オーケストレータではありません。** ローカルのターミナルで、ディスク上の
   worktree に対して動作します。CI マトリクスは別の問題です。
+
+## よくある質問
+
+<details>
+<summary><strong>Tuist / Fastlane / xcbeautify と組み合わせて使えますか？</strong></summary>
+
+<br/>
+
+使えます。PATH シムは誰が起動しても `xcodebuild` の呼び出しをすべて
+キャッチします。Tuist が生成する実行、Fastlane の `gym` / `scan`、
+xcbeautify の上流パイプ、最終的に `xcodebuild` を叩くカスタムテスト
+スクリプト — どれもタスクごとの `-derivedDataPath` /
+`-clonedSourcePackagesDirPath` / `-resultBundlePath` が自動で注入されます。
+フラグの取り回しは不要です。
+
+</details>
+
+<details>
+<summary><strong>CocoaPods / Carthage は？</strong></summary>
+
+<br/>
+
+問題ありません。依存解決のステップは `xcodebuild` を経由しないので隔離
+不要。ビルドステップは結局 `xcodebuild` を呼ぶのでシムがキャッチします。
+`Pods/` と `Carthage/` ディレクトリはソースと同じ worktree 内にあるので、
+`git worktree` 自体で隔離されます。
+
+</details>
+
+<details>
+<summary><strong>SwiftPM のみのプロジェクト（<code>.xcodeproj</code> なし）？</strong></summary>
+
+<br/>
+
+動きます。`swift build` / `swift test` は既定で worktree ごとの `.build/`
+ディレクトリに書き込むため、シムによるフラグ注入なしで初めから隔離されて
+います。シムは透明な passthrough として `swift` をラップしますが argv は
+変更しません。
+
+</details>
+
+<details>
+<summary><strong><code>vch remove</code> 時に未コミットの変更はどうなる？</strong></summary>
+
+<br/>
+
+失われません — `vch remove` は dirty な worktree では明確なメッセージとともに
+中断します。`--force` を 1 回付けると上書きで削除（未コミット変更を
+失います）、2 回付けると未マージのコミットを持つブランチも削除できます。
+無言で破壊的に動くパスはありません。
+
+</details>
+
+<details>
+<summary><strong>AI エージェントなしでも使えますか？</strong></summary>
+
+<br/>
+
+はい。「並列のサンドボックスが欲しい」シナリオすべてに使えます：同じ機能の
+別実装を 2 つ並走させる、長い test suite を走らせている裏でメイン worktree
+でコーディングを続ける、など。CLI はエージェントに依存しません —
+いわゆる「エージェント連携」は `--exec "<your command>"` だけです。
+
+</details>
 
 ## ソースからビルド・テスト
 

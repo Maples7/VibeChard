@@ -1,12 +1,14 @@
-// Renders the 10 localized README screenshots into <repo>/docs/images/.
+// Renders the 15 localized README screenshots into <repo>/docs/images/.
 //
-// 5 locales (en, zh-CN, zh-TW, ja, ko) × 2 images each:
-//   - vch-list.<locale>.png    "what it looks like" terminal mockup
-//   - architecture.<locale>.png  isolation diagram
+// 5 locales (en, zh-CN, zh-TW, ja, ko) × 3 images each:
+//   - hero.<locale>.png         README top-of-page "without vch / with vch" banner
+//   - vch-list.<locale>.png     "what it looks like" terminal mockup
+//   - architecture.<locale>.png isolation diagram
 //
 // Run: node build.js  (after `npm install` in this directory).
 //
-// Output is 1080×1440 @2x retina (effective 2160×2880).
+// Square images are 1080×1440 @2x retina (effective 2160×2880).
+// The hero is 1920×800 @2x retina (effective 3840×1600).
 
 'use strict';
 
@@ -30,6 +32,75 @@ const H1_SIZE = {
   'zh-TW': { i2: 78, i3: 76 },
   ja:      { i2: 70, i3: 64 },
   ko:      { i2: 68, i3: 62 },
+};
+
+// Per-locale title font sizes for the wide hero banner (left/right panels).
+const HERO_SIZE = {
+  en:      { title: 36, sub: 17 },
+  'zh-CN': { title: 38, sub: 18 },
+  'zh-TW': { title: 38, sub: 18 },
+  ja:      { title: 34, sub: 17 },
+  ko:      { title: 34, sub: 17 },
+};
+
+// img-hero: "Without vch / With vch" before-and-after banner placed at the
+// very top of every README. Goal is to make a skimmer self-identify in <3s.
+const THERO = {
+  en: {
+    bad_badge: 'Without vch',
+    bad_title: '3 agents, one Xcode project',
+    bad_sub:   'parallel xcodebuild fights over global caches',
+    bad_caption: 'every agent blocks the others',
+    good_badge: 'With vch',
+    good_title: 'Each agent in its own worktree',
+    good_sub:   'isolated DerivedData · module cache · SwiftPM clone · sim',
+    good_caption: '3 agents, zero contention',
+    cmd_drop: '# drop into the isolated shell',
+  },
+  'zh-CN': {
+    bad_badge: '不用 vch',
+    bad_title: '3 个 agent 同抢一个 Xcode 项目',
+    bad_sub:   '并行 xcodebuild 抢全局缓存',
+    bad_caption: '每个 agent 都在堵别人',
+    good_badge: '用上 vch',
+    good_title: '每个 agent 各占一个 worktree',
+    good_sub:   '独立 DerivedData · 模块缓存 · SwiftPM · 模拟器',
+    good_caption: '3 个 agent，零冲突',
+    cmd_drop: '# 进入隔离的 shell',
+  },
+  'zh-TW': {
+    bad_badge: '不用 vch',
+    bad_title: '3 個 agent 共搶一個 Xcode 專案',
+    bad_sub:   '並行 xcodebuild 互搶全域快取',
+    bad_caption: '每個 agent 都在卡別人',
+    good_badge: '用上 vch',
+    good_title: '每個 agent 各佔一個 worktree',
+    good_sub:   '獨立 DerivedData · 模組快取 · SwiftPM · 模擬器',
+    good_caption: '3 個 agent、零衝突',
+    cmd_drop: '# 進入隔離的 shell',
+  },
+  ja: {
+    bad_badge: 'vch なし',
+    bad_title: '3 つのエージェントが 1 つの Xcode プロジェクトを奪い合う',
+    bad_sub:   '並列 xcodebuild がグローバルキャッシュを取り合う',
+    bad_caption: 'エージェント同士が互いをブロック',
+    good_badge: 'vch あり',
+    good_title: '各エージェントは自分専用の worktree',
+    good_sub:   '専用 DerivedData・モジュールキャッシュ・SwiftPM・Sim',
+    good_caption: '3 エージェント、衝突ゼロ',
+    cmd_drop: '# 隔離されたシェルへ',
+  },
+  ko: {
+    bad_badge: 'vch 없이',
+    bad_title: '에이전트 3 개가 같은 Xcode 프로젝트',
+    bad_sub:   '병렬 xcodebuild 가 전역 캐시를 두고 경쟁',
+    bad_caption: '에이전트끼리 서로를 막음',
+    good_badge: 'vch 와 함께',
+    good_title: '에이전트마다 자기 worktree',
+    good_sub:   '전용 DerivedData · 모듈 캐시 · SwiftPM · 시뮬레이터',
+    good_caption: '3 에이전트, 충돌 없음',
+    cmd_drop: '# 격리된 셸로 진입',
+  },
 };
 
 const T2 = {
@@ -136,6 +207,84 @@ const T3 = {
 };
 
 // ---------- HTML templates ----------
+function imgHeroHtml(locale, t, sz) {
+  // Two side-by-side panels, 1920×800. Left panel (red) = pain. Right panel
+  // (green) = vch. Designed to render readably at width=960 in the README.
+  return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"/><style>
+:root{color-scheme:dark}html,body{margin:0;padding:0}
+body{width:1920px;height:800px;background:linear-gradient(180deg,#0b1220 0%,#131c2e 100%);color:#e2e8f0;
+font-family:-apple-system,"SF Pro Text","PingFang SC","Hiragino Sans","Apple SD Gothic Neo",system-ui,sans-serif;
+display:grid;grid-template-columns:1fr 4px 1fr;box-sizing:border-box;padding:36px 44px;gap:0;-webkit-font-smoothing:antialiased}
+.panel{display:flex;flex-direction:column;padding:0 26px;min-width:0}
+.divider{background:linear-gradient(180deg,transparent 0%,rgba(148,163,184,.22) 18%,rgba(148,163,184,.22) 82%,transparent 100%)}
+.head{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.badge{display:inline-block;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.bad .badge{background:rgba(239,68,68,.14);color:#fca5a5;border:1px solid rgba(239,68,68,.45)}
+.good .badge{background:rgba(34,197,94,.14);color:#86efac;border:1px solid rgba(34,197,94,.45)}
+h2{font-size:${sz.title}px;line-height:1.2;letter-spacing:-.01em;margin:0 0 6px;font-weight:800;color:#f8fafc}
+.bad h2{color:#fecaca}
+.good h2{color:#bbf7d0}
+.sub{font-size:${sz.sub}px;color:#94a3b8;margin-bottom:16px;line-height:1.5}
+.terminal{background:#0d1117;border:1px solid #1f2937;border-radius:12px;box-shadow:0 24px 48px rgba(0,0,0,.45);overflow:hidden;display:flex;flex-direction:column;flex:1}
+.terminal-bar{height:32px;background:#161b22;display:flex;align-items:center;padding:0 12px;gap:6px;border-bottom:1px solid #21262d}
+.dot{width:11px;height:11px;border-radius:50%}.dot.r{background:#ff5f56}.dot.y{background:#ffbd2e}.dot.g{background:#27c93f}
+.terminal-title{flex:1;text-align:center;color:#6b7280;font-size:12px;font-family:"SF Mono",Menlo,Consolas,monospace}
+.terminal-body{padding:18px 22px;font-family:"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;font-size:16px;line-height:1.65;color:#c9d1d9;white-space:pre;flex:1;overflow:hidden}
+.prompt{color:#56d364}.cmd{color:#e6edf3}.cm{color:#6b7280}
+.err{color:#f87171;font-weight:700}.fail{color:#f87171;font-weight:700}
+.ok{color:#4ade80;font-weight:700}
+.name{color:#93c5fd;font-weight:600}.branch{color:#c4b5fd}.sim{color:#fbbf24}
+.header-row{color:#9ca3af;font-weight:700;letter-spacing:.04em}
+.caption{margin-top:14px;font-size:14px;color:#64748b;display:flex;align-items:center;gap:8px}
+.bad .caption-dot{width:8px;height:8px;background:#ef4444;border-radius:50%}
+.good .caption-dot{width:8px;height:8px;background:#22c55e;border-radius:50%}
+.bad .caption b{color:#fca5a5;font-weight:600}
+.good .caption b{color:#86efac;font-weight:600}
+</style></head><body>
+<div class="panel bad">
+  <div class="head"><span class="badge">${t.bad_badge}</span></div>
+  <h2>${t.bad_title}</h2>
+  <div class="sub">${t.bad_sub}</div>
+  <div class="terminal">
+    <div class="terminal-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="terminal-title">~/src/MyApp — zsh</span></div>
+<div class="terminal-body"><span class="prompt">$</span> <span class="cmd">xcodebuild build</span>          <span class="cm"># claude</span>
+<span class="prompt">$</span> <span class="cmd">xcodebuild build</span>          <span class="cm"># codex (other tab)</span>
+
+<span class="err">error:</span> accessing build database
+  <span class="err">database is locked</span>
+  Possibly there are two concurrent
+  builds running in the same filesystem
+  location.
+<span class="err">error:</span> PCH was compiled with module
+  cache path '...ModuleCache.noindex/...'
+  but the path does not exist
+<span class="err">error:</span> Unable to install "MyApp"
+  (domain=com.apple.CoreSimulator)</div>
+  </div>
+  <div class="caption"><span class="caption-dot"></span><b>${t.bad_caption}</b></div>
+</div>
+<div class="divider"></div>
+<div class="panel good">
+  <div class="head"><span class="badge">${t.good_badge}</span></div>
+  <h2>${t.good_title}</h2>
+  <div class="sub">${t.good_sub}</div>
+  <div class="terminal">
+    <div class="terminal-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="terminal-title">~/src/MyApp — zsh</span></div>
+<div class="terminal-body"><span class="prompt">$</span> <span class="cmd">vch list</span>
+
+<span class="header-row">NAME           BRANCH               SIM           BUILD</span>
+<span class="name">add-paywall</span>    <span class="branch">agent/add-paywall</span>    <span class="sim">iPhone 16</span>     <span class="ok">ok</span>
+<span class="name">fix-toast</span>      <span class="branch">agent/fix-toast</span>      <span class="sim">iPhone 16</span>     <span class="ok">ok</span>
+<span class="name">refactor</span>       <span class="branch">agent/refactor</span>       <span class="sim">iPhone 15 Pro</span> <span class="ok">ok</span>
+
+<span class="prompt">$</span> <span class="cmd">vch add-paywall</span>   <span class="cm">${t.cmd_drop}</span>
+<span class="prompt">$</span> <span style="color:#fbbf24;">▍</span></div>
+  </div>
+  <div class="caption"><span class="caption-dot"></span><b>${t.good_caption}</b></div>
+</div>
+</body></html>`;
+}
+
 function img2Html(locale, t, h1Size) {
   return `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"/><style>
 :root{color-scheme:dark}html,body{margin:0;padding:0}
@@ -246,30 +395,54 @@ h1 em{font-style:normal;color:#60a5fa}
 (async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vch-render-'));
 
-  const jobs = [];
+  const squareJobs = [];
+  const heroJobs = [];
   for (const loc of LOCALES) {
     const a = path.join(tmp, `vch-list.${loc}.html`);
     const b = path.join(tmp, `architecture.${loc}.html`);
+    const h = path.join(tmp, `hero.${loc}.html`);
     fs.writeFileSync(a, img2Html(loc, T2[loc], H1_SIZE[loc].i2));
     fs.writeFileSync(b, img3Html(loc, T3[loc], H1_SIZE[loc].i3));
-    jobs.push({ src: a, out: path.join(OUT_DIR, `vch-list.${loc}.png`) });
-    jobs.push({ src: b, out: path.join(OUT_DIR, `architecture.${loc}.png`) });
+    fs.writeFileSync(h, imgHeroHtml(loc, THERO[loc], HERO_SIZE[loc]));
+    squareJobs.push({ src: a, out: path.join(OUT_DIR, `vch-list.${loc}.png`) });
+    squareJobs.push({ src: b, out: path.join(OUT_DIR, `architecture.${loc}.png`) });
+    heroJobs.push({ src: h, out: path.join(OUT_DIR, `hero.${loc}.png`) });
   }
 
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({
+
+  // Square 1080×1440 viewport for vch-list + architecture.
+  const ctxSquare = await browser.newContext({
     viewport: { width: 1080, height: 1440 },
     deviceScaleFactor: 2,
   });
-  const page = await ctx.newPage();
-  for (const j of jobs) {
-    await page.goto('file://' + j.src);
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: j.out, fullPage: false });
+  const pageSquare = await ctxSquare.newPage();
+  for (const j of squareJobs) {
+    await pageSquare.goto('file://' + j.src);
+    await pageSquare.waitForLoadState('networkidle');
+    await pageSquare.waitForTimeout(200);
+    await pageSquare.screenshot({ path: j.out, fullPage: false });
     const sz = (fs.statSync(j.out).size / 1024).toFixed(1);
     console.log(`${path.basename(j.out)}  (${sz} KB)`);
   }
+  await ctxSquare.close();
+
+  // Wide 1920×800 viewport for the hero banner.
+  const ctxHero = await browser.newContext({
+    viewport: { width: 1920, height: 800 },
+    deviceScaleFactor: 2,
+  });
+  const pageHero = await ctxHero.newPage();
+  for (const j of heroJobs) {
+    await pageHero.goto('file://' + j.src);
+    await pageHero.waitForLoadState('networkidle');
+    await pageHero.waitForTimeout(200);
+    await pageHero.screenshot({ path: j.out, fullPage: false });
+    const sz = (fs.statSync(j.out).size / 1024).toFixed(1);
+    console.log(`${path.basename(j.out)}  (${sz} KB)`);
+  }
+  await ctxHero.close();
+
   await browser.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 })().catch((e) => { console.error(e); process.exit(1); });
