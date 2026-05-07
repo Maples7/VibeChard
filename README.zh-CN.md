@@ -295,7 +295,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 116 个测试，M 系芯片上约 9 秒
+swift test --parallel             # 284 个测试，M 系芯片上约 41 秒
 ```
 
 CI 在每次 push 上跑相同的命令，外加一个 shim 的烟雾测试：
