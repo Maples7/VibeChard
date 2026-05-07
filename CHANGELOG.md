@@ -9,6 +9,24 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch land <name>` merges a task branch back into its recorded base
+  branch and removes the task worktree in one command. Default
+  strategy is `--no-ff`; `--ff-only` and `--squash` are also
+  available. Pre-flight refuses to merge when (a) the main worktree's
+  HEAD is not on `--into`, (b) the task branch is not strictly ahead
+  of `--into` (no-op merge), or (c) the main worktree has uncommitted
+  changes whose paths intersect the task branch's diff (pass
+  `--allow-dirty` to override; non-overlapping dirty state is fine).
+  The default merge commit message is `Merge agent/<name>: <last
+  non-merge subject>`; `--message` overrides. `--keep` skips the
+  auto-rm. `--dry-run` prints the planned merge without modifying
+  any branches. Reserved-name list grows to include `land`. Closes
+  #7.
+- `vch new` now records the main worktree's branch as
+  `state.baseBranch` so `vch land` can default `--into` correctly.
+  Optional field — older `state.json` files (without `baseBranch`)
+  load fine; `vch land` falls back to the main worktree's current
+  branch in that case.
 - `vch test` now produces a concise summary by default — at most a
   few dozen lines for a passing 100-test run, with each failing test
   expanded inline as `✗ Suite/testName` plus its file:line and
@@ -78,6 +96,26 @@ The English README is the source of truth; localized READMEs may lag.
   Surfaces silent runtime drift for free. Part of #11.
 
 ### Tests
+- New `LandPlannerTests` (16) cover every branch of the `vch land`
+  pre-flight decision tree: explicit `--into`, recorded-base-branch
+  fallback, current-main fallback, no-op detection, overlap refusal,
+  `--allow-dirty` bypass, default vs user-supplied message, dry-run
+  + `--keep` flag plumbing, and sorted overlap path output. New
+  `LandServiceIntegrationTests` (15) exercise the same scenarios
+  end-to-end against a real `/usr/bin/git` + temp repo: clean merge,
+  `--keep`, `--dry-run`, `--squash`, `--ff-only` (success +
+  divergent-history refusal), custom message, no-op refusal,
+  overlapping-dirty refusal, non-overlapping dirty allowed,
+  `--allow-dirty` bypass, missing branch fallback, wrong main branch,
+  explicit `--into`, and `state.baseBranch` persistence by
+  `vch new`. `PorcelainParserTests` gained 9 cases for the new
+  `parseStatusPorcelainZ` parser (modified, untracked, rename + copy
+  two-token entries, paths with spaces, defensive guards).
+  `TaskStateTests` gained 2 cases pinning `state.baseBranch`
+  backward-compatible decoding (legacy state.json without the field
+  loads with `baseBranch == nil`) and round-trip with the field set.
+  `TaskNameTests` extended for the new `land` reservation. Total:
+  229 → 271.
 - New `TestOutputSummarizerTests` (11) covers the XCTest log parser:
   passing run, failure with file:line + assertion message, failure
   with `path:line:column` form, crash without preceding error line,

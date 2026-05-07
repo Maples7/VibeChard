@@ -75,6 +75,52 @@ public protocol GitClient: Sendable {
     /// matched by `.gitignore` / `.git/info/exclude` / global excludes.
     /// Used by `vch new --copy-untracked`.
     func listUntrackedFiles(worktreeCwd: String) throws -> [String]
+
+    /// `git symbolic-ref --short -q HEAD`. Returns the branch name the
+    /// worktree's HEAD currently points at, or `nil` for a detached
+    /// HEAD. Never throws on detached HEAD — only on hard git failures.
+    /// Used by `vch new` to record the base branch and by `vch land`
+    /// to verify the user is on the expected `--into` branch. (#7)
+    func currentBranch(repoCwd: String) throws -> String?
+
+    /// `git diff --name-only <base>..<head>` parsed into repo-relative
+    /// paths. Used by `vch land` to compute the merge's footprint and
+    /// to detect overlap with a dirty main worktree. (#7)
+    func diffNamesOnly(repoCwd: String, base: String, head: String) throws -> [String]
+
+    /// `git rev-list --count <base>..<head>` — number of commits on
+    /// `head` that aren't yet on `base`. `0` means the merge would be
+    /// a no-op. (#7)
+    func revListCount(repoCwd: String, base: String, head: String) throws -> Int
+
+    /// Subject line of the most recent non-merge commit on `branch`,
+    /// via `git log --no-merges --format=%s -n 1 <branch>`. Returns
+    /// `nil` if the branch has no non-merge commits at all. Used to
+    /// build `vch land`'s default merge commit message. (#7)
+    func lastNonMergeSubject(repoCwd: String, branch: String) throws -> String?
+
+    /// Repo-relative paths reported as changed by `git status
+    /// --porcelain` (modified, added, deleted, renamed, untracked).
+    /// Used by `vch land` to detect overlap between a dirty main
+    /// worktree and the task branch's diff. (#7)
+    func statusPaths(worktreeCwd: String) throws -> [String]
+
+    /// Run a merge in `repoCwd` with the requested mode. Throws
+    /// `externalCommandFailed` on git failure (conflict, refused FF,
+    /// dirty index, etc.). For `.squash`, runs `git merge --squash`
+    /// followed by `git commit -m <message>`. (#7)
+    func merge(repoCwd: String, branch: String, mode: GitMergeMode, message: String) throws
+}
+
+/// Merge strategy for `GitClient.merge`. Mirrors `vch land`'s
+/// `--no-ff|--ff-only|--squash` flags. (#7)
+public enum GitMergeMode: String, Sendable, Equatable {
+    /// `git merge --no-ff -m <msg> <branch>` — always create a merge commit.
+    case noFF
+    /// `git merge --ff-only <branch>` — refuse if a merge commit would be needed.
+    case ffOnly
+    /// `git merge --squash <branch>` then `git commit -m <msg>`.
+    case squash
 }
 
 // MARK: - Real implementation
@@ -235,6 +281,104 @@ public struct DiskGitClient: GitClient {
             .map(String.init)
     }
 
+    public func currentBranch(repoCwd: String) throws -> String? {
+        let result = try runner.run(
+            gitPath,
+            args: ["symbolic-ref", "--short", "-q", "HEAD"],
+            cwd: repoCwd
+        )
+        // 0 = on a branch (stdout is the branch name), 1 = detached HEAD,
+        // anything else is a real failure.
+        switch result.exitCode {
+        case 0:
+            let name = result.stdoutTrimmed
+            return name.isEmpty ? nil : name
+        case 1:
+            return nil
+        default:
+            throw VibeChardError.externalCommandFailed(
+                cmd: "git symbolic-ref --short -q HEAD",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+    }
+
+    public func diffNamesOnly(repoCwd: String, base: String, head: String) throws -> [String] {
+        let result = try runner.run(
+            gitPath,
+            args: ["diff", "--name-only", "-z", "\(base)..\(head)"],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git diff --name-only -z \(base)..\(head)")
+        return result.stdout
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
+    }
+
+    public func revListCount(repoCwd: String, base: String, head: String) throws -> Int {
+        let result = try runner.run(
+            gitPath,
+            args: ["rev-list", "--count", "\(base)..\(head)"],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git rev-list --count \(base)..\(head)")
+        return Int(result.stdoutTrimmed) ?? 0
+    }
+
+    public func lastNonMergeSubject(repoCwd: String, branch: String) throws -> String? {
+        let result = try runner.run(
+            gitPath,
+            args: ["log", "--no-merges", "--format=%s", "-n", "1", branch],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git log --no-merges --format=%s -n 1 \(branch)")
+        let subject = result.stdoutTrimmed
+        return subject.isEmpty ? nil : subject
+    }
+
+    public func statusPaths(worktreeCwd: String) throws -> [String] {
+        let result = try runner.run(
+            gitPath,
+            args: ["status", "--porcelain", "-z"],
+            cwd: worktreeCwd
+        )
+        try requireSuccess(result, label: "git status --porcelain -z")
+        return PorcelainParser.parseStatusPorcelainZ(result.stdout)
+    }
+
+    public func merge(repoCwd: String, branch: String, mode: GitMergeMode, message: String) throws {
+        switch mode {
+        case .noFF:
+            let result = try runner.run(
+                gitPath,
+                args: ["merge", "--no-ff", "-m", message, branch],
+                cwd: repoCwd
+            )
+            try requireSuccess(result, label: "git merge --no-ff -m '<msg>' \(branch)")
+        case .ffOnly:
+            let result = try runner.run(
+                gitPath,
+                args: ["merge", "--ff-only", branch],
+                cwd: repoCwd
+            )
+            try requireSuccess(result, label: "git merge --ff-only \(branch)")
+        case .squash:
+            let mergeResult = try runner.run(
+                gitPath,
+                args: ["merge", "--squash", branch],
+                cwd: repoCwd
+            )
+            try requireSuccess(mergeResult, label: "git merge --squash \(branch)")
+            let commitResult = try runner.run(
+                gitPath,
+                args: ["commit", "-m", message],
+                cwd: repoCwd
+            )
+            try requireSuccess(commitResult, label: "git commit -m '<msg>'")
+        }
+    }
+
     private func requireSuccess(_ result: ProcessResult, label: String) throws {
         if !result.succeeded {
             throw VibeChardError.externalCommandFailed(
@@ -306,5 +450,40 @@ public enum PorcelainParser {
     private static func stripRefsHeads(_ ref: String) -> String {
         let prefix = "refs/heads/"
         return ref.hasPrefix(prefix) ? String(ref.dropFirst(prefix.count)) : ref
+    }
+
+    /// Parser for `git status --porcelain -z`. Returns every repo-
+    /// relative path mentioned by the output (both halves of a rename,
+    /// untracked entries, modified entries). Public so unit tests can
+    /// exercise the parser without spawning git. (#7)
+    ///
+    /// `-z` format reference (`man git-status`):
+    /// each entry is `XY SP <path>\0`; for renames/copies (`XY` starts
+    /// with `R` or `C`), the entry's path is followed by a second
+    /// NUL-terminated token containing the original name.
+    public static func parseStatusPorcelainZ(_ output: String) -> [String] {
+        var paths: [String] = []
+        let tokens = output
+            .split(separator: "\0", omittingEmptySubsequences: false)
+            .map(String.init)
+        var i = 0
+        while i < tokens.count {
+            let raw = tokens[i]
+            if raw.isEmpty { i += 1; continue }
+            // Must be at least "XY <path>" (3 chars: "XY " + 1).
+            guard raw.count >= 4 else { i += 1; continue }
+            let xy = String(raw.prefix(2))
+            let path = String(raw.dropFirst(3))
+            if !path.isEmpty { paths.append(path) }
+            let isRename = xy.contains("R") || xy.contains("C")
+            if isRename, i + 1 < tokens.count {
+                let oldPath = tokens[i + 1]
+                if !oldPath.isEmpty { paths.append(oldPath) }
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        return paths
     }
 }

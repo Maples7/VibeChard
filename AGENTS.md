@@ -39,7 +39,8 @@ under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
    added Q-amend post-v0.1.1. `state` shows a task's persisted state and
    `completions` installs shell completions; both added Q-amend post-v0.1.1.
    `logs` prints the firehose log captured during the most recent
-   `vch test` run (#9, post-v0.1.2).
+   `vch test` run (#9, post-v0.1.2). `land` merges a task branch back
+   into its recorded base and removes the worktree (#7, post-v0.1.2).
 9. **Don't touch the user's `~/Library/Developer/`.** Every byte vch writes
    must land inside the worktree's `.vch/` or `.agent-build/`. Do not
    regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`

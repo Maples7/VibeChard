@@ -8,23 +8,33 @@ struct VchCLI: ParsableCommand {
         commandName: "vch",
         abstract: VibeChard.tagline,
         version: VibeChard.version,
+        // Order here drives `vch --help`. Group by user workflow:
+        // create → discover → inspect → run → build/test → graduate
+        // → maintenance → meta. Most users will encounter the list
+        // top-down, so high-frequency commands lead.
         subcommands: [
-            VersionCommand.self,
+            // Lifecycle: spawn, list, inspect, locate, open.
             NewCommand.self,
             ListCommand.self,
-            PathCommand.self,
             StateCommand.self,
-            RemoveCommand.self,
-            RepairCommand.self,
-            ExecCommand.self,
-            ShellEnvCommand.self,
+            PathCommand.self,
             OpenCommand.self,
+            // Run things inside a task worktree.
+            ExecCommand.self,
             BuildCommand.self,
             TestCommand.self,
             LogsCommand.self,
             SimCommand.self,
+            // Graduate a task: merge + cleanup, or just remove.
+            LandCommand.self,
+            RemoveCommand.self,
+            // Maintenance / diagnostics.
+            RepairCommand.self,
             DoctorCommand.self,
+            // Shell integration + meta.
+            ShellEnvCommand.self,
             CompletionsCommand.self,
+            VersionCommand.self,
         ],
         defaultSubcommand: nil
     )
