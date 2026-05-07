@@ -8,6 +8,56 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-07
+
+### Added
+- ANSI colorization for `vch list` and `vch state` so the CLI matches
+  the marketing screenshots in `docs/images/`. Headers render gray;
+  `NAME` is bright blue + bold; `BRANCH` is bright magenta; `SIM` is
+  bright yellow (dim when `-`); `BUILD ok/fail` is bold green / red;
+  `BASE` / `CREATED` placeholders are dim. `vch state` additionally
+  colors the last build / test status words and the `exit N` token
+  in last exec (green when N==0, red otherwise). Policy lives in
+  `VibeChardCore/ANSI.swift`: `NO_COLOR` (no-color.org) always wins;
+  `FORCE_COLOR` / `CLICOLOR_FORCE` opt in even without a TTY (handy
+  for `| less -R`); otherwise colorize iff stdout is a TTY. Column
+  widths are computed on the *uncolored* text and padding is applied
+  before wrapping in ANSI so alignment stays exact regardless of
+  escape-code byte length. Styles use 8/16-color bright variants so
+  they compose with whatever theme the user's terminal already has.
+
+### Fixed
+- `vch list -v` and `vch state` now format `CREATED` and last-action
+  timestamps in the user's local time zone with explicit offset
+  (e.g. `2026-05-07T10:22:17+08:00`) instead of UTC `Z` notation —
+  still a valid ISO 8601 string, but no more mental conversion every
+  time you read the table. JSON output (`vch list --json`,
+  `vch state --json`) intentionally keeps UTC via `JSONEncoder`'s
+  `.iso8601` strategy: machine consumers shouldn't drift with the
+  user's locale.
+
+### Docs
+- Status badges (release, CI, license, platform, Swift) added to the
+  top of all five READMEs.
+- Localized `docs/images/vch-list.<locale>.png` and
+  `docs/images/architecture.<locale>.png` screenshots for en / ja /
+  ko / zh-CN / zh-TW, embedded into each README.
+- Renderer that produced the screenshots committed under
+  `scripts/render-docs-images/` (see its `README.md`) so future
+  contributors can regenerate the assets deterministically.
+
+### Pristine output paths (unchanged)
+- `--json`, `vch path`, `vch shellenv`, `vch completions install
+  --print` emit zero ANSI bytes regardless of TTY / `FORCE_COLOR`.
+  Scripts that consume them (`$(vch path foo)`,
+  `eval "$(vch shellenv)"`, etc.) keep working.
+
+### Tests
+- 14 new `ANSITests` lock down the policy matrix (`NO_COLOR` vs
+  `FORCE_COLOR=0/1/false/empty` vs `CLICOLOR_FORCE` vs
+  default-follows-TTY) and the exact SGR byte sequences emitted per
+  style. Full suite: 185/185 passing.
+
 ## [0.1.2] - 2026-05-06
 
 ### Added
@@ -161,6 +211,8 @@ Initial public release. Scope is the v1 plan locked in
 - Three fixed targets: `VibeChardCore`, `vch`, `vch-xcodebuild-shim`.
 - No config files in v1; per-worktree state lives in `.vch/state.json`.
 
-[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/Maples7/VibeChard/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/Maples7/VibeChard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Maples7/VibeChard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Maples7/VibeChard/releases/tag/v0.1.0
