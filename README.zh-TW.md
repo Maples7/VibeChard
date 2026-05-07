@@ -36,7 +36,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.zh-TW.png" alt="vch list 輸出：3 個 agent 任務並行，2 個 ok 1 個 fail，以及 vch state 詳情" width="720">
 </p>
 
-> **狀態：alpha (v0.1.0)。** CLI 介面已大致穩定但尚未凍結；
+> **狀態：alpha (v0.1.3)。** CLI 介面已大致穩定但尚未凍結；
 > `.vch/state.json` 的 schema 之後還可能新增欄位。需要穩定請固定 tag。
 
 ## 為什麼要單獨做一個 CLI？
