@@ -155,16 +155,49 @@ struct ListCommand: ParsableCommand {
                 ]
             }
         }
+        // Width is computed on the *uncolored* text. Colors are
+        // applied AFTER padding so ANSI escape codes don't break
+        // alignment (their byte length is invisible to the terminal).
         let widths: [Int] = (0..<header.count).map { col in
             max(header[col].count, rows.map { $0[col].count }.max() ?? 0)
         }
-        func format(_ row: [String]) -> String {
+        let colorize = ANSI.defaultEnabledForStdout()
+        func paint(_ raw: String, padded: String, column: String, isHeader: Bool) -> String {
+            if isHeader {
+                return ANSI.wrap(padded, .header, enabled: colorize)
+            }
+            switch column {
+            case "NAME":
+                return ANSI.wrap(padded, .name, enabled: colorize)
+            case "BRANCH":
+                return ANSI.wrap(padded, .branch, enabled: colorize)
+            case "SIM":
+                return ANSI.wrap(padded, raw == "-" ? .placeholder : .sim, enabled: colorize)
+            case "BUILD":
+                switch raw {
+                case "ok":   return ANSI.wrap(padded, .ok, enabled: colorize)
+                case "fail": return ANSI.wrap(padded, .fail, enabled: colorize)
+                default:     return ANSI.wrap(padded, .placeholder, enabled: colorize)
+                }
+            case "BASE", "CREATED":
+                if raw == "-" {
+                    return ANSI.wrap(padded, .placeholder, enabled: colorize)
+                }
+                return padded
+            default:
+                return padded
+            }
+        }
+        func format(_ row: [String], isHeader: Bool) -> String {
             row.enumerated()
-                .map { (i, cell) in cell.padding(toLength: widths[i], withPad: " ", startingAt: 0) }
+                .map { (i, cell) in
+                    let padded = cell.padding(toLength: widths[i], withPad: " ", startingAt: 0)
+                    return paint(cell, padded: padded, column: header[i], isHeader: isHeader)
+                }
                 .joined(separator: "  ")
         }
-        print(format(header))
-        for row in rows { print(format(row)) }
+        print(format(header, isHeader: true))
+        for row in rows { print(format(row, isHeader: false)) }
     }
 
     private func humanDate(_ date: Date) -> String {
@@ -276,6 +309,11 @@ struct StateCommand: ParsableCommand {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         f.timeZone = .current
+        let colorize = ANSI.defaultEnabledForStdout()
+        func status(_ ok: Bool) -> String {
+            ok ? ANSI.wrap("ok", .ok, enabled: colorize)
+               : ANSI.wrap("fail", .fail, enabled: colorize)
+        }
         var lines: [(String, String)] = [
             ("name", s.name),
             ("branch", s.branch),
@@ -291,16 +329,16 @@ struct StateCommand: ParsableCommand {
             lines.append(("sim", "\(sim.name) (\(sim.cloneUDID))"))
         }
         if let b = s.lastBuild {
-            let status = b.success ? "ok" : "fail"
-            lines.append(("last build", "\(status) at \(f.string(from: b.finishedAt)) (\(formatDuration(b.durationSeconds)))"))
+            lines.append(("last build", "\(status(b.success)) at \(f.string(from: b.finishedAt)) (\(formatDuration(b.durationSeconds)))"))
         }
         if let t = s.lastTest {
-            let status = t.success ? "ok" : "fail"
-            lines.append(("last test", "\(status) at \(f.string(from: t.finishedAt)) (\(formatDuration(t.durationSeconds)))"))
+            lines.append(("last test", "\(status(t.success)) at \(f.string(from: t.finishedAt)) (\(formatDuration(t.durationSeconds)))"))
         }
         if let e = s.lastExec {
             if let exit = e.exitCode, let ended = e.exitedAt {
-                lines.append(("last exec", "\(e.command) → exit \(exit) at \(f.string(from: ended))"))
+                let exitStyle: ANSI.Style = (exit == 0) ? .ok : .fail
+                let exitLabel = ANSI.wrap("exit \(exit)", exitStyle, enabled: colorize)
+                lines.append(("last exec", "\(e.command) → \(exitLabel) at \(f.string(from: ended))"))
             } else {
                 lines.append(("last exec", "\(e.command) (started \(f.string(from: e.startedAt)))"))
             }
