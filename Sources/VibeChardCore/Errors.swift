@@ -28,6 +28,26 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// user runs `vch logs <name>` before the task has executed any
     /// build / test through vch yet. (#9)
     case logFileMissing(path: String, hint: String)
+    /// `vch land` aborted because the main worktree's HEAD is not on
+    /// the requested `--into` branch. (#7)
+    case landMainNotOnInto(currentBranch: String?, want: String)
+    /// `vch land` aborted because the main worktree has uncommitted
+    /// changes whose paths intersect the task branch's diff. Pass
+    /// `--allow-dirty` to override. (#7)
+    case landMergeOverlap(paths: [String])
+    /// `vch land` aborted because the task branch is not strictly
+    /// ahead of the merge target — the merge would be a no-op. (#7)
+    case landNoOp(taskBranch: String, into: String)
+    /// `vch land` could not figure out which branch to merge into:
+    /// nothing was recorded in `state.json` and the main worktree is
+    /// in a detached HEAD. Pass `--into <branch>` explicitly. (#7)
+    case landNoIntoInferred(taskName: String)
+    /// `vch land` could not find the task's branch — it was deleted
+    /// outside vch, or `state.json` is stale. (#7)
+    case landBranchMissing(branch: String)
+    /// `vch land` was invoked with more than one strategy flag among
+    /// `--no-ff`, `--ff-only`, `--squash`. (#7)
+    case landConflictingStrategies
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -64,6 +84,20 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "worktree is held open by \(holders.count) process\(holders.count == 1 ? "" : "es") at \(path) — close the editor / shell or pass --force:\n\(body)"
         case let .logFileMissing(path, hint):
             return "no log file at \(path) — \(hint)"
+        case let .landMainNotOnInto(currentBranch, want):
+            let cur = currentBranch.map { "'\($0)'" } ?? "(detached HEAD)"
+            return "refusing to land: main worktree is on \(cur), not '\(want)' (use `git switch \(want)` first or pass --into)"
+        case let .landMergeOverlap(paths):
+            let listing = paths.map { "  \($0)" }.joined(separator: "\n")
+            return "refusing to land: \(paths.count) file\(paths.count == 1 ? "" : "s") in main worktree overlap the task branch's diff (stash or commit them, or pass --allow-dirty):\n\(listing)"
+        case let .landNoOp(taskBranch, into):
+            return "refusing to land: '\(taskBranch)' has no commits ahead of '\(into)' (nothing to merge)"
+        case let .landNoIntoInferred(taskName):
+            return "refusing to land: cannot infer --into for task '\(taskName)' (no recorded base branch and main worktree has detached HEAD); pass --into <branch>"
+        case let .landBranchMissing(branch):
+            return "refusing to land: branch '\(branch)' does not exist (was it deleted outside vch?)"
+        case .landConflictingStrategies:
+            return "--no-ff, --ff-only, --squash are mutually exclusive"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"

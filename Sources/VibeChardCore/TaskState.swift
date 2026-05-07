@@ -19,6 +19,14 @@ public struct TaskState: Codable, Equatable, Sendable {
     public let createdAt: Date
     public let baseRef: String
 
+    /// Branch the main worktree was on at `vch new` time, recorded so
+    /// `vch land` can default `--into` to the right place even after
+    /// the user moves around. Optional for backward compatibility with
+    /// state.json files written by vch ≤ v0.1.x. When `nil` (or when
+    /// the recorded branch no longer exists), `vch land` falls back
+    /// to the main worktree's current branch. (#7)
+    public var baseBranch: String?
+
     /// Default scheme guess — captured at `vch new` from the project, may
     /// be `nil` if VibeChard cannot infer one. Used as the default for
     /// `vch build` / `vch test` (M4).
@@ -42,6 +50,7 @@ public struct TaskState: Codable, Equatable, Sendable {
         branch: String,
         createdAt: Date,
         baseRef: String,
+        baseBranch: String? = nil,
         scheme: String? = nil,
         simulator: SimulatorRecord? = nil,
         lastBuild: BuildRecord? = nil,
@@ -53,6 +62,7 @@ public struct TaskState: Codable, Equatable, Sendable {
         self.branch = branch
         self.createdAt = createdAt
         self.baseRef = baseRef
+        self.baseBranch = baseBranch
         self.scheme = scheme
         self.simulator = simulator
         self.lastBuild = lastBuild

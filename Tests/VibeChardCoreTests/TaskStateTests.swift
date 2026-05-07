@@ -75,4 +75,38 @@ final class TaskStateTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - baseBranch (#7)
+
+    func testParsesLegacyStateWithoutBaseBranch() throws {
+        // state.json files written by vch ≤ v0.1.x lack the
+        // `baseBranch` field. They must still decode cleanly so the
+        // upgrade path is silent — `vch land` will fall back to the
+        // current main-worktree branch when this is nil.
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "foo",
+          "branch": "agent/foo",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "abc1234"
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNil(state.baseBranch)
+        XCTAssertEqual(state.name, "foo")
+    }
+
+    func testRoundtripsBaseBranch() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let original = TaskState(
+            name: "foo",
+            branch: "agent/foo",
+            createdAt: now,
+            baseRef: "abc1234",
+            baseBranch: "develop"
+        )
+        let restored = try TaskState.parse(try original.jsonData())
+        XCTAssertEqual(restored.baseBranch, "develop")
+    }
 }

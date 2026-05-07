@@ -198,4 +198,52 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
         listUntrackedCalls.append(worktreeCwd)
         return untrackedFilesByCwd[worktreeCwd] ?? []
     }
+
+    // MARK: - Land (#7) protocol surface
+
+    /// Branch that `currentBranch` should return for a given cwd.
+    /// Defaults to nil (detached HEAD).
+    var currentBranchByCwd: [String: String?] = [:]
+    /// Diff outputs keyed by `"\(base)..\(head)"`.
+    var diffNamesByRange: [String: [String]] = [:]
+    /// Ahead counts keyed by `"\(base)..\(head)"`.
+    var revListCountByRange: [String: Int] = [:]
+    /// Subjects keyed by branch.
+    var lastSubjectByBranch: [String: String] = [:]
+    /// Paths returned by `statusPaths` keyed by worktree cwd.
+    var statusPathsByCwd: [String: [String]] = [:]
+    /// Recorded `merge` calls.
+    var mergeCalls: [(repoCwd: String, branch: String, mode: GitMergeMode, message: String)] = []
+    /// If non-nil, `merge` will throw this error.
+    var mergeError: VibeChardError?
+
+    func currentBranch(repoCwd: String) throws -> String? {
+        if let entry = currentBranchByCwd[repoCwd] {
+            return entry
+        }
+        return nil
+    }
+
+    func diffNamesOnly(repoCwd: String, base: String, head: String) throws -> [String] {
+        diffNamesByRange["\(base)..\(head)"] ?? []
+    }
+
+    func revListCount(repoCwd: String, base: String, head: String) throws -> Int {
+        revListCountByRange["\(base)..\(head)"] ?? 0
+    }
+
+    func lastNonMergeSubject(repoCwd: String, branch: String) throws -> String? {
+        lastSubjectByBranch[branch]
+    }
+
+    func statusPaths(worktreeCwd: String) throws -> [String] {
+        statusPathsByCwd[worktreeCwd] ?? []
+    }
+
+    func merge(repoCwd: String, branch: String, mode: GitMergeMode, message: String) throws {
+        if let error = mergeError {
+            throw error
+        }
+        mergeCalls.append((repoCwd, branch, mode, message))
+    }
 }

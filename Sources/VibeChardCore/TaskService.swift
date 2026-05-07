@@ -105,13 +105,18 @@ public struct TaskService: Sendable {
         // something stable even if the user later moves HEAD.
         let baseShortSHA = (try? git.revParseHEADShort(repoCwd: wtPath)) ?? resolvedBase
 
+        // Record `baseBranch` so `vch land` can default `--into`
+        // back to the branch we forked from. May be nil for detached HEAD. (#7)
+        let baseBranch = (try? git.currentBranch(repoCwd: workspace.mainWorktreePath)) ?? nil
+
         try fs.createDirectory(at: workspace.vchDir(for: task))
 
         let state = TaskState(
             name: task.raw,
             branch: task.branchName,
             createdAt: clock.now(),
-            baseRef: baseShortSHA
+            baseRef: baseShortSHA,
+            baseBranch: baseBranch
         )
         try fs.writeFileAtomic(state.jsonData(), to: workspace.statePath(for: task))
 

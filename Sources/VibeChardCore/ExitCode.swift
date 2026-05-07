@@ -19,7 +19,7 @@ public extension VibeChardError {
     /// Map an error to its conventional exit code.
     var exitCode: Int32 {
         switch self {
-        case .invalidTaskName, .missingArgument:
+        case .invalidTaskName, .missingArgument, .landConflictingStrategies:
             return ExitCode.usage
         case .worktreeAlreadyExists,
              .taskNotFound,
@@ -32,7 +32,12 @@ public extension VibeChardError {
              .simulatorTemplateNotFound,
              .simulatorAlreadyBound,
              .worktreeBusy,
-             .logFileMissing:
+             .logFileMissing,
+             .landMainNotOnInto,
+             .landMergeOverlap,
+             .landNoOp,
+             .landNoIntoInferred,
+             .landBranchMissing:
             return ExitCode.business
         case .externalCommandFailed:
             return ExitCode.external
