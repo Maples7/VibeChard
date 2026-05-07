@@ -168,8 +168,12 @@ struct ListCommand: ParsableCommand {
     }
 
     private func humanDate(_ date: Date) -> String {
+        // Local time + offset (e.g. 2026-05-07T10:22:17+08:00) so users
+        // don't have to mentally convert UTC. Still a valid ISO 8601
+        // string. JSON output keeps UTC via JSONEncoder's .iso8601.
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
+        f.timeZone = .current
         return f.string(from: date)
     }
 
@@ -267,8 +271,11 @@ struct StateCommand: ParsableCommand {
     }
 
     private func printHumanReadable(_ s: TaskState, worktreePath: String) {
+        // Local time + offset for human-readable output. Use --json for
+        // a machine-readable UTC dump.
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
+        f.timeZone = .current
         var lines: [(String, String)] = [
             ("name", s.name),
             ("branch", s.branch),
