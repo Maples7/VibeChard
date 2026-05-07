@@ -6,6 +6,22 @@ import Foundation
 /// injection set (M2). Tests deliberately mirror those flag names.
 public enum BuildPlanner {
 
+    /// Architecture of the host vch is running on. Pinned into
+    /// `-destination` so xcodebuild doesn't print the noisy
+    /// "Using the first of multiple matching destinations" warning
+    /// when both arm64 and x86_64 entries match the cloned simulator
+    /// (#5). v1 ships arm64-only, but a `#elseif` hook is kept so a
+    /// future universal binary still does the right thing.
+    public static let hostArch: String = {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x86_64"
+        #else
+        return "arm64"
+        #endif
+    }()
+
     /// Subset of xcodebuild's CLI surface vch is opinionated about.
     /// Anything else the user wants flows through `extraArgs`.
     public struct Inputs: Equatable, Sendable {
@@ -67,12 +83,15 @@ public enum BuildPlanner {
         }
         if let udid = input.destinationUDID {
             // M5 path — bound to a per-task `xcrun simctl clone`.
-            argv += ["-destination", "platform=iOS Simulator,id=\(udid)"]
+            // arch is pinned (#5) so xcodebuild stops emitting the
+            // multi-match warning when both arm64 and x86_64 entries
+            // exist for the same UDID.
+            argv += ["-destination", "platform=iOS Simulator,arch=\(Self.hostArch),id=\(udid)"]
         } else if let device = input.destinationDevice {
             // Fallback when the user explicitly opts out of the lazy
             // clone via `--no-sim`. xcodebuild picks any matching
             // simulator by name (last-wins runtime).
-            argv += ["-destination", "platform=iOS Simulator,name=\(device)"]
+            argv += ["-destination", "platform=iOS Simulator,arch=\(Self.hostArch),name=\(device)"]
         }
         // Pass the user's extras BEFORE the action so flags like
         // `-quiet` apply to the action.

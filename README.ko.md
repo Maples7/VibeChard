@@ -139,6 +139,51 @@ vch path add-paywall                  # worktree 의 절대 경로
 vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 클론 삭제
 ```
 
+## 워크플로우: 일련의 작업들
+
+vch 가 제일 빛을 발하는 장면은 단일 작업이 아니라 **서로 고립된 짧은 작업들을
+연속**(또는 몇 개를 병렬)해서 돌리는 경우입니다. 각 작업은 자신만의 worktree 에서
+진행되고, 대상에 포함된 후에야 다음 작업이 시작됩니다. 전형적인 루프:
+
+```sh
+# 계획: A → B → C, 각각을 머지한 다음 다음으로 넘어감.
+
+# 작업 A — 구현, 테스트, 리뷰.
+vch new task-a
+cd "$(vch path task-a)"
+# ...편집...
+vch build task-a --scheme MyApp
+vch test  task-a --scheme MyApp --device "iPhone 16"
+git commit -am "perf: task A"
+vch open task-a                       # IDE 에서 리뷰
+
+# 승인되면 메인 worktree 에서 마쟀:
+cd /path/to/main-worktree
+git merge --no-ff agent/task-a -m "Merge agent/task-a: <subject>"
+vch remove task-a                     # worktree + 브랜치 + 시뮬클론 한 번에 정리
+
+# 작업 B 는 깨끗한 develop 에서 동일한 사이클 반복.
+vch new task-b
+# ...
+```
+
+`vch new` 할 때마다 SwiftPM 해소 캡시, DerivedData, 모듈 캡시(모두 `.vch/`
+아래)가 독립적으로 생성되므로, 병렬로 진행 중인 두 작업이 SPM 락 경쟁이나
+Xcode 빌드 캡시 무효화로 서로를 막는 일이 없습니다. 서로 다른 셰에서 여러
+`vch test` 를 동시에 돌려도 Core Data 스토어 충돌이나 시뮬레이터 뎍어쓰기가
+일어나지 않습니다.
+
+vch 를 스크립트로 돌릴 때(예: 에이전트 구동)는 `.vch/state.json` 을 직접
+읽는 대신 안정적인 `vch state <name> --field <dotted>` 접근자를 쓰세요:
+
+```sh
+udid=$(vch state task-a --field simulator.udid)
+vch exec task-a -- xcodebuild test \
+  -scheme MyApp \
+  -destination "platform=iOS Simulator,id=$udid" \
+  -only-testing:MyAppTests/Foo
+```
+
 ## 명령어
 
 | 명령어 | 동작 |
@@ -146,12 +191,12 @@ vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 �
 | `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. |
 | `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
-| `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. |
+| `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. `--field <dotted>` 는 단일 스칼라 값(예: `simulator.udid`)만 출력 — 스크립트에서 `$(vch state foo --field simulator.udid)` 으로 쓰기 위해 설계. |
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
 | `vch <name>` | `vch exec <name> -- $SHELL` 의 단축형 — 격리 환경 변수 + `.vch/bin` PATH shim 이 활성화된 셸 진입. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` 는 동일 디바이스 템플릿이 여러 iOS 런타임과 공존할 때 런타임을 고정. |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--force` 두 번이면 더티 트리 + 머지되지 않은 브랜치도 허용. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |

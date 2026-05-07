@@ -136,6 +136,51 @@ vch path add-paywall                  # worktree の絶対パス
 vch remove add-paywall                # worktree + ブランチ + シミュレータークローンを削除
 ```
 
+## ワークフロー：連続したタスク群
+
+vch が本当に振るうのは、単発タスクではなく**互いに独立した短いタスクを連続**
+（または並行）で回すケースです。各タスクはそれぞれの worktree で進め、取り込んで
+から次に進みます。代表的なループ：
+
+```sh
+# 計画：A → B → C、それぞれをマージしてから次に進む。
+
+# タスク A — 実装、テスト、レビュー。
+vch new task-a
+cd "$(vch path task-a)"
+# ...編集...
+vch build task-a --scheme MyApp
+vch test  task-a --scheme MyApp --device "iPhone 16"
+git commit -am "perf: task A"
+vch open task-a                       # IDE でレビュー
+
+# 承認されたらメイン worktree からマージ：
+cd /path/to/main-worktree
+git merge --no-ff agent/task-a -m "Merge agent/task-a: <subject>"
+vch remove task-a                     # worktree + ブランチ + シミクローンをまとめて削除
+
+# タスク B はクリーンな develop から同じサイクルを繰り返す。
+vch new task-b
+# ...
+```
+
+`vch new` のたびに SwiftPM 解決キャッシュ、DerivedData、モジュールキャッシュ
+（いずれも `.vch/` 下）が独立で作られるため、並行中の 2 タスクが SPM ロック争いや
+Xcode ビルドキャッシュの無効化で互いをブロックすることはありません。別のシェルで
+複数の `vch test` を同時に走らせても Core Data ストアの衝突やシミュレーターの
+上書きは起きません。
+
+vch をスクリプトから驅動する場合（例：エージェントを回す）は、`.vch/state.json`
+を手読みするより安定した `vch state <name> --field <dotted>` を使ってください：
+
+```sh
+udid=$(vch state task-a --field simulator.udid)
+vch exec task-a -- xcodebuild test \
+  -scheme MyApp \
+  -destination "platform=iOS Simulator,id=$udid" \
+  -only-testing:MyAppTests/Foo
+```
+
 ## コマンド一覧
 
 | コマンド | 役割 |
@@ -143,12 +188,12 @@ vch remove add-paywall                # worktree + ブランチ + シミュレ�
 | `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。 |
 | `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |
-| `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。 |
+| `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。`--field <dotted>` で単一のスカラー値（例：`simulator.udid`）だけを出力——スクリプトで `$(vch state foo --field simulator.udid)` として使うため。 |
 | `vch open [<name>] [--with <ide>]` | worktree を IDE で開く。`*.xcworkspace` / `*.xcodeproj` / `Package.swift` を自動検出（プロジェクトファイルは Xcode、それ以外は VS Code）。`--with` は `xcode`、`code`/`vscode`、`cursor`、または任意のアプリ名（`open -a` に渡す）に対応。`VCH_OPEN_DEFAULT` でデフォルトを上書き可能。`<name>` 省略時は `$PWD` のある worktree を使う。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` のシュガー。隔離環境変数 + `.vch/bin` PATH シムが有効なシェルが立ち上がる。 |
 | `vch exec <name> -- <cmd...>` | タスク worktree 内で任意のコマンドを実行（隔離有効）。 |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | タスクの worktree に対して `xcodebuild build` を実行。`-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。初回 `--device` 時にシミュレーターを遅延クローンし以降は再利用。 |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | タスクの worktree に対して `xcodebuild build` を実行。`-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。共有スキームが一つだけのプロジェクトでは `--scheme` を省略可能（`xcodebuild -list -json` で自動検出）。一度記録されたスキームは以降の呼び出しで再利用。`--runtime 'iOS 26.4'` は同名デバイステンプレートが複数 iOS ランタイムと共存する場合にランタイムをピン留めします。 |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。初回 `--device` 時にシミュレーターを遅延クローンし以降は再利用。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じ。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--force` 2 回でダーティツリー＋未マージブランチも許容。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |

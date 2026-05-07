@@ -64,11 +64,33 @@ public struct TaskState: Codable, Equatable, Sendable {
         public let cloneUDID: String
         public let sourceUDID: String
         public let name: String
+        /// Original device-template name passed to `--device` (e.g.
+        /// `"iPhone 16"`). Distinct from `name`, which is the clone's
+        /// display name (`<original> · vch[<task>]`). Used by
+        /// `SimulatorService.ensureClone` to compare a re-invocation's
+        /// `--device` against what we previously bound, so the second
+        /// `vch test foo --device 'iPhone 16'` reuses the clone instead
+        /// of throwing `simulatorAlreadyBound` (#4). Optional for
+        /// backward compatibility with state.json written by vch ≤
+        /// v0.1.x — the picker falls back to a suffix-strip on
+        /// `name` when this is nil.
+        public let templateName: String?
+        /// Raw runtime identifier the template was cloned from (e.g.
+        /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4`). Persisted
+        /// so `vch state` (#8) and the `vch build` / `vch test` log
+        /// can surface the iOS version without having to round-trip
+        /// through `simctl list` (#11). Optional for backward
+        /// compatibility with state.json written by vch ≤ v0.1.x.
+        public let runtimeIdentifier: String?
 
-        public init(cloneUDID: String, sourceUDID: String, name: String) {
+        public init(cloneUDID: String, sourceUDID: String, name: String,
+                    templateName: String? = nil,
+                    runtimeIdentifier: String? = nil) {
             self.cloneUDID = cloneUDID
             self.sourceUDID = sourceUDID
             self.name = name
+            self.templateName = templateName
+            self.runtimeIdentifier = runtimeIdentifier
         }
     }
 

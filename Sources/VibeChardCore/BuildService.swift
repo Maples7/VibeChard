@@ -165,11 +165,16 @@ public struct BuildService: Sendable {
     public func resolveSimulator(
         task: TaskName,
         requestedDevice: String?,
+        requestedRuntime: String? = nil,
         noSim: Bool
     ) throws -> SimulatorService.Resolved? {
         if noSim { return nil }
         guard let simulator else { return nil }
-        return try simulator.ensureClone(task: task, requestedDevice: requestedDevice)
+        return try simulator.ensureClone(
+            task: task,
+            requestedDevice: requestedDevice,
+            requestedRuntime: requestedRuntime
+        )
     }
 
     /// Run `simctl bootstatus -b` so xcodebuild can immediately pin its

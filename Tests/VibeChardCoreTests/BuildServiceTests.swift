@@ -207,7 +207,7 @@ final class BuildServiceTests: XCTestCase {
         // Destination is `id=`, NOT `name=`.
         XCTAssertTrue(plan.argv.contains("-destination"))
         let i = plan.argv.firstIndex(of: "-destination")!
-        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,id=CLONE-UDID-1")
+        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,arch=\(BuildPlanner.hostArch),id=CLONE-UDID-1")
         XCTAssertFalse(plan.argv.contains { $0.contains("name=iPhone 16") })
 
         // SIMCTL_CHILD_SIMULATOR_UDID set so embedded simctl/test
@@ -224,7 +224,7 @@ final class BuildServiceTests: XCTestCase {
             baseEnv: [:]
         )
         let i = plan.argv.firstIndex(of: "-destination")!
-        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,name=iPhone 16")
+        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,arch=\(BuildPlanner.hostArch),name=iPhone 16")
         XCTAssertNil(plan.env["SIMCTL_CHILD_SIMULATOR_UDID"])
     }
 

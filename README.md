@@ -149,6 +149,53 @@ vch path add-paywall                  # absolute path of the worktree
 vch remove add-paywall                # deletes worktree + branch + sim clone
 ```
 
+## Workflow: a series of tasks
+
+VibeChard's sweet spot isn't a single task — it's running **many short
+tasks back-to-back** (or in parallel), each in its own worktree, each
+landed before the next starts. A typical loop:
+
+```sh
+# Plan: A → B → C, each landed before the next starts.
+
+# Task A — implement, test, review.
+vch new task-a
+cd "$(vch path task-a)"
+# ...edit...
+vch build task-a --scheme MyApp
+vch test  task-a --scheme MyApp --device "iPhone 16"
+git commit -am "perf: task A"
+vch open task-a                       # review in your IDE
+
+# Once approved, merge from the main worktree:
+cd /path/to/main-worktree
+git merge --no-ff agent/task-a -m "Merge agent/task-a: <subject>"
+vch remove task-a                     # worktree + branch + sim clone gone
+
+# Task B starts from a clean develop, repeats the cycle.
+vch new task-b
+# ...
+```
+
+Each `vch new` gets its own SwiftPM resolve cache, DerivedData, and
+module cache under `.vch/`, so two in-flight tasks never block each
+other on SPM lock contention or Xcode build cache invalidation. You
+can run several `vch test` invocations concurrently from different
+shells without a single Core Data store collision or simulator
+clobber.
+
+If you script around vch (e.g. driving an agent), prefer the stable
+`vch state <name> --field <dotted>` accessor over reading
+`.vch/state.json` by hand:
+
+```sh
+udid=$(vch state task-a --field simulator.udid)
+vch exec task-a -- xcodebuild test \
+  -scheme MyApp \
+  -destination "platform=iOS Simulator,id=$udid" \
+  -only-testing:MyAppTests/Foo
+```
+
 ## Commands
 
 | Command | What it does |
@@ -156,12 +203,12 @@ vch remove add-paywall                # deletes worktree + branch + sim clone
 | `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. |
 | `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
-| `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. |
+| `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. `--field <dotted>` prints just one scalar (e.g. `simulator.udid`) — designed for `$(vch state foo --field simulator.udid)` in scripts. |
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
 | `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` pins the simulator runtime. |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. Same scheme auto-pick + `--runtime` rules as `vch build`. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. Two `--force`s allow dirty trees + unmerged branches. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |

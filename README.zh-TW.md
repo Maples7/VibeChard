@@ -134,6 +134,50 @@ vch path add-paywall                  # worktree 的絕對路徑
 vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副本
 ```
 
+## 工作流：一連串任務
+
+vch 的最佳使用姿態不是單一任務，而是**連續短任務**（或平行任務）：
+每個任務都跑在自己的 worktree 裡，落地完再起下一個。一個典型循環：
+
+```sh
+# 規劃：A → B → C，每個任務都先合入再起下一個。
+
+# 任務 A —— 實作、測試、Review。
+vch new task-a
+cd "$(vch path task-a)"
+# ...編輯...
+vch build task-a --scheme MyApp
+vch test  task-a --scheme MyApp --device "iPhone 16"
+git commit -am "perf: task A"
+vch open task-a                       # 在 IDE 裡 review
+
+# 評審通過後，從主 worktree 合併：
+cd /path/to/main-worktree
+git merge --no-ff agent/task-a -m "Merge agent/task-a: <subject>"
+vch remove task-a                     # worktree + 分支 + 模擬器副本一起刪乾淨
+
+# 任務 B 從乾淨的 develop 重新開始，循環不變。
+vch new task-b
+# ...
+```
+
+每次 `vch new` 都拿到獨立的 SwiftPM 解析快取、DerivedData 與模組
+快取（都在 `.vch/` 裡），所以兩個平行任務永遠不會因 SPM 鎖競爭或
+Xcode 建置快取失效互相阻塞。從不同 shell 同時跑幾個 `vch test` 也
+不會撞 Core Data 資料庫或抶同一個模擬器。
+
+如果你為 vch 寫腳本（例如驅動 agent），請優先使用穩定的
+`vch state <name> --field <dotted>` 介面，不要直接讀
+`.vch/state.json`：
+
+```sh
+udid=$(vch state task-a --field simulator.udid)
+vch exec task-a -- xcodebuild test \
+  -scheme MyApp \
+  -destination "platform=iOS Simulator,id=$udid" \
+  -only-testing:MyAppTests/Foo
+```
+
 ## 指令一覽
 
 | 指令 | 作用 |
@@ -141,12 +185,12 @@ vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副�
 | `vch new <name>` | 在 `../<repo>-<name>` 建立 worktree，分支為 `agent/<name>`。`--exec "<cmd>"` 在 worktree 內直接執行指令（例如 AI agent）。`--copy-untracked` 會連同未追蹤、未被忽略的檔案（如 `.env`、`.vscode/settings.json`）一起複製過來。 |
 | `vch list` | 列出目前工作區下所有任務。`--json` 為機器可讀格式；`-v`/`--verbose` 增加 `BASE` 與 `PATH` 欄位。 |
 | `vch path <name>` | 印出任務 worktree 的絕對路徑。 |
-| `vch state <name>` | 漂亮印出任務的 `.vch/state.json`。`--json` 輸出原始檔案內容。 |
+| `vch state <name>` | 漂亮印出任務的 `.vch/state.json`。`--json` 輸出原始檔案內容。`--field <dotted>` 只輸出單個欄位值（如 `simulator.udid`），方便在腳本裡 `$(vch state foo --field simulator.udid)` 這樣取。 |
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中開啟 worktree。自動偵測 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（專案檔走 Xcode，其他走 VS Code）。`--with` 支援 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名稱（透傳給 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆寫預設值。未指定 `<name>` 時使用 `$PWD` 所在的 worktree。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` 的語法糖——開一個 shell，隔離環境變數 + `.vch/bin` PATH shim 已就緒。 |
 | `vch exec <name> -- <cmd...>` | 在任務 worktree 內執行任意指令，隔離已生效。 |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 對任務的 worktree 執行 `xcodebuild build`，自動注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | 執行 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 時延遲複製模擬器，後續重複使用。 |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | 對任務的 worktree 執行 `xcodebuild build`，自動注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。當專案只有一個共用 scheme 時，`--scheme` 可省（透過 `xcodebuild -list -json` 自動識別）；記錄後會在後續呼叫裡重複使用。`--runtime 'iOS 26.4'` 用來在多個同名裝置模板（不同 iOS runtime）並存時鎖定要用的 runtime。 |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | 執行 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 時延遲複製模擬器，後續重複使用。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 顯式管理任務的模擬器副本。 |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。兩次 `--force` 才允許髒樹 + 未合併分支。 |
 | `vch repair` | 用 `git worktree list` 的實際狀態重新對齊 `.vch/state.json`。 |
