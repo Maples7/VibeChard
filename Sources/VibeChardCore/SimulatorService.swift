@@ -26,6 +26,19 @@ public struct SimulatorService: Sendable {
         /// True when `ensureClone` performed a clone in this call.
         /// Helps the CLI emit a one-line "cloning ..." message.
         public let createdNow: Bool
+        /// Parsed iOS version of the clone's runtime, surfaced into
+        /// the `vch build` / `vch test` log so the user can spot
+        /// silent runtime drift (#11). nil for legacy state
+        /// (vch ≤ v0.1.x) or non-iOS runtimes.
+        public let runtime: SimRuntimeVersion?
+
+        public init(udid: String, name: String, createdNow: Bool,
+                    runtime: SimRuntimeVersion? = nil) {
+            self.udid = udid
+            self.name = name
+            self.createdNow = createdNow
+            self.runtime = runtime
+        }
     }
 
     /// Lazy-clone the simulator for `task`.
@@ -38,12 +51,14 @@ public struct SimulatorService: Sendable {
     ///   caller invokes xcodebuild without a `-destination` flag (M4
     ///   behavior).
     /// - Otherwise, picks the newest available template named
-    ///   `requestedDevice`, runs `xcrun simctl clone`, persists
+    ///   `requestedDevice` (filtered by `requestedRuntime` when set,
+    ///   #11), runs `xcrun simctl clone`, persists
     ///   `simulator{cloneUDID, sourceUDID, name}` into state.json,
     ///   and returns it.
     public func ensureClone(
         task: TaskName,
-        requestedDevice: String?
+        requestedDevice: String?,
+        requestedRuntime: String? = nil
     ) throws -> Resolved? {
         let statePath = workspace.statePath(for: task)
         guard fs.fileExists(at: statePath) else {
@@ -56,34 +71,67 @@ public struct SimulatorService: Sendable {
         var state = try TaskState.parse(data)
 
         if let existing = state.simulator {
-            if let requested = requestedDevice, requested != existing.name {
+            if let requested = requestedDevice {
+                // #4: previously this compared `requested` against
+                // `existing.name`, which is the *clone display name*
+                // (`iPhone 16 · vch[<task>]`) and therefore never
+                // matched the user's `--device 'iPhone 16'`. Compare
+                // against the persisted template name instead, falling
+                // back to a suffix-strip on legacy state written by
+                // vch ≤ v0.1.x (no `templateName` field).
+                let bound = existing.templateName
+                    ?? existing.name.replacingOccurrences(
+                        of: " · vch[\(task.raw)]", with: "")
+                if bound != requested {
+                    throw VibeChardError.simulatorAlreadyBound(
+                        taskName: task.raw,
+                        currentName: existing.name,
+                        requestedName: requested
+                    )
+                }
+            }
+            // #11(b): if the user *also* passed --runtime, refuse to
+            // reuse a clone whose persisted runtime doesn't match.
+            if let req = requestedRuntime,
+               let target = parseRuntimeRequest(req),
+               let bound = existing.runtimeIdentifier
+                    .flatMap({ SimRuntimeVersion.parse(runtimeIdentifier: $0) }),
+               bound != target {
                 throw VibeChardError.simulatorAlreadyBound(
                     taskName: task.raw,
-                    currentName: existing.name,
-                    requestedName: requested
+                    currentName: "\(existing.name) (runtime iOS \(bound.major).\(bound.minor))",
+                    requestedName: "\(requestedDevice ?? existing.templateName ?? existing.name) (runtime iOS \(target.major).\(target.minor))"
                 )
             }
             return Resolved(udid: existing.cloneUDID, name: existing.name,
-                            createdNow: false)
+                            createdNow: false,
+                            runtime: existing.runtimeIdentifier.flatMap {
+                                SimRuntimeVersion.parse(runtimeIdentifier: $0)
+                            })
         }
 
         guard let requested = requestedDevice, !requested.isEmpty else {
             return nil
         }
 
-        let template = try pickNewestTemplate(name: requested)
+        let template = try pickNewestTemplate(name: requested,
+                                                requestedRuntime: requestedRuntime)
         let cloneName = cloneDisplayName(originalName: template.name, task: task)
         let newUDID = try simctl.clone(sourceUDID: template.udid, newName: cloneName)
 
         let record = TaskState.SimulatorRecord(
             cloneUDID: newUDID,
             sourceUDID: template.udid,
-            name: cloneName
+            name: cloneName,
+            templateName: template.name,
+            runtimeIdentifier: template.runtime
         )
         state.simulator = record
         try fs.writeFileAtomic(state.jsonData(), to: statePath)
 
-        return Resolved(udid: record.cloneUDID, name: record.name, createdNow: true)
+        return Resolved(udid: record.cloneUDID, name: record.name,
+                        createdNow: true,
+                        runtime: template.runtimeVersion)
     }
 
     /// `xcrun simctl bootstatus -b` — boots the device if shutdown,
@@ -143,9 +191,33 @@ public struct SimulatorService: Sendable {
     /// "Newest" = highest iOS runtime version (then arbitrary stable
     /// tiebreak by UDID). Templates with `isAvailable == false` are
     /// filtered out.
-    func pickNewestTemplate(name: String) throws -> SimDevice {
+    ///
+    /// `requestedRuntime` (#11) further filters by the runtime
+    /// identifier. Accepted forms:
+    ///   • raw identifier:  `com.apple.CoreSimulator.SimRuntime.iOS-26-4`
+    ///   • dashed iOS form: `iOS-26-4`
+    ///   • dotted iOS form: `iOS 26.4`
+    /// All three normalize to the same SimRuntimeVersion.
+    func pickNewestTemplate(
+        name: String,
+        requestedRuntime: String? = nil
+    ) throws -> SimDevice {
         let all = try simctl.availableDevices()
-        let matches = all.filter { $0.isAvailable && $0.name == name }
+        var matches = all.filter { $0.isAvailable && $0.name == name }
+        if let req = requestedRuntime,
+           let target = parseRuntimeRequest(req) {
+            matches = matches.filter { $0.runtimeVersion == target }
+            guard !matches.isEmpty else {
+                // Surface the runtimes we DO have for this device so
+                // the user can copy-paste the right `--runtime` value.
+                let available = all
+                    .filter { $0.isAvailable && $0.name == name }
+                    .compactMap { $0.runtimeVersion.map { "iOS \($0.major).\($0.minor)" } }
+                throw VibeChardError.simulatorTemplateNotFound(
+                    name: "\(name) (runtime '\(req)' — available: \(available.isEmpty ? "none" : available.joined(separator: ", ")))"
+                )
+            }
+        }
         guard !matches.isEmpty else {
             throw VibeChardError.simulatorTemplateNotFound(name: name)
         }
@@ -160,6 +232,34 @@ public struct SimulatorService: Sendable {
             }
         }
         return sorted.first!
+    }
+
+    /// Normalize the user's `--runtime` argument into a comparable
+    /// `SimRuntimeVersion`. Accepts the three forms documented on
+    /// `pickNewestTemplate`. Returns nil for unrecognized strings
+    /// rather than throwing so the caller can decide whether to
+    /// surface that as an error or fall through to the unfiltered
+    /// path.
+    func parseRuntimeRequest(_ raw: String) -> SimRuntimeVersion? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parsed = SimRuntimeVersion.parse(runtimeIdentifier: trimmed) {
+            return parsed
+        }
+        // `iOS-26-4` → fabricate a fake suffix so the existing parser handles it.
+        if trimmed.hasPrefix("iOS-") {
+            return SimRuntimeVersion.parse(
+                runtimeIdentifier: "x.\(trimmed)"
+            )
+        }
+        // `iOS 26.4` / `iOS 26`.
+        if trimmed.lowercased().hasPrefix("ios ") {
+            let body = trimmed.dropFirst("ios ".count)
+            let parts = body.split(whereSeparator: { $0 == "." || $0 == "-" })
+            guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
+            let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+            return SimRuntimeVersion(major: major, minor: minor)
+        }
+        return nil
     }
 
     /// `<original> · vch[<task>]` — the middle dot (U+00B7) is a

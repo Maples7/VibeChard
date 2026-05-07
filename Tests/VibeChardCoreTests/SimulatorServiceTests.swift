@@ -163,6 +163,57 @@ final class SimulatorServiceTests: XCTestCase {
         XCTAssertEqual(state.simulator?.cloneUDID, "CLONE-1")
         XCTAssertEqual(state.simulator?.sourceUDID, "TPL-NEW")
         XCTAssertEqual(state.simulator?.name, "iPhone 16 · vch[alpha]")
+        // #4: persist the original template name so subsequent calls
+        // with the same `--device` reuse the clone.
+        XCTAssertEqual(state.simulator?.templateName, "iPhone 16")
+        // #11: persist runtime identifier so `vch state` and the
+        // build/test log can surface "iOS X.Y" without a simctl
+        // round-trip.
+        XCTAssertEqual(state.simulator?.runtimeIdentifier,
+                       "com.apple.CoreSimulator.SimRuntime.iOS-18-2")
+        XCTAssertEqual(resolved?.runtime, .init(major: 18, minor: 2))
+    }
+
+    // #4 regression: a second `vch test foo --device 'iPhone 16'` after
+    // the clone was already created must reuse it, not throw.
+    func testEnsureCloneReusesWhenDeviceMatchesPersistedTemplate() throws {
+        var seed = emptyState("alpha")
+        seed.simulator = TaskState.SimulatorRecord(
+            cloneUDID: "OLD-CLONE", sourceUDID: "OLD-SRC",
+            name: "iPhone 16 · vch[alpha]",
+            templateName: "iPhone 16"
+        )
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: seed
+        )
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"), requestedDevice: "iPhone 16"
+        )
+        XCTAssertEqual(resolved?.udid, "OLD-CLONE")
+        XCTAssertFalse(resolved?.createdNow ?? true)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+    }
+
+    // Legacy state (templateName == nil, written by vch ≤ v0.1.x) must
+    // still reuse when the user passes the same `--device`.
+    func testEnsureCloneReusesLegacyBindingViaSuffixStrip() throws {
+        var seed = emptyState("alpha")
+        seed.simulator = TaskState.SimulatorRecord(
+            cloneUDID: "OLD-CLONE", sourceUDID: "OLD-SRC",
+            name: "iPhone 16 · vch[alpha]"
+            // templateName intentionally omitted.
+        )
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: seed
+        )
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"), requestedDevice: "iPhone 16"
+        )
+        XCTAssertEqual(resolved?.udid, "OLD-CLONE")
+        XCTAssertFalse(resolved?.createdNow ?? true)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
     }
 
     func testEnsureCloneReusesExistingBinding() throws {
@@ -188,7 +239,8 @@ final class SimulatorServiceTests: XCTestCase {
         var seed = emptyState("alpha")
         seed.simulator = TaskState.SimulatorRecord(
             cloneUDID: "OLD-CLONE", sourceUDID: "OLD-SRC",
-            name: "iPhone 16 · vch[alpha]"
+            name: "iPhone 16 · vch[alpha]",
+            templateName: "iPhone 16"
         )
         let (service, _, _) = makeService(
             seedingTask: "alpha",
@@ -302,6 +354,80 @@ final class SimulatorServiceTests: XCTestCase {
         )
         let live = try service.info(udid: "GHOST")
         XCTAssertNil(live)
+    }
+
+    // MARK: - #11(b) runtime filter
+
+    func testParseRuntimeRequestAcceptsThreeForms() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha", seedingState: emptyState("alpha"))
+        let target = SimRuntimeVersion(major: 26, minor: 4)
+        XCTAssertEqual(service.parseRuntimeRequest("com.apple.CoreSimulator.SimRuntime.iOS-26-4"), target)
+        XCTAssertEqual(service.parseRuntimeRequest("iOS-26-4"), target)
+        XCTAssertEqual(service.parseRuntimeRequest("iOS 26.4"), target)
+        XCTAssertEqual(service.parseRuntimeRequest("iOS 26"), SimRuntimeVersion(major: 26, minor: 0))
+        XCTAssertNil(service.parseRuntimeRequest("garbage"))
+    }
+
+    func testPickNewestTemplateFiltersByRuntime() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha", seedingState: emptyState("alpha"),
+            devices: [
+                device("U-OLD", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-18-5",
+                       .init(major: 18, minor: 5)),
+                device("U-NEW", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                       .init(major: 26, minor: 4)),
+            ]
+        )
+        let pinned = try service.pickNewestTemplate(name: "iPhone 16",
+                                                     requestedRuntime: "iOS 18.5")
+        XCTAssertEqual(pinned.udid, "U-OLD") // honored, not silently picked newest
+    }
+
+    func testPickNewestTemplateRuntimeMissThrowsWithAvailableList() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha", seedingState: emptyState("alpha"),
+            devices: [
+                device("U", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                       .init(major: 26, minor: 4)),
+            ]
+        )
+        XCTAssertThrowsError(
+            try service.pickNewestTemplate(name: "iPhone 16",
+                                           requestedRuntime: "iOS 18.5")
+        ) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(name.contains("iOS 26.4"),
+                          "should list installed runtimes; got: \(name)")
+        }
+    }
+
+    func testEnsureCloneRefusesReuseOnRuntimeMismatch() throws {
+        let bound = TaskState.SimulatorRecord(
+            cloneUDID: "C", sourceUDID: "TPL", name: "iPhone 16 · vch[alpha]",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+        )
+        var state = emptyState("alpha")
+        state.simulator = bound
+        let (service, _, _) = makeService(
+            seedingTask: "alpha", seedingState: state)
+        XCTAssertThrowsError(
+            try service.ensureClone(task: try TaskName("alpha"),
+                                    requestedDevice: "iPhone 16",
+                                    requestedRuntime: "iOS 26.4")
+        ) { err in
+            guard case let VibeChardError.simulatorAlreadyBound(_, currentName, requestedName) = err else {
+                return XCTFail("expected simulatorAlreadyBound, got \(err)")
+            }
+            XCTAssertTrue(currentName.contains("iOS 18.5"))
+            XCTAssertTrue(requestedName.contains("iOS 26.4"))
+        }
     }
 }
 

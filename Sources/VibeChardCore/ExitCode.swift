@@ -30,7 +30,8 @@ public extension VibeChardError {
              .stateSchemaMismatch,
              .stateFileMissing,
              .simulatorTemplateNotFound,
-             .simulatorAlreadyBound:
+             .simulatorAlreadyBound,
+             .worktreeBusy:
             return ExitCode.business
         case .externalCommandFailed:
             return ExitCode.external

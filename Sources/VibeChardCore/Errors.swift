@@ -20,6 +20,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case stateFileMissing(path: String)
     case simulatorTemplateNotFound(name: String)
     case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
+    /// `vch remove` refused because at least one process still holds
+    /// a file inside the worktree. Each `WorktreeHolder` is rendered
+    /// `pid:command (samplePath)`. Bypass with `--force`. (#10)
+    case worktreeBusy(path: String, holders: [WorktreeHolder])
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -50,6 +54,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "no available simulator template named '\(name)' (try `xcrun simctl list devices available`)"
         case let .simulatorAlreadyBound(task, current, requested):
             return "task '\(task)' is already bound to simulator '\(current)' — refusing to clone '\(requested)' (use `vch sim erase` or remove the task first)"
+        case let .worktreeBusy(path, holders):
+            let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
+            let body = lines.joined(separator: "\n")
+            return "worktree is held open by \(holders.count) process\(holders.count == 1 ? "" : "es") at \(path) — close the editor / shell or pass --force:\n\(body)"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"

@@ -284,6 +284,10 @@ struct StateCommand: ParsableCommand {
     @Flag(name: .long, help: "Emit raw JSON (the full state.json contents).")
     var json: Bool = false
 
+    @Option(name: .long,
+            help: "Print just one field's value (dotted path, e.g. 'simulator.udid'). Designed for $(vch state <task> --field simulator.udid).")
+    var field: String?
+
     func run() throws {
         try CLIBridge.run {
             let task = try TaskName(name)
@@ -292,6 +296,10 @@ struct StateCommand: ParsableCommand {
             let service = TaskService(workspace: workspace, git: DiskGitClient())
             let state = try service.stateForTask(task)
             let path = workspace.worktreePath(for: task)
+            if let field {
+                try emitField(field, state: state, worktreePath: path)
+                return
+            }
             if json {
                 let data = try state.jsonData()
                 if let str = String(data: data, encoding: .utf8) {
@@ -300,6 +308,24 @@ struct StateCommand: ParsableCommand {
             } else {
                 printHumanReadable(state, worktreePath: path)
             }
+        }
+    }
+
+    /// `vch state <task> --field <dotted>` (#8). Exit codes follow
+    /// `git config --get` so scripts can branch cleanly:
+    ///   0 = field present, value printed
+    ///   1 = field is part of the schema but unset for this task
+    ///   2 = unknown field name (typo / version skew)
+    private func emitField(_ name: String, state: TaskState, worktreePath: String) throws {
+        switch TaskStateField.lookup(name, in: state, worktreePath: worktreePath) {
+        case .value(let v):
+            print(v)
+        case .unset:
+            CLIBridge.eprintln("field '\(name)' is not set on task '\(state.name)'")
+            throw ArgumentParser.ExitCode(ExitCode.business)
+        case .unknown:
+            CLIBridge.eprintln("unknown state field '\(name)' — see `vch help state` for the supported set")
+            throw ArgumentParser.ExitCode(ExitCode.usage)
         }
     }
 
@@ -384,6 +410,21 @@ struct RemoveCommand: ParsableCommand {
             let cwd = FileManager.default.currentDirectoryPath
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
             let service = TaskService(workspace: workspace, git: DiskGitClient())
+
+            // #10: refuse to delete the worktree out from under an open
+            // editor / shell unless the user explicitly forces. We do
+            // this BEFORE reading state.json (which is also held by us
+            // for the simulator-cleanup step) so the diagnostic lands
+            // before we touch anything.
+            let wtPath = workspace.worktreePath(for: task)
+            if force == 0,
+               FileManager.default.fileExists(atPath: wtPath) {
+                let scanner = DiskWorktreeHolderScanner()
+                if let holders = try? scanner.findHolders(of: wtPath),
+                   !holders.isEmpty {
+                    throw VibeChardError.worktreeBusy(path: wtPath, holders: holders)
+                }
+            }
 
             // Read state.json BEFORE git tears the worktree down so we
             // can clean up the simulator clone afterwards. Best-effort

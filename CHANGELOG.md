@@ -8,6 +8,58 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Added
+- `vch state <name> --field <dotted>` prints a single scalar from
+  `state.json` for use in scripts (e.g.
+  `udid=$(vch state foo --field simulator.udid)`). Mirrors
+  `git config --get` semantics: exit 0 when set, exit 1 when the
+  field is known but unset, exit 2 when the field name is
+  unrecognized. Stable surface — the dotted-path registry lives
+  in `TaskStateField.known`. Closes #8.
+- `vch build <name> --runtime <id>` and `vch test <name> --runtime
+  <id>` pin the simulator runtime when multiple iOS runtimes share
+  the same device template name. Accepts three forms:
+  `iOS 26.4`, `iOS-26-4`, or the full
+  `com.apple.CoreSimulator.SimRuntime.iOS-26-4` identifier. The
+  resolved runtime is persisted on the per-task simulator clone;
+  reusing a clone with a different `--runtime` is rejected with
+  a clear error. On a runtime miss, vch lists every iOS runtime
+  the device template is currently installed against so the user
+  can copy-paste the right value. Closes #11.
+- `vch build` / `vch test` auto-pick the scheme when the worktree
+  exposes exactly one shared scheme (via `xcodebuild -list -json`).
+  Resolution order: `--scheme` flag → previously recorded scheme
+  in `state.json` → single-shared-scheme detection → xcodebuild's
+  built-in default. The chosen scheme is logged once so it isn't
+  silent. No new config files (AGENTS.md §7). Closes #6 (read-only
+  subset).
+
+### Fixed
+- `vch test --device "iPhone 16"` invoked twice in a row no longer
+  raises `simulatorAlreadyBound` even though the binding *is* the
+  same `iPhone 16` clone. Previously vch compared the user's
+  requested template name against the *clone display name*
+  (`iPhone 16 · vch[<task>]`), so the second call always
+  mismatched. The clone's source template name is now persisted
+  separately on `SimulatorRecord.templateName`, with a fall-through
+  suffix-strip for state files written by vch ≤ v0.1.x. Closes #4.
+- `xcodebuild` destinations now pin `arch=arm64` (or `arch=x86_64`
+  on Intel hosts), silencing the `Using the first of multiple
+  matching destinations` warning that surfaced in iOS 26 SDK builds
+  where every device template advertises both architectures.
+  Closes #5.
+- `vch remove` (without `--force`) refuses to delete a worktree
+  that still has live processes inside it. Holders are detected
+  via `lsof -F pcn +D <wt>` and listed with pid, command, and a
+  sample held path so the user knows what to close first.
+  `vch remove --force` keeps the historical bypass. Closes #10.
+
+### Changed
+- `vch build` / `vch test` log lines now include the resolved
+  iOS runtime version when a simulator clone is involved, e.g.
+  `→ booting simulator 'iPhone 16 · vch[alpha]', runtime: iOS 26.4`.
+  Surfaces silent runtime drift for free. Part of #11.
+
 ### Docs
 - `CONTRIBUTING.md` documents the branching model (GitHub flow, no
   `develop` / `release/*` / `hotfix/*`), Conventional Commits scope

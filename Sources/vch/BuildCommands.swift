@@ -18,6 +18,7 @@ private enum BuildOrTest {
         scheme: String?,
         configuration: String?,
         device: String?,
+        runtime: String?,
         noSim: Bool,
         extraArgs: [String]
     ) throws {
@@ -31,8 +32,29 @@ private enum BuildOrTest {
             simctl: DiskSimctlClient()
         )
         let service = BuildService(workspace: workspace, simulator: simulator)
+
+        // #6 reduced — single-scheme auto-pick. CLI flag wins, then
+        // state.json's last-recorded scheme, then a single shared
+        // scheme via `xcodebuild -list -json`. Anything else falls
+        // through to xcodebuild's built-in default (today's behavior
+        // when --scheme is omitted), so this is purely additive.
+        let schemeResolver = SchemeResolver(
+            workspace: workspace,
+            lister: DiskXcodebuildLister()
+        )
+        let resolvedScheme = try schemeResolver.resolve(task: task, explicit: scheme)
+        if let r = resolvedScheme, scheme == nil {
+            switch r.source {
+            case .explicit: break // unreachable: scheme == nil here
+            case .persisted:
+                CLIBridge.eprintln("→ using scheme '\(r.scheme)' (from .vch/state.json — pass --scheme to override)")
+            case .autoDetected:
+                CLIBridge.eprintln("→ using scheme '\(r.scheme)' (auto-detected single shared scheme)")
+            }
+        }
+
         let opts = BuildService.Options(
-            scheme: scheme,
+            scheme: resolvedScheme?.scheme ?? scheme,
             configuration: configuration,
             device: device,
             noSim: noSim,
@@ -45,13 +67,14 @@ private enum BuildOrTest {
         let resolved = try service.resolveSimulator(
             task: task,
             requestedDevice: device,
+            requestedRuntime: runtime,
             noSim: noSim
         )
         if let resolved {
             if resolved.createdNow {
-                CLIBridge.eprintln("→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…)")
+                CLIBridge.eprintln("→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))")
             }
-            CLIBridge.eprintln("→ booting simulator '\(resolved.name)' …")
+            CLIBridge.eprintln("→ booting simulator '\(resolved.name)'\(formatRuntime(resolved.runtime)) …")
             try service.bootSimulator(resolved)
         }
 
@@ -83,14 +106,21 @@ private enum BuildOrTest {
         )
         do {
             switch action {
-            case .build: try service.recordBuild(task: task, outcome: outcome, scheme: scheme)
-            case .test:  try service.recordTest(task: task, outcome: outcome, scheme: scheme)
+            case .build: try service.recordBuild(task: task, outcome: outcome, scheme: opts.scheme)
+            case .test:  try service.recordTest(task: task, outcome: outcome, scheme: opts.scheme)
             }
         } catch {
             CLIBridge.eprintln("warning: could not update state.json: \(error)")
         }
 
         throw ArgumentParser.ExitCode(result.exitCode)
+    }
+
+    /// `, runtime: iOS 18.5` or `` (when unknown). Formats inline so
+    /// the build/test log line stays single-line.
+    private static func formatRuntime(_ rt: SimRuntimeVersion?) -> String {
+        guard let rt else { return "" }
+        return ", runtime: iOS \(rt.major).\(rt.minor)"
     }
 }
 
@@ -115,6 +145,9 @@ struct BuildCommand: ParsableCommand {
     @Option(name: .long, help: "Simulator device template (lazy-cloned per task on first use).")
     var device: String?
 
+    @Option(name: .long, help: "Pin the simulator runtime (e.g. 'iOS 26.4' or the full SimRuntime identifier). Useful when multiple iOS runtimes share the same device name.")
+    var runtime: String?
+
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
@@ -130,6 +163,7 @@ struct BuildCommand: ParsableCommand {
                 scheme: scheme,
                 configuration: configuration,
                 device: device,
+                runtime: runtime,
                 noSim: noSim,
                 extraArgs: extraArgs
             )
@@ -158,6 +192,9 @@ struct TestCommand: ParsableCommand {
     @Option(name: .long, help: "Simulator device template (lazy-cloned per task on first use).")
     var device: String?
 
+    @Option(name: .long, help: "Pin the simulator runtime (e.g. 'iOS 26.4' or the full SimRuntime identifier). Useful when multiple iOS runtimes share the same device name.")
+    var runtime: String?
+
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
@@ -173,6 +210,7 @@ struct TestCommand: ParsableCommand {
                 scheme: scheme,
                 configuration: configuration,
                 device: device,
+                runtime: runtime,
                 noSim: noSim,
                 extraArgs: extraArgs
             )
