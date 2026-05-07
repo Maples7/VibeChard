@@ -70,6 +70,141 @@ enum PlanLauncher {
         return RunResult(exitCode: code, durationSeconds: duration)
     }
 
+    /// Tee variant used by `vch test` (#9). Pipes the child's stdout
+    /// and stderr through vch:
+    ///
+    /// 1. **Tee**: every byte is appended to `logURL` so users can
+    ///    always reach the full firehose later via `vch logs <name>
+    ///    --test`. The file is truncated at the start of each run.
+    /// 2. **Parse**: every complete line is forwarded to `onLine` so
+    ///    the caller can run a `TestOutputSummarizer` over the stream.
+    /// 3. **Mirror** (optional): when `mirror` is true the bytes are
+    ///    also written through to vch's own stdout/stderr — this is
+    ///    what `--verbose` opts into. When `mirror` is false the
+    ///    child's output is silent at the terminal until the caller
+    ///    prints a summary at the end.
+    ///
+    /// Unlike `run(_:)` we cannot inherit the child's tty, but
+    /// xcodebuild test output is purely line-oriented, so users don't
+    /// notice the difference.
+    static func runTee(
+        _ plan: ExecPlan,
+        logURL: URL,
+        mirror: Bool,
+        onLine: @escaping (String) -> Void
+    ) throws -> RunResult {
+        // Make sure the parent dir exists.
+        try FileManager.default.createDirectory(
+            at: logURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        // Truncate-and-create.
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        guard let logFH = try? FileHandle(forWritingTo: logURL) else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: plan.argv.joined(separator: " "),
+                exitCode: 127,
+                stderr: "could not open \(logURL.path) for writing"
+            )
+        }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = plan.argv
+        proc.currentDirectoryURL = URL(fileURLWithPath: plan.cwd)
+        proc.environment = plan.env
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError  = errPipe
+
+        // Line accumulator. We append all bytes from both streams into
+        // one buffer, since the parser doesn't care which stream a
+        // line came from. NSLock guards against the (theoretical)
+        // case where stdout and stderr drain on different threads.
+        let lock = NSLock()
+        var buffer = Data()
+        let drainOneStream: (FileHandle, FileHandle?) -> Void = { fh, mirrorFH in
+            while true {
+                let chunk = fh.availableData
+                if chunk.isEmpty { return }
+                // Persist to log + optionally mirror, both unconditional.
+                try? logFH.write(contentsOf: chunk)
+                if let mirrorFH {
+                    try? mirrorFH.write(contentsOf: chunk)
+                }
+                lock.lock()
+                buffer.append(chunk)
+                while let nl = buffer.firstIndex(of: 0x0A) {
+                    let lineData = buffer[..<nl]
+                    let line = String(decoding: lineData, as: UTF8.self)
+                    buffer.removeSubrange(...nl)
+                    lock.unlock()
+                    onLine(line)
+                    lock.lock()
+                }
+                lock.unlock()
+            }
+        }
+
+        // Suppress vch's own SIGINT/SIGTERM so Ctrl+C reaches the child.
+        let prevInt  = signal(SIGINT,  SIG_IGN)
+        let prevTerm = signal(SIGTERM, SIG_IGN)
+        defer {
+            signal(SIGINT,  prevInt)
+            signal(SIGTERM, prevTerm)
+            try? logFH.close()
+        }
+
+        let started = Date()
+        do {
+            try proc.run()
+        } catch {
+            throw VibeChardError.externalCommandFailed(
+                cmd: plan.argv.joined(separator: " "),
+                exitCode: 127,
+                stderr: "failed to launch: \(error.localizedDescription)"
+            )
+        }
+
+        let group = DispatchGroup()
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        group.enter()
+        queue.async {
+            defer { group.leave() }
+            drainOneStream(outPipe.fileHandleForReading, mirror ? FileHandle.standardOutput : nil)
+        }
+        group.enter()
+        queue.async {
+            defer { group.leave() }
+            drainOneStream(errPipe.fileHandleForReading, mirror ? FileHandle.standardError : nil)
+        }
+
+        proc.waitUntilExit()
+        group.wait()
+
+        // Flush any trailing bytes that didn't end with a newline.
+        lock.lock()
+        if !buffer.isEmpty {
+            let line = String(decoding: buffer, as: UTF8.self)
+            buffer.removeAll()
+            lock.unlock()
+            onLine(line)
+        } else {
+            lock.unlock()
+        }
+
+        let duration = Date().timeIntervalSince(started)
+        let code: Int32
+        switch proc.terminationReason {
+        case .exit:           code = proc.terminationStatus
+        case .uncaughtSignal: code = 128 + proc.terminationStatus
+        @unknown default:     code = proc.terminationStatus
+        }
+        return RunResult(exitCode: code, durationSeconds: duration)
+    }
+
     /// `execve`-replace the vch process with the plan's argv.
     ///
     /// Why not `Process()` + `waitUntilExit()`?

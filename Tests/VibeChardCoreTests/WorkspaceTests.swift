@@ -22,6 +22,9 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(ws.moduleCacheDir(for: task), "/Users/me/BeanLedger-auth-redesign/.agent-build/ModuleCache")
         XCTAssertEqual(ws.swiftpmCacheDir(for: task), "/Users/me/BeanLedger-auth-redesign/.agent-build/SwiftPM")
         XCTAssertEqual(ws.resultBundlePath(for: task), "/Users/me/BeanLedger-auth-redesign/.agent-build/Result.xcresult")
+        // #9: tee'd test log lives under .vch/, not under .agent-build/,
+        // so `vch rm` cleans it up alongside state.json.
+        XCTAssertEqual(ws.lastTestLogPath(for: task), "/Users/me/BeanLedger-auth-redesign/.vch/last-test.log")
     }
 
     func testTaskNameRawFromWorktreePath() {

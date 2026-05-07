@@ -64,6 +64,13 @@ public struct Workspace: Equatable, Sendable {
         "\(agentBuildDir(for: task))/Result.xcresult"
     }
 
+    /// Path of the last `vch test` xcodebuild firehose, tee'd
+    /// regardless of whether `--verbose` was passed (#9). Lives next
+    /// to `state.json` so `vch rm` cleans it up automatically.
+    public func lastTestLogPath(for task: TaskName) -> String {
+        "\(vchDir(for: task))/last-test.log"
+    }
+
     /// Recognize a worktree path as belonging to vch (i.e. the leaf is
     /// `<repoName>-<something>`). Returns the task-name suffix or nil.
     public func taskNameRaw(forWorktreePath path: String) -> String? {

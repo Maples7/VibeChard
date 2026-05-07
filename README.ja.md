@@ -193,7 +193,8 @@ vch exec task-a -- xcodebuild test \
 | `vch <name>` | `vch exec <name> -- $SHELL` のシュガー。隔離環境変数 + `.vch/bin` PATH シムが有効なシェルが立ち上がる。 |
 | `vch exec <name> -- <cmd...>` | タスク worktree 内で任意のコマンドを実行（隔離有効）。 |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | タスクの worktree に対して `xcodebuild build` を実行。`-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。共有スキームが一つだけのプロジェクトでは `--scheme` を省略可能（`xcodebuild -list -json` で自動検出）。一度記録されたスキームは以降の呼び出しで再利用。`--runtime 'iOS 26.4'` は同名デバイステンプレートが複数 iOS ランタイムと共存する場合にランタイムをピン留めします。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。初回 `--device` 時にシミュレーターを遅延クローンし以降は再利用。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じ。 |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。初回 `--device` 時にシミュレーターを遅延クローンし以降は再利用。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じ。デフォルトでは簡潔なサマリ（スイートごとに 1 行、失敗テストは file:line とアサーションメッセージとともに展開）のみを表示。`--verbose` で xcodebuild の出力をそのまま端末に流し込む。完全なログは常に `<wt>/.vch/last-test.log` に tee される。 |
+| `vch logs <name> [--test]` | タスク直近の `vch test` の xcodebuild フルログを表示。簡潔サマリが失敗を示したとき周辺ログを確認するのに便利。現状は `--test` のみ対応；ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--force` 2 回でダーティツリー＋未マージブランチも許容。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |

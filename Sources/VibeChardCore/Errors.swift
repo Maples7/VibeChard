@@ -24,6 +24,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// a file inside the worktree. Each `WorktreeHolder` is rendered
     /// `pid:command (samplePath)`. Bypass with `--force`. (#10)
     case worktreeBusy(path: String, holders: [WorktreeHolder])
+    /// `vch logs` could not find the requested log file. Used when a
+    /// user runs `vch logs <name>` before the task has executed any
+    /// build / test through vch yet. (#9)
+    case logFileMissing(path: String, hint: String)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -58,6 +62,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
             let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
             let body = lines.joined(separator: "\n")
             return "worktree is held open by \(holders.count) process\(holders.count == 1 ? "" : "es") at \(path) — close the editor / shell or pass --force:\n\(body)"
+        case let .logFileMissing(path, hint):
+            return "no log file at \(path) — \(hint)"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"
