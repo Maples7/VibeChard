@@ -9,6 +9,15 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch run <name>` builds the task's app, then installs and launches
+  it on the task's bound simulator clone in a single command. The
+  scheme auto-detection and `--runtime` rules match `vch build`;
+  `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved post-build via
+  `xcodebuild -showBuildSettings -json` so there is no `--bundle-id`
+  flag. Everything after `--` is forwarded verbatim to `simctl
+  launch` (e.g. `vch run alpha -- -UsePreviewSampleData`). Boots the
+  clone and best-effort opens `Simulator.app` if it is not already
+  running. Reserved-name list grows to include `run`. Closes #18.
 - `vch land <name>` merges a task branch back into its recorded base
   branch and removes the task worktree in one command. Default
   strategy is `--no-ff`; `--ff-only` and `--squash` are also

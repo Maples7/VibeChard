@@ -197,6 +197,7 @@ vch exec task-a -- xcodebuild test \
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` 는 동일 디바이스 템플릿이 여러 iOS 런타임과 공존할 때 런타임을 고정. |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. 기본값은 간결한 요약(스위트당 한 줄, 실패 테스트는 file:line과 단언 메시지를 함께 인라인 표시)만 출력하고 `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-test.log` 로 tee 됨. |
+| `vch run   <name> [flags] [-- launch-args]` | 작업에 묶인 시뮬레이터 클론 위에서 앱을 빌드/설치/실행. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일하며, `PRODUCT_BUNDLE_IDENTIFIER` 는 `xcodebuild -showBuildSettings -json` 에서 자동 해석됨. `--` 이후의 인자는 그대로 `simctl launch` 로 전달됨(예: `vch run alpha -- -UsePreviewSampleData`). 필요하면 클론을 부팅하고 `Simulator.app` 을 엽니다. |
 | `vch logs <name> [--test]` | 태스크의 가장 최근 `vch test` 의 전체 xcodebuild 로그를 출력. 간결 요약이 어떤 실패를 가리킬 때 주변 컨텍스트 확인에 유용. 현재는 `--test` 만 지원하며, 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. |
@@ -227,7 +228,7 @@ shim 은 세 개의 환경 변수(`VCH_DERIVED_DATA_PATH`, `VCH_SPM_CLONE_DIR`,
 Tuist, 내부에서 `xcodebuild` 를 호출하는 스크립트 — 가 자동으로 격리됩니다.
 플래그를 손으로 전달할 필요가 없습니다.
 
-`vch build` 와 `vch test` 는 호출 시점에 인자를 모두 알고 있으므로 PATH shim 을거치지 않고 같은 플래그로 `xcodebuild` 를 직접 호출합니다.
+`vch build`, `vch test`, `vch run` 은 호출 시점에 인자를 모두 알고 있으므로 PATH shim 을 거치지 않고 같은 플래그로 `xcodebuild` 를 직접 호출합니다.
 
 ## 설정
 

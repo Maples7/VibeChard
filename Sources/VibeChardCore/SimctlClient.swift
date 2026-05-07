@@ -105,6 +105,16 @@ public protocol SimctlClient: Sendable {
     /// e.g. `vch remove` swallows failures so the worktree still goes
     /// away.
     func delete(udid: String) throws
+
+    /// Install an `.app` bundle onto the device. Equivalent to
+    /// `xcrun simctl install <udid> <appPath>`. Used by `vch run`
+    /// (#18) once the build has produced the bundle.
+    func install(udid: String, appPath: String) throws
+
+    /// Launch the installed app by bundle id, forwarding `args`
+    /// verbatim after the bundle id. Equivalent to
+    /// `xcrun simctl launch <udid> <bundleID> <args...>`. (#18)
+    func launch(udid: String, bundleID: String, args: [String]) throws
 }
 
 /// Production implementation backed by `/usr/bin/xcrun simctl`.
@@ -231,6 +241,34 @@ public struct DiskSimctlClient: SimctlClient {
         guard result.succeeded else {
             throw VibeChardError.externalCommandFailed(
                 cmd: "xcrun simctl delete \(udid)",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+    }
+
+    public func install(udid: String, appPath: String) throws {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "install", udid, appPath]
+        )
+        guard result.succeeded else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl install \(udid) \(appPath)",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+    }
+
+    public func launch(udid: String, bundleID: String, args: [String]) throws {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "launch", udid, bundleID] + args
+        )
+        guard result.succeeded else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl launch \(udid) \(bundleID)",
                 exitCode: result.exitCode,
                 stderr: result.stderr
             )

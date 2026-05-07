@@ -191,6 +191,7 @@ vch exec task-a -- xcodebuild test \
 | `vch exec <name> -- <cmd...>` | 在任務 worktree 內執行任意指令，隔離已生效。 |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | 對任務的 worktree 執行 `xcodebuild build`，自動注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。當專案只有一個共用 scheme 時，`--scheme` 可省（透過 `xcodebuild -list -json` 自動識別）；記錄後會在後續呼叫裡重複使用。`--runtime 'iOS 26.4'` 用來在多個同名裝置模板（不同 iOS runtime）並存時鎖定要用的 runtime。 |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | 執行 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 時延遲複製模擬器，後續重複使用。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`。預設只輸出精簡摘要（每個 suite 一行，失敗測試會展開檔案:行號與斷言訊息）；`--verbose` 會把 xcodebuild 完整輸出直通到終端。完整 firehose 一律 tee 到 `<wt>/.vch/last-test.log`。 |
+| `vch run   <name> [flags] [-- launch-args]` | 在任務的模擬器複本上建置、安裝並啟動 App。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 透過 `xcodebuild -showBuildSettings -json` 自動解析。`--` 之後的參數原樣轉發給 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要會自動啟動模擬器並打開 `Simulator.app`。 |
 | `vch logs <name> [--test]` | 印出任務最近一次 `vch test` 的完整 xcodebuild log。當精簡摘要指向某個失敗時，可用它檢視前後脈絡。目前只支援 `--test`；log 每次測試會覆寫。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 顯式管理任務的模擬器副本。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 將 `agent/<name>` 合併回基準分支（在 `vch new` 時記錄於 `state.json` 的主 worktree 分支）並刪除 worktree。預設 `--no-ff`；預設提交訊息 `Merge agent/<name>: <最近一個非合併提交的標題>`。下列狀況下拒絕合併：空合併、主 worktree 不在目標分支上、主 worktree 中與任務分支 diff 重疊的路徑未提交（可用 `--allow-dirty` 跳過）。`--keep` 跳過自動 rm；`--dry-run` 只列出計畫不動任何東西。 |
@@ -219,7 +220,7 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 
 效果：任何 agent 可能執行的工具——`xcodebuild`、`swift test`、Tuist、內部又會呼叫 `xcodebuild` 的指令稿——都會自動被隔離。無需手動傳 flag。
 
-`vch build` 與 `vch test` 跳過 PATH shim，直接呼叫 `xcodebuild`
+`vch build`、`vch test` 與 `vch run` 跳過 PATH shim，直接呼叫 `xcodebuild`
 傳遞相同的 flag——因為它們在呼叫點就知道所有參數。
 
 ## 設定

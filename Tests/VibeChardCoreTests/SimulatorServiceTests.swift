@@ -445,6 +445,8 @@ final class FakeSimctl: SimctlClient, @unchecked Sendable {
     var shutdownCalls: [String] = []
     var eraseCalls: [String] = []
     var cloneCalls: [(source: String, newName: String)] = []
+    var installCalls: [(udid: String, appPath: String)] = []
+    var launchCalls: [(udid: String, bundleID: String, args: [String])] = []
     var availableThrows: VibeChardError?
     var allThrows: VibeChardError?
     var cloneThrows: VibeChardError?
@@ -452,6 +454,8 @@ final class FakeSimctl: SimctlClient, @unchecked Sendable {
     var shutdownThrows: VibeChardError?
     var eraseThrows: VibeChardError?
     var deleteThrows: VibeChardError?
+    var installThrows: VibeChardError?
+    var launchThrows: VibeChardError?
 
     func availableDevices() throws -> [SimDevice] {
         if let err = availableThrows { throw err }
@@ -487,5 +491,15 @@ final class FakeSimctl: SimctlClient, @unchecked Sendable {
     func delete(udid: String) throws {
         if let err = deleteThrows { throw err }
         deleteCalls.append(udid)
+    }
+
+    func install(udid: String, appPath: String) throws {
+        if let err = installThrows { throw err }
+        installCalls.append((udid, appPath))
+    }
+
+    func launch(udid: String, bundleID: String, args: [String]) throws {
+        if let err = launchThrows { throw err }
+        launchCalls.append((udid, bundleID, args))
     }
 }

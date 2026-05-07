@@ -194,6 +194,7 @@ vch exec task-a -- xcodebuild test \
 | `vch exec <name> -- <cmd...>` | タスク worktree 内で任意のコマンドを実行（隔離有効）。 |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | タスクの worktree に対して `xcodebuild build` を実行。`-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。共有スキームが一つだけのプロジェクトでは `--scheme` を省略可能（`xcodebuild -list -json` で自動検出）。一度記録されたスキームは以降の呼び出しで再利用。`--runtime 'iOS 26.4'` は同名デバイステンプレートが複数 iOS ランタイムと共存する場合にランタイムをピン留めします。 |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。初回 `--device` 時にシミュレーターを遅延クローンし以降は再利用。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じ。デフォルトでは簡潔なサマリ（スイートごとに 1 行、失敗テストは file:line とアサーションメッセージとともに展開）のみを表示。`--verbose` で xcodebuild の出力をそのまま端末に流し込む。完全なログは常に `<wt>/.vch/last-test.log` に tee される。 |
+| `vch run   <name> [flags] [-- launch-args]` | タスクに紐づいたシミュレータークローン上でアプリをビルド・インストール・起動。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じで、`PRODUCT_BUNDLE_IDENTIFIER` は `xcodebuild -showBuildSettings -json` から自動解決。`--` 以降の引数はそのまま `simctl launch` に転送されます（例：`vch run alpha -- -UsePreviewSampleData`）。必要に応じてクローンをブートし `Simulator.app` を開きます。 |
 | `vch logs <name> [--test]` | タスク直近の `vch test` の xcodebuild フルログを表示。簡潔サマリが失敗を示したとき周辺ログを確認するのに便利。現状は `--test` のみ対応；ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。 |
@@ -221,7 +222,7 @@ vch exec task-a -- xcodebuild test \
 結果：エージェントが起動しうるあらゆるツール——`xcodebuild`、`swift test`、
 Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的に隔離されます。フラグを手で渡す必要はありません。
 
-`vch build` と `vch test` は PATH シムをスキップして直接 `xcodebuild` を同じフラグで呼び出します。呼び出し地点で引数がすべて分かっているためです。
+`vch build`、`vch test`、`vch run` は PATH シムをスキップして直接 `xcodebuild` を同じフラグで呼び出します。呼び出し地点で引数がすべて分かっているためです。
 
 ## 設定
 
