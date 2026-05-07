@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-07
+
 ### Added
 - `vch run <name>` builds the task's app, then installs and launches
   it on the task's bound simulator clone in a single command. The
@@ -417,7 +419,8 @@ Initial public release. Scope is the v1 plan locked in
 - Three fixed targets: `VibeChardCore`, `vch`, `vch-xcodebuild-shim`.
 - No config files in v1; per-worktree state lives in `.vch/state.json`.
 
-[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Maples7/VibeChard/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/Maples7/VibeChard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Maples7/VibeChard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Maples7/VibeChard/compare/v0.1.0...v0.1.1

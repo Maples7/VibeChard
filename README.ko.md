@@ -38,7 +38,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ko.png" alt="vch list 출력: 3개의 에이전트 task 병렬 실행, ok 2개 · fail 1개, 그리고 vch state 세부 정보" width="720">
 </p>
 
-> **상태: alpha (v0.1.3).** CLI 표면은 거의 안정화되었지만 아직 동결되지
+> **상태: alpha (v0.2.0).** CLI 표면은 거의 안정화되었지만 아직 동결되지
 > 않았습니다. `.vch/state.json` 스키마에는 이후 필드가 추가될 수 있습니다.
 > 안정성이 필요하면 태그를 고정하세요.
 
