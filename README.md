@@ -4,6 +4,10 @@
 
 **English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
+<p align="center">
+  <a href="docs/images/hero.en.png"><img src="docs/images/hero.en.png" alt="Without vch: 3 parallel xcodebuilds collide on build.db / module cache / simulator. With vch: each agent in its own worktree with isolated DerivedData and sim clone." width="960"></a>
+</p>
+
 > **Per-task isolated worktrees for parallel Apple development with AI agents.**
 > Run multiple Claude / Codex / Copilot / Cursor sessions on the same Xcode
 > project without `build.db` locks, `DerivedData` thrash, or simulator
@@ -12,6 +16,10 @@
 ```sh
 brew install maples7/tap/vch
 ```
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="vch new → vch list → vch state → vch exec → vch remove, all isolated, in 25 seconds" width="720">
+</p>
 
 Then, in any Apple project:
 
@@ -53,6 +61,36 @@ by parallel `xcodebuild` runs, cause non-deterministic failures:
 You **bring your own AI agent** — Claude, Codex, Copilot, Cursor, anything
 that speaks shell. VibeChard is *not* an AI vendor wrapper. No telemetry,
 no network calls, no SDK lock-in.
+
+<details>
+<summary><strong>“Why not just <code>git worktree</code> + a 5-line shell wrapper?”</strong></summary>
+
+<br/>
+
+Reasonable instinct — that’s how I started. The tree is isolated, but every
+`xcodebuild` invocation an agent fires from inside that tree still resolves
+to these **global** locations:
+
+- `~/Library/Developer/Xcode/DerivedData/MyApp-<hash>/` (global default)
+- `~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/` (global)
+- `~/Library/Caches/org.swift.swiftpm/` (global)
+- `~/Library/Developer/CoreSimulator/Devices/<UDID>/` (global)
+
+As long as any of those are shared, `xcodebuild` is racy under concurrency.
+There are exactly two ways out:
+
+1. **Pass the right flags everywhere.** Remember `-derivedDataPath`,
+   `-clonedSourcePackagesDirPath`, and `-resultBundlePath` on every
+   `xcodebuild` and `swift test`. Then teach Tuist, Fastlane, every
+   custom test script, and any `Package.swift` plugin that shells out to
+   do the same. Then teach your *AI agent* not to forget. It will.
+2. **Put a PATH shim in front of `xcodebuild`** so those flags are
+   guaranteed to be there no matter who or what invokes it.
+
+VibeChard does (2). That’s the whole reason it’s a CLI instead of a
+`.zshrc` snippet.
+
+</details>
 
 ## Install
 
@@ -175,6 +213,71 @@ runtime knobs are the `VCH_*` env vars listed above (typically set by
 - **Not a CI orchestrator.** It runs locally, in your terminal,
   against worktrees on your disk. CI matrices are a different
   problem.
+
+## FAQ
+
+<details>
+<summary><strong>Does it work with Tuist / Fastlane / xcbeautify?</strong></summary>
+
+<br/>
+
+Yes. The PATH shim catches every `xcodebuild` invocation regardless of
+who fires it. Tuist's generated runs, Fastlane's `gym` / `scan`,
+`xcbeautify`'s upstream pipe, and any custom test script that ends up in
+`xcodebuild` all get the per-task `-derivedDataPath` /
+`-clonedSourcePackagesDirPath` / `-resultBundlePath` injected
+automatically. No flag plumbing on your side.
+
+</details>
+
+<details>
+<summary><strong>CocoaPods / Carthage?</strong></summary>
+
+<br/>
+
+Yes. Their dependency-fetching steps don't go through `xcodebuild`, so
+there's nothing to isolate there. Their build steps eventually call
+`xcodebuild`, which the shim catches. `Pods/` and `Carthage/`
+directories live inside the worktree alongside the source, so they're
+isolated by `git worktree` itself.
+
+</details>
+
+<details>
+<summary><strong>SwiftPM-only project (no <code>.xcodeproj</code>)?</strong></summary>
+
+<br/>
+
+Works. `swift build` / `swift test` write to the per-worktree `.build/`
+directory by default — already isolated for free, no shim flag injection
+needed. The shim still wraps `swift` for transparency but doesn't modify
+its argv.
+
+</details>
+
+<details>
+<summary><strong>What happens to uncommitted changes when I <code>vch remove</code>?</strong></summary>
+
+<br/>
+
+It refuses. `vch remove` aborts on a dirty worktree with a clear
+message. Pass `--force` once to override (deletes uncommitted changes);
+pass `--force` twice to also allow removing branches with unmerged
+commits. There is no silent destructive path.
+
+</details>
+
+<details>
+<summary><strong>Do I need an AI agent to use this?</strong></summary>
+
+<br/>
+
+No. Any “I want a parallel sandbox” use case works: try two competing
+implementations of the same feature, run a long test suite while you
+keep coding on the main worktree, etc. The CLI is agent-agnostic — the
+so-called “agent integration” is just `--exec "<your command>"`.
+
+</details>
 
 ## Build & test from source
 

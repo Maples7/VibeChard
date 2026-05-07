@@ -4,6 +4,10 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · **繁體中文** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
+<p align="center">
+  <a href="docs/images/hero.zh-TW.png"><img src="docs/images/hero.zh-TW.png" alt="不用 vch：3 個並行的 xcodebuild 互搶 build.db / 模組快取 / 模擬器。用上 vch：每個 agent 都在自己的 worktree 裡，獨立 DerivedData + 獨立模擬器副本" width="960"></a>
+</p>
+
 > **為 AI 編程代理設計的 Apple 平台並行 worktree 隔離工具。**
 > 在同一個 Xcode 專案裡同時跑多個 Claude / Codex / Copilot / Cursor 工作階段，
 > 不再觸發 `build.db` 鎖、`DerivedData` 抖動或者模擬器互相衝突。
@@ -11,6 +15,10 @@
 ```sh
 brew install maples7/tap/vch
 ```
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="vch new → vch list → vch state → vch exec → vch remove，全部隔離，25 秒內走完" width="720">
+</p>
 
 接著在任何 Apple 專案裡：
 
@@ -22,8 +30,7 @@ vch test add-paywall --device "iPhone 16"
 vch remove add-paywall
 ```
 
-就這樣。每個 agent 都拿到自己專屬的 worktree、專屬的 `DerivedData`、
-專屬的模擬器副本——你的 `~/Library/Developer/` 一個位元組都不會被動。
+就這樣。每個 agent 都拿到自己專屬的 worktree、專屬的 `DerivedData`、專屬的模擬器副本——你的 `~/Library/Developer/` 一個位元組都不會被動。
 
 <p align="center">
   <img src="docs/images/vch-list.zh-TW.png" alt="vch list 輸出：3 個 agent 任務並行，2 個 ok 1 個 fail，以及 vch state 詳情" width="720">
@@ -34,9 +41,7 @@ vch remove add-paywall
 
 ## 為什麼要單獨做一個 CLI？
 
-通用的 git-worktree 管理器（Rift、Emdash、Taskpods、Workie 之類）只解決
-「原始碼樹隔離」一件事。但 Apple 的工具鏈裡**至少還有 7 個**別的共享資源
-——並行跑 `xcodebuild` 時它們會互相干擾，導致非確定性失敗：
+通用的 git-worktree 管理器（Rift、Emdash、Taskpods、Workie 之類）只解決「原始碼樹隔離」一件事。但 Apple 的工具鏈裡**至少還有 7 個**別的共享資源——並行跑 `xcodebuild` 時它們會互相干擾，導致非確定性失敗：
 
 | 資源 | 不隔離時會怎樣 | VibeChard 的做法 |
 |---|---|---|
@@ -49,9 +54,31 @@ vch remove add-paywall
 | 原始碼樹 | 標準做法 | `git worktree` + `agent/<name>` 分支 |
 
 工具是 **BYO Agent（自帶代理）**——Claude、Codex、Copilot、Cursor，
-任何能跑 shell 的東西都行。VibeChard *不是* AI 廠商的封裝。沒有遙測、
-沒有網路請求、沒有 SDK 綁定。
+任何能跑 shell 的東西都行。VibeChard *不是* AI 廠商的封裝。沒有遙測、沒有網路請求、沒有 SDK 綁定。
+<details>
+<summary><strong>「直接用 <code>git worktree</code> + 寫個 5 行 shell function 不就好了？」</strong></summary>
 
+<br/>
+
+合理的懷疑——我一開始也是這麼做的。原始碼樹確實被隔離了，但 agent
+在 worktree 裡跑的每一次 `xcodebuild` 仍然解析到這些**全域**位置：
+
+- `~/Library/Developer/Xcode/DerivedData/MyApp-<hash>/`（全域預設）
+- `~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/`（全域）
+- `~/Library/Caches/org.swift.swiftpm/`（全域）
+- `~/Library/Developer/CoreSimulator/Devices/<UDID>/`（全域）
+
+只要任何一個被共用，並發下的 `xcodebuild` 就是 racy。能解決的方式只有兩條：
+
+1. **每次都手動傳對 flag。** 每個 `xcodebuild`、每個 `swift test`
+   都記得加上 `-derivedDataPath` / `-clonedSourcePackagesDirPath` /
+   `-resultBundlePath`；然後還要教 Tuist、Fastlane、所有自訂測試腳本、任何會 shell out 的 `Package.swift` plugin 都這麼做；然後還要叮寧你的 *AI agent* 別忘——它一定會忘。
+2. **在 `xcodebuild` 前面塞一個 PATH shim**，保證不管誰、用什麼方式叫它，那些 flag 一定都在。
+
+VibeChard 選的是 (2)。這就是為什麼它是 CLI，而不是一段 `.zshrc`
+片段。
+
+</details>
 ## 安裝
 
 ### Homebrew（推薦）
@@ -63,8 +90,7 @@ brew install maples7/tap/vch
 formula 會安裝：
 
 - `vch` 到 Homebrew 的 `bin/`（在 `PATH` 上）
-- `vch-xcodebuild-shim` 到 `libexec/`（**故意不**放在 `PATH` 上——
-  它只應該被 `vch exec` 在每個任務的 `.vch/bin/` 裡建立的符號連結呼叫到）
+- `vch-xcodebuild-shim` 到 `libexec/`（**故意不**放在 `PATH` 上——它只應該被 `vch exec` 在每個任務的 `.vch/bin/` 裡建立的符號連結呼叫到）
 - Bash、Zsh、Fish 的命令補全指令稿
 
 ### 從原始碼建置
@@ -129,8 +155,7 @@ vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副�
 | `vch completions install [--shell <s>]` | 安裝 `zsh` / `bash` / `fish` 的補全腳本（預設從 `$SHELL` 自動識別）。`--print` 預覽；`--force` 覆寫已有檔案。 |
 | `vch version` | 印出版本與工具鏈資訊（`--json` 為機器可讀格式）。 |
 
-所有接受 `<name>` 的指令都會從目前工作區的任務名做補全——
-裝好補全指令稿，按 `<TAB>` 即可。
+所有接受 `<name>` 的指令都會從目前工作區的任務名做補全——裝好補全指令稿，按 `<TAB>` 即可。
 
 ## 隔離的運作方式
 
@@ -138,8 +163,7 @@ vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副�
   <img src="docs/images/architecture.zh-TW.png" alt="架構圖：agent → 主倉 → worktree → PATH shim → 獨立 DerivedData + Sim 副本" width="720">
 </p>
 
-任務 worktree 內的 `<wt>/.vch/bin/` 會被前置到 `PATH` 上，裡面有
-三個符號連結 `xcodebuild`、`xcrun`、`swift` 都指向 `vch-xcodebuild-shim`。
+任務 worktree 內的 `<wt>/.vch/bin/` 會被前置到 `PATH` 上，裡面有三個符號連結 `xcodebuild`、`xcrun`、`swift` 都指向 `vch-xcodebuild-shim`。
 
 shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 `VCH_RESULT_BUNDLE_PATH`），如果使用者沒明確傳對應 flag 就將它們注入到
@@ -147,27 +171,75 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 `/usr/bin/xcrun -f xcodebuild` 解析出真正的 `xcodebuild` 路徑並 `execv`
 （繞過 `PATH`，避免遞迴呼叫自己）。對 `xcrun` 與 `swift` 則是透明轉發。
 
-效果：任何 agent 可能執行的工具——`xcodebuild`、`swift test`、Tuist、
-內部又會呼叫 `xcodebuild` 的指令稿——都會自動被隔離。無需手動傳 flag。
+效果：任何 agent 可能執行的工具——`xcodebuild`、`swift test`、Tuist、內部又會呼叫 `xcodebuild` 的指令稿——都會自動被隔離。無需手動傳 flag。
 
 `vch build` 與 `vch test` 跳過 PATH shim，直接呼叫 `xcodebuild`
 傳遞相同的 flag——因為它們在呼叫點就知道所有參數。
 
 ## 設定
 
-無。所有任務級狀態都在 `<worktree>/.vch/state.json` 裡。
-沒有 `~/.vchrc`、沒有 `.vch.toml`、沒有任何全域設定檔。
-唯一的執行期旋鈕是上面提到的那幾個 `VCH_*` 環境變數
+無。所有任務級狀態都在 `<worktree>/.vch/state.json` 裡。沒有 `~/.vchrc`、沒有 `.vch.toml`、沒有任何全域設定檔。唯一的執行期旋鈕是上面提到的那幾個 `VCH_*` 環境變數
 （一般由 `vch exec` 自己設定，你很少需要手動配置）。
 
 ## VibeChard 不是什麼
 
-- **不是 AI 廠商封裝。** 沒有 SDK、沒有 API key、沒有模型抽象。
-  用任何 agent 都行——VibeChard 只負責讓並行工作階段安全。
+- **不是 AI 廠商封裝。** 沒有 SDK、沒有 API key、沒有模型抽象。用任何 agent 都行——VibeChard 只負責讓並行工作階段安全。
 - **不跨平台。** 只服務 Apple，是設計選擇。整個專案的價值就在
   Xcode 工具鏈上的深度，不在廣度。
 - **不是 CI 編排器。** 它跑在你本地終端機、對你磁碟上的 worktree 起作用。
   CI 矩陣是另一類問題。
+
+## 常見問題
+
+<details>
+<summary><strong>能跟 Tuist / Fastlane / xcbeautify 一起用嗎？</strong></summary>
+
+<br/>
+
+可以。PATH shim 會拦截所有的 `xcodebuild` 呼叫，不管是誰發起的。Tuist
+產生的執行、Fastlane 的 `gym` / `scan`、xcbeautify 上游的管道、任何最終貓到 `xcodebuild` 上的自訂腳本——都會被自動注入每任務的
+`-derivedDataPath` / `-clonedSourcePackagesDirPath` /
+`-resultBundlePath`。你不用自己傳 flag。
+
+</details>
+
+<details>
+<summary><strong>CocoaPods / Carthage 呢？</strong></summary>
+
+<br/>
+
+可以。它們的相依拉取步驟不走 `xcodebuild`，本來就不需要隔離；建構步驟最終會貓到 `xcodebuild`，被 shim 攝下來。`Pods/` 和 `Carthage/` 目錄跟原始碼一起待在 worktree 裡，由 `git worktree` 本身隔離。
+
+</details>
+
+<details>
+<summary><strong>純 SwiftPM 專案（沒有 <code>.xcodeproj</code>）？</strong></summary>
+
+<br/>
+
+行。`swift build` / `swift test` 預設就把產物寫進每個 worktree 自己的
+`.build/`——天然隔離，shim 不用注入 flag。shim 仍然會包住 `swift` 但只做透明 passthrough。
+
+</details>
+
+<details>
+<summary><strong><code>vch remove</code> 時未提交的改動會丟嗎？</strong></summary>
+
+<br/>
+
+不會——它會拒絕執行。`vch remove` 在 worktree 骧的時候會帶著明確提示中止。加一次 `--force` 才會強刪（連帶丟掉未提交改動）；加兩次 `--force`
+還允許刪除有未合併提交的分支。沒有靜默的破壞路徑。
+
+</details>
+
+<details>
+<summary><strong>不用 AI agent 也能用嗎？</strong></summary>
+
+<br/>
+
+能。任何「我想要個並行沙盒」的場景都行：同時試兩套互不相同的實作、跑長測試套件的同時在主 worktree 繼續寫程式，等等。CLI 跟 agent 解耦——所謂 agent 整合只是 `--exec "<your command>"`。
+
+</details>
 
 ## 從原始碼建置與測試
 

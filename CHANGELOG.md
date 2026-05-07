@@ -25,6 +25,57 @@ The English README is the source of truth; localized READMEs may lag.
   auto-deleted on merge by the repo setting, and adds a typical
   `gh pr create --fill` / `gh pr checks --watch` / `gh pr merge
   --squash --delete-branch` loop in the local-commands section.
+- README hero banner (`docs/images/hero.<locale>.png`, 5 locales)
+  rendered at 1920×800 and embedded at the top of every README so
+  the "what does this actually look like?" question gets answered
+  in the first screen instead of below the fold. The banner contrasts
+  a red "Without vch" panel (`Build database is locked`,
+  `ModuleCache.noindex` collisions, etc.) against a green "With vch"
+  panel showing colorized `vch list` output. Renderer in
+  `scripts/render-docs-images/build.js` extended with a `THERO`
+  copy table and a `HERO_SIZE` viewport (1920×800) alongside the
+  existing square 1080×1440 one, so each `npm run build` now
+  produces 15 PNGs (5 locales × 3 image kinds) instead of 10.
+- A 25-second VHS-recorded `docs/images/demo.gif` placed right
+  after the `brew install` block in all 5 READMEs. Walks
+  through `vch new` × 2 → `vch list` → `vch state` → `vch exec
+  swift --version` → `vch remove` × 2 → final empty `vch list`,
+  paced (75 ms typing speed, 1.8–3.5 s sleeps) so the multi-row
+  tables and the colorized `vch state` output have time to read.
+  Re-recordable via `scripts/vhs-demo/demo.tape` (Tokyo Night
+  theme, 1200×700 viewport). Sibling `scripts/vhs-demo/README.md`
+  documents the prereqs (`brew install vhs`,
+  `VCH_DEMO_PROJECT=/path/to/your/Apple/project`).
+- New "Why not just `git worktree` + a 5-line shell wrapper?"
+  `<details>` block inside the existing "Why a CLI just for this?"
+  section across all 5 locales. Lists the four `~/Library/...`
+  global locations that vanilla `git worktree` still leaves shared
+  (`DerivedData`, `Caches/org.swift.swiftpm`,
+  `Caches/org.llvm.clang/ModuleCache`, `CoreSimulator/Devices`) and
+  frames vch as the PATH-shim answer. Pre-empts the most common
+  reader instinct on first read.
+- New FAQ section before "Build & test from source" in all 5
+  locales answering five high-frequency compatibility questions:
+  Tuist / Fastlane / xcbeautify, CocoaPods / Carthage,
+  SwiftPM-only projects (no `.xcodeproj`), what `vch remove`
+  does to uncommitted changes (refuses by default, `--force` once
+  for dirty trees, twice for unmerged branches), and using vch
+  without an AI agent.
+
+### Fixed
+- Localized README typography across `README.zh-CN.md`,
+  `README.zh-TW.md`, `README.ja.md`, `README.ko.md`: merged
+  paragraph line breaks where the previous line ended with a
+  CJK-side character (Chinese / Japanese / Hangul ideograph or
+  CJK punctuation `、，。「」（）`, em-dash `——`) and the next
+  line began with another CJK character. GFM joins consecutive
+  lines in the same paragraph with a literal U+0020 space, which
+  inside a CJK run renders as a visible gap mid-sentence (e.g.
+  zh-CN FAQ Q5 used to show "跑 长测试套件" with the space). The
+  fix is purely whitespace: 92 + 13 + 2 such pairs were merged
+  in-place across the four files; English-CJK and code-CJK
+  boundaries (where a space *is* the convention) were left alone,
+  matching the existing copy style.
 
 ## [0.1.3] - 2026-05-07
 
