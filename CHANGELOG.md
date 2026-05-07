@@ -8,6 +8,15 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Docs
+- `CONTRIBUTING.md` documents the branching model (GitHub flow, no
+  `develop` / `release/*` / `hotfix/*`), Conventional Commits scope
+  list, PR rules, the test layering against `Tests/`, the
+  pre-1.0 versioning policy, and the release flow as the single
+  documented exception to "no direct pushes to master". Read by
+  humans and AI agents alike (the latter still defer to
+  `AGENTS.md` rules first).
+
 ## [0.1.3] - 2026-05-07
 
 ### Added
