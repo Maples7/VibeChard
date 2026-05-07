@@ -293,7 +293,7 @@ xcbeautify の上流パイプ、最終的に `xcodebuild` を叩くカスタム�
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 116 テスト、M シリーズで約 9 秒
+swift test --parallel             # 284 テスト、M シリーズで約 41 秒
 ```
 
 CI は push のたびに同じコマンド + シムのスモークテストを実行します：

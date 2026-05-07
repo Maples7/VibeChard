@@ -335,7 +335,7 @@ so-called “agent integration” is just `--exec "<your command>"`.
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 116 tests, ~9s on M-series
+swift test --parallel             # 284 tests, ~41s on M-series
 ```
 
 CI runs the same commands plus a shim smoke probe on every push:

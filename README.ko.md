@@ -304,7 +304,7 @@ shim 은 투명한 passthrough 로 `swift` 를 감싸지만 argv 는 수정하�
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 116 개 테스트, M 시리즈에서 약 9 초
+swift test --parallel             # 284 개 테스트, M 시리즈에서 약 41 초
 ```
 
 CI 는 push 마다 같은 명령과 shim 스모크 프로브를 실행합니다:
