@@ -186,8 +186,8 @@ vch exec task-a -- xcodebuild test \
 |---|---|
 | `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。 |
 | `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列。 |
-| `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch state <name>` | 漂亮打印任务的 `.vch/state.json`。`--json` 输出原始文件内容。`--field <dotted>` 只输出单个字段值（如 `simulator.udid`），方便在脚本里 `$(vch state foo --field simulator.udid)` 这样取。 |
+| `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中打开 worktree。自动识别 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（项目文件用 Xcode，否则用 VS Code）。`--with` 支持 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名（透传给 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆盖默认值。不传 `<name>` 时使用 `$PWD` 所在的 worktree。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` 的语法糖——开一个 shell，隔离环境变量 + `.vch/bin` PATH shim 已就绪。 |
 | `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |

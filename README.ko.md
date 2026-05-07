@@ -190,8 +190,8 @@ vch exec task-a -- xcodebuild test \
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. |
 | `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. |
-| `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
 | `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. `--field <dotted>` 는 단일 스칼라 값(예: `simulator.udid`)만 출력 — 스크립트에서 `$(vch state foo --field simulator.udid)` 으로 쓰기 위해 설계. |
+| `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
 | `vch <name>` | `vch exec <name> -- $SHELL` 의 단축형 — 격리 환경 변수 + `.vch/bin` PATH shim 이 활성화된 셸 진입. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
