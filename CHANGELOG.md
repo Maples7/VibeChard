@@ -16,6 +16,15 @@ The English README is the source of truth; localized READMEs may lag.
   documented exception to "no direct pushes to master". Read by
   humans and AI agents alike (the latter still defer to
   `AGENTS.md` rules first).
+- `CONTRIBUTING.md` follow-ups aligning the doc with the actual
+  branch-protection setup: release commits now also go through a
+  PR (`chore/release-x.y.z` branch) instead of being a "documented
+  exception" to the no-direct-push rule; only the tag push remains
+  outside protection. Calls out that branch protection is what
+  *enforces* the no-direct-push rule, that feature branches are
+  auto-deleted on merge by the repo setting, and adds a typical
+  `gh pr create --fill` / `gh pr checks --watch` / `gh pr merge
+  --squash --delete-branch` loop in the local-commands section.
 
 ## [0.1.3] - 2026-05-07
 

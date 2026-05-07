@@ -15,10 +15,12 @@ We use a stripped-down [GitHub flow](https://githubflow.github.io/):
 - `master` is the only long-lived branch. It is **always
   releasable** — every commit on it has a green CI build.
 - All changes land via pull request. **Do not push directly to
-  `master`** (the only allowed exception is `chore(release): x.y.z`
-  commits, see [Releases](#releases) below).
-- Feature work happens on short-lived branches off `master`. Delete
-  them after merge.
+  `master`.** This is enforced by branch protection — pushes are
+  rejected and PRs cannot merge until the `Build & Test` status
+  check is green.
+- Feature work happens on short-lived branches off `master`. They
+  are auto-deleted on merge by the repo setting; nothing to clean
+  up by hand.
 - We do **not** use `develop`, `release/*`, or `hotfix/*` branches.
   If we ever need to maintain an older minor (e.g. patches to
   `0.1.x` after `0.2.0` ships) we'll open `support/0.1.x` then —
@@ -127,30 +129,39 @@ breaking. The minor itself is the warning that "0.x is not stable".
 
 ## Releases
 
-Cutting a release is a single-author flow and is the documented
-exception to the "no direct pushes to master" rule:
+Cutting a release follows the same PR flow — there is no special
+path around branch protection. Tag pushes are not gated by branch
+protection, so the tag itself goes up after the release commit
+lands on `master`.
 
 1. **Land everything you want in the release** through PRs first.
-   `## [Unreleased]` in CHANGELOG should describe what's in the
-   release.
-2. On `master`, in one commit:
+   `## [Unreleased]` in CHANGELOG should describe what's in it.
+2. Open a `chore/release-x.y.z` branch. In one commit:
    - Bump `Sources/VibeChardCore/VibeChard.swift` →
-     `public static let version = "x.y.z"`
-   - In CHANGELOG, replace the empty `## [Unreleased]` heading with
-     `## [Unreleased]` *(re-add it empty)* + `## [x.y.z] - YYYY-MM-DD`,
-     and add the compare link `[x.y.z]:
-     https://github.com/Maples7/VibeChard/compare/<prev>...<this>`.
-   - Update the `[Unreleased]` compare link to start from the new tag.
+     `public static let version = "x.y.z"`.
+   - In CHANGELOG, rename `## [Unreleased]` to
+     `## [x.y.z] - YYYY-MM-DD`, then re-add an empty `## [Unreleased]`
+     above it. Add a `[x.y.z]:
+     https://github.com/Maples7/VibeChard/compare/<prev>...v<x.y.z>`
+     compare link at the bottom and update the `[Unreleased]` link
+     to start from the new tag.
    - Commit message: `chore(release): x.y.z` with a one-paragraph
      summary in the body.
-3. `git tag -a vx.y.z -m "vx.y.z"` and `git push origin master vx.y.z`.
+3. Open the PR, wait for CI green, squash-merge.
+4. **Then** tag and push only the tag — `master` is already up
+   to date:
+   ```sh
+   git checkout master && git pull --ff-only
+   git tag -a vx.y.z -m "vx.y.z"
+   git push origin vx.y.z
+   ```
 
-[`release.yml`](.github/workflows/release.yml) does the rest:
-verifies the tag matches `VibeChard.version`, runs the test suite
-in release mode, creates the GitHub Release, and bumps the formula
-in `Maples7/homebrew-tap`. If
-`HOMEBREW_TAP_TOKEN` is unset the tap step is skipped — the rest
-of the release still completes.
+[`release.yml`](.github/workflows/release.yml) triggers on the tag
+push: it verifies the tag matches `VibeChard.version`, runs the
+test suite in release mode, creates the GitHub Release, and bumps
+the formula in `Maples7/homebrew-tap`. If `HOMEBREW_TAP_TOKEN` is
+unset the tap step is skipped — the rest of the release still
+completes.
 
 ## Local commands
 
@@ -159,6 +170,18 @@ swift build -c release           # produce .build/release/{vch,vch-xcodebuild-sh
 swift test --parallel            # full suite (must be green)
 ./.build/release/vch version
 ./.build/release/vch version --json
+```
+
+Typical PR loop with the [GitHub CLI](https://cli.github.com/):
+
+```sh
+git checkout -b feat/<thing>
+# ... edits + swift test --parallel ...
+git commit -m "feat(scope): subject" -m "why..."
+git push -u origin feat/<thing>
+gh pr create --base master --fill        # uses commit body as PR body
+gh pr checks --watch                     # wait for Build & Test
+gh pr merge --squash --delete-branch     # after CI green
 ```
 
 ## Reporting issues
