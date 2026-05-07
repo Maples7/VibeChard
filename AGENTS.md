@@ -45,6 +45,13 @@ under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
    must land inside the worktree's `.vch/` or `.agent-build/`. Do not
    regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`
    exec path on every push.
+10. **Multi-language README sync.** Substantive changes to `README.md`
+    (features, commands, install steps, rules) must be mirrored to
+    `README.ja.md`, `README.ko.md`, `README.zh-CN.md`, `README.zh-TW.md`
+    in the same PR. If you cannot translate confidently, add
+    `<!-- TODO: sync with README.md -->` at the top of the affected file
+    rather than letting it silently drift. Pure typo / link / formatting
+    fixes are exempt.
 
 ## Architecture map
 
