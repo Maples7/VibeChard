@@ -196,7 +196,8 @@ vch exec task-a -- xcodebuild test \
 | `vch <name>` | `vch exec <name> -- $SHELL` 의 단축형 — 격리 환경 변수 + `.vch/bin` PATH shim 이 활성화된 셸 진입. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` 는 동일 디바이스 템플릿이 여러 iOS 런타임과 공존할 때 런타임을 고정. |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. 기본값은 간결한 요약(스위트당 한 줄, 실패 테스트는 file:line과 단언 메시지를 함께 인라인 표시)만 출력하고 `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-test.log` 로 tee 됨. |
+| `vch logs <name> [--test]` | 태스크의 가장 최근 `vch test` 의 전체 xcodebuild 로그를 출력. 간결 요약이 어떤 실패를 가리킬 때 주변 컨텍스트 확인에 유용. 현재는 `--test` 만 지원하며, 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--force` 두 번이면 더티 트리 + 머지되지 않은 브랜치도 허용. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |

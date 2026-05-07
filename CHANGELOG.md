@@ -9,6 +9,23 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch test` now produces a concise summary by default — at most a
+  few dozen lines for a passing 100-test run, with each failing test
+  expanded inline as `✗ Suite/testName` plus its file:line and
+  assertion message. The full xcodebuild firehose is always tee'd to
+  `<wt>/.vch/last-test.log` and accessible via `vch logs <name>`.
+  Pass `--verbose` to mirror the firehose to the terminal in real
+  time (the previous default behavior). Output stays parseable by
+  simple `grep -E '✓ \d+ passed'` / `grep '✗ '` patterns. Status
+  is honest: vch never invents a `✓` / `✗` when xcodebuild
+  bailed out before emitting `** TEST SUCCEEDED **` / `** TEST
+  FAILED **` (e.g. compile failure). XCTest only in this revision;
+  Swift Testing's emoji-prefixed format flows through the log file
+  but is not yet summarized. Closes #9.
+- `vch logs <name>` (with `--test`, currently the only flavor) prints
+  the most recent `vch test` log so users don't have to remember the
+  on-disk path. Reserved-name list grows to include `logs`. Part of
+  #9.
 - `vch state <name> --field <dotted>` prints a single scalar from
   `state.json` for use in scripts (e.g.
   `udid=$(vch state foo --field simulator.udid)`). Mirrors
@@ -61,6 +78,13 @@ The English README is the source of truth; localized READMEs may lag.
   Surfaces silent runtime drift for free. Part of #11.
 
 ### Tests
+- New `TestOutputSummarizerTests` (11) covers the XCTest log parser:
+  passing run, failure with file:line + assertion message, failure
+  with `path:line:column` form, crash without preceding error line,
+  multi-suite mixed outcomes, render shape, and graceful degradation
+  to `unknown` status on compile-only output. `WorkspaceTests` and
+  `TaskNameTests` extended for the new `lastTestLogPath` and the
+  `logs` reserved-name addition. Total: 218 → 229+.
 - New `LsofParserTests` (7), `TaskStateFieldTests` (8), and
   `SchemeResolverTests` (9). `SimulatorServiceTests` gained 4 cases
   for the `--runtime` filter and reuse-time mismatch error.

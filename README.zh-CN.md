@@ -192,7 +192,8 @@ vch exec task-a -- xcodebuild test \
 | `vch <name>` | `vch exec <name> -- $SHELL` 的语法糖——开一个 shell，隔离环境变量 + `.vch/bin` PATH shim 已就绪。 |
 | `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |
 | `vch build <name> [flags] [-- xcodebuild-extras]` | 对任务的 worktree 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。当项目只有一个共享 scheme 时，`--scheme` 可省（通过 `xcodebuild -list -json` 自动识别）；记录后会在后续调用里复用。`--runtime 'iOS 26.4'` 用来在多个同名设备模板（不同 iOS runtime）共存时锁定要用的 runtime。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 时懒克隆模拟器，后续复用。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`。 |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 时懒克隆模拟器，后续复用。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`。默认输出只显示精简摘要（每个 suite 一行，失败测试连同 file:line 与断言消息内联展开）；`--verbose` 把 xcodebuild 完整输出直通到终端。完整 firehose 始终 tee 到 `<wt>/.vch/last-test.log`。 |
+| `vch logs <name> [--test]` | 打印任务最近一次 `vch test` 的完整 xcodebuild 日志。精简摘要指向某个失败时，可用它查看上下文。目前只支持 `--test`；日志每次跑测试时覆盖。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆。 |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。两次 `--force` 才允许脏树 + 未合并分支。 |
 | `vch repair` | 用 `git worktree list` 的实际状态重新对齐 `.vch/state.json`。 |

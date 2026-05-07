@@ -20,6 +20,7 @@ private enum BuildOrTest {
         device: String?,
         runtime: String?,
         noSim: Bool,
+        verbose: Bool = false,
         extraArgs: [String]
     ) throws {
         let task = try TaskName(taskName)
@@ -94,7 +95,32 @@ private enum BuildOrTest {
             )
         }
 
-        let result = try PlanLauncher.run(plan)
+        let result: PlanLauncher.RunResult
+        switch action {
+        case .build:
+            // Build keeps today's firehose behavior — no parsing,
+            // direct stdout/stderr inheritance.
+            result = try PlanLauncher.run(plan)
+        case .test:
+            // Test goes through the tee path so we can summarize at
+            // the end (#9). The full log is always preserved at
+            // <wt>/.vch/last-test.log regardless of --verbose.
+            let logURL = URL(fileURLWithPath: workspace.lastTestLogPath(for: task))
+            CLIBridge.eprintln("→ running tests\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
+            let s = TestOutputSummarizer()
+            result = try PlanLauncher.runTee(
+                plan,
+                logURL: logURL,
+                mirror: verbose,
+                onLine: { s.feed($0) }
+            )
+            // Render concise summary unconditionally — it's a useful
+            // recap even in verbose mode (a 100-test firehose makes
+            // the final ✓/✗ line easy to lose). Stdout (not stderr)
+            // so `vch test foo | grep '✓'` works.
+            let colorize = ANSI.defaultEnabledForStdout()
+            print(s.render(colorize: colorize))
+        }
 
         // Always write the outcome — the user wants to know about
         // failed runs too. We swallow only the inner write error so a
@@ -118,7 +144,7 @@ private enum BuildOrTest {
 
     /// `, runtime: iOS 18.5` or `` (when unknown). Formats inline so
     /// the build/test log line stays single-line.
-    private static func formatRuntime(_ rt: SimRuntimeVersion?) -> String {
+    fileprivate static func formatRuntime(_ rt: SimRuntimeVersion?) -> String {
         guard let rt else { return "" }
         return ", runtime: iOS \(rt.major).\(rt.minor)"
     }
@@ -198,6 +224,9 @@ struct TestCommand: ParsableCommand {
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
+    @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-test.log (see `vch logs <name>`).")
+    var verbose: Bool = false
+
     @Argument(parsing: .postTerminator,
               help: "Extra args appended to xcodebuild after `--`.")
     var extraArgs: [String] = []
@@ -212,6 +241,7 @@ struct TestCommand: ParsableCommand {
                 device: device,
                 runtime: runtime,
                 noSim: noSim,
+                verbose: verbose,
                 extraArgs: extraArgs
             )
         }

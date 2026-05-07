@@ -95,7 +95,7 @@ enum TaskShortcutDispatcher {
         "exec", "shellenv", "open", "state", "completions",
         // Reserved for future milestones (so we don't accidentally
         // treat them as task names today and break later).
-        "build", "test", "sim", "doctor",
+        "build", "test", "logs", "sim", "doctor",
         "help",
     ]
 
