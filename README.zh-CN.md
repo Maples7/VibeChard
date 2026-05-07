@@ -30,8 +30,7 @@ vch test add-paywall --device "iPhone 16"
 vch remove add-paywall
 ```
 
-就这些。每个 agent 拿到自己专属的 worktree、专属的 `DerivedData`、
-专属的模拟器克隆——你的 `~/Library/Developer/` 一字节都不会被动。
+就这些。每个 agent 拿到自己专属的 worktree、专属的 `DerivedData`、专属的模拟器克隆——你的 `~/Library/Developer/` 一字节都不会被动。
 
 <p align="center">
   <img src="docs/images/vch-list.zh-CN.png" alt="vch list 输出：3 个 agent 任务并行，2 个 ok 1 个 fail，以及 vch state 详情" width="720">
@@ -42,9 +41,7 @@ vch remove add-paywall
 
 ## 为什么单独做一个 CLI？
 
-通用的 git-worktree 管理器（Rift、Emdash、Taskpods、Workie 之类）只解决
-「源码树隔离」一件事。但 Apple 的工具链里**至少还有 7 个**别的共享资源
-——并行跑 `xcodebuild` 时它们会互相踩，导致非确定性失败：
+通用的 git-worktree 管理器（Rift、Emdash、Taskpods、Workie 之类）只解决「源码树隔离」一件事。但 Apple 的工具链里**至少还有 7 个**别的共享资源——并行跑 `xcodebuild` 时它们会互相踩，导致非确定性失败：
 
 | 资源 | 不隔离时会怎样 | VibeChard 的做法 |
 |---|---|---|
@@ -57,8 +54,7 @@ vch remove add-paywall
 | 源码树 | 标准做法 | `git worktree` + `agent/<name>` 分支 |
 
 工具是 **BYO Agent（自带代理）**——Claude、Codex、Copilot、Cursor，
-任何能跑 shell 的东西都行。VibeChard *不是* AI 厂商的封装。无遥测、
-无网络请求、无 SDK 绑定。
+任何能跑 shell 的东西都行。VibeChard *不是* AI 厂商的封装。无遥测、无网络请求、无 SDK 绑定。
 
 <details>
 <summary><strong>「直接用 <code>git worktree</code> + 写个 5 行的 shell 函数不就行了？」</strong></summary>
@@ -73,16 +69,12 @@ worktree 里跑的每一次 `xcodebuild` 仍然解析到这些**全局**位置�
 - `~/Library/Caches/org.swift.swiftpm/`（全局）
 - `~/Library/Developer/CoreSimulator/Devices/<UDID>/`（全局）
 
-只要其中任何一个被共享，并发下的 `xcodebuild` 就是 racy 的。要解决
-只有两条路：
+只要其中任何一个被共享，并发下的 `xcodebuild` 就是 racy 的。要解决只有两条路：
 
 1. **每次都手动传对 flag。** 每个 `xcodebuild`、每个 `swift test`
    都记得带上 `-derivedDataPath` / `-clonedSourcePackagesDirPath` /
-   `-resultBundlePath`；然后还要教 Tuist、Fastlane、所有自定义测试
-   脚本、任何会 shell out 的 `Package.swift` plugin 都这么做；然后还
-   要叮嘱你的 *AI agent* 别忘——它一定会忘。
-2. **在 `xcodebuild` 前面塞个 PATH shim**，保证不管谁、用什么方式
-   调它，那些 flag 一定在。
+   `-resultBundlePath`；然后还要教 Tuist、Fastlane、所有自定义测试脚本、任何会 shell out 的 `Package.swift` plugin 都这么做；然后还要叮嘱你的 *AI agent* 别忘——它一定会忘。
+2. **在 `xcodebuild` 前面塞个 PATH shim**，保证不管谁、用什么方式调它，那些 flag 一定在。
 
 VibeChard 选的是 (2)。这就是为什么它是个 CLI，而不是一段 `.zshrc`
 片段。
@@ -100,8 +92,7 @@ brew install maples7/tap/vch
 formula 会安装：
 
 - `vch` 到 Homebrew 的 `bin/`（在 `PATH` 上）
-- `vch-xcodebuild-shim` 到 `libexec/`（**故意不**放在 `PATH` 上——
-  它只应该被 `vch exec` 在每个任务的 `.vch/bin/` 里建的符号链接调到）
+- `vch-xcodebuild-shim` 到 `libexec/`（**故意不**放在 `PATH` 上——它只应该被 `vch exec` 在每个任务的 `.vch/bin/` 里建的符号链接调到）
 - Bash、Zsh、Fish 的命令补全脚本
 
 ### 从源码构建
@@ -166,8 +157,7 @@ vch remove add-paywall                # 删除 worktree + 分支 + 模拟器克�
 | `vch completions install [--shell <s>]` | 安装 `zsh` / `bash` / `fish` 的补全脚本（默认从 `$SHELL` 自动识别）。`--print` 预览；`--force` 覆盖已有文件。 |
 | `vch version` | 打印版本与工具链信息（`--json` 为机器可读格式）。 |
 
-所有接受 `<name>` 的命令都会从当前工作区拿任务名做补全——
-装好补全脚本，按 `<TAB>` 即可。
+所有接受 `<name>` 的命令都会从当前工作区拿任务名做补全——装好补全脚本，按 `<TAB>` 即可。
 
 ## 隔离的工作机制
 
@@ -175,8 +165,7 @@ vch remove add-paywall                # 删除 worktree + 分支 + 模拟器克�
   <img src="docs/images/architecture.zh-CN.png" alt="架构图：agent → 主仓 → worktree → PATH shim → 独立 DerivedData + Sim 克隆" width="720">
 </p>
 
-任务 worktree 内的 `<wt>/.vch/bin/` 会被前置到 `PATH` 上，里面有
-三个符号链接 `xcodebuild`、`xcrun`、`swift` 都指向 `vch-xcodebuild-shim`。
+任务 worktree 内的 `<wt>/.vch/bin/` 会被前置到 `PATH` 上，里面有三个符号链接 `xcodebuild`、`xcrun`、`swift` 都指向 `vch-xcodebuild-shim`。
 
 shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 `VCH_RESULT_BUNDLE_PATH`），如果用户没显式传对应 flag 就把它们注入到
@@ -184,23 +173,19 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 `/usr/bin/xcrun -f xcodebuild` 解出真实的 `xcodebuild` 路径并 `execv`
 （绕开 `PATH`，避免递归调用自己）。对 `xcrun` 和 `swift` 是透明转发。
 
-效果：任何 agent 可能跑的工具——`xcodebuild`、`swift test`、Tuist、
-内部又会调到 `xcodebuild` 的脚本——都自动被隔离。无需手动传 flag。
+效果：任何 agent 可能跑的工具——`xcodebuild`、`swift test`、Tuist、内部又会调到 `xcodebuild` 的脚本——都自动被隔离。无需手动传 flag。
 
 `vch build` 和 `vch test` 跳过 PATH shim，直接调用 `xcodebuild`
 传相同的 flag——因为它们在调用点就知道所有参数。
 
 ## 配置
 
-无。所有任务级状态都在 `<worktree>/.vch/state.json` 里。
-没有 `~/.vchrc`、没有 `.vch.toml`、没有任何全局配置文件。
-唯一的运行时旋钮是上面提到的那几个 `VCH_*` 环境变量
+无。所有任务级状态都在 `<worktree>/.vch/state.json` 里。没有 `~/.vchrc`、没有 `.vch.toml`、没有任何全局配置文件。唯一的运行时旋钮是上面提到的那几个 `VCH_*` 环境变量
 （一般由 `vch exec` 自己设置，你很少需要手动配）。
 
 ## VibeChard 不是什么
 
-- **不是 AI 厂商封装。** 没有 SDK、没有 API key、没有模型抽象。
-  用任何 agent 都行——VibeChard 只负责让并行会话安全。
+- **不是 AI 厂商封装。** 没有 SDK、没有 API key、没有模型抽象。用任何 agent 都行——VibeChard 只负责让并行会话安全。
 - **不跨平台。** 只服务 Apple，是设计选择。整个项目的价值就在
   Xcode 工具链上的深度，不在广度。
 - **不是 CI 编排器。** 它跑在你本地终端、对你磁盘上的 worktree 起作用。
@@ -214,8 +199,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 <br/>
 
 可以。PATH shim 会拦截所有的 `xcodebuild` 调用，不管是谁发起的。Tuist
-生成的执行、Fastlane 的 `gym` / `scan`、xcbeautify 上游的管道、任何
-最终调到 `xcodebuild` 上的自定义脚本——都会被自动注入每任务的
+生成的执行、Fastlane 的 `gym` / `scan`、xcbeautify 上游的管道、任何最终调到 `xcodebuild` 上的自定义脚本——都会被自动注入每任务的
 `-derivedDataPath` / `-clonedSourcePackagesDirPath` /
 `-resultBundlePath`。你不用自己传 flag。
 
@@ -226,9 +210,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 
 <br/>
 
-可以。它们的依赖拉取步骤不走 `xcodebuild`，本来就不需要隔离；构建步骤
-最终会调到 `xcodebuild`，被 shim 拦下来。`Pods/` 和 `Carthage/` 目录跟
-源码一起待在 worktree 里，由 `git worktree` 本身隔离。
+可以。它们的依赖拉取步骤不走 `xcodebuild`，本来就不需要隔离；构建步骤最终会调到 `xcodebuild`，被 shim 拦下来。`Pods/` 和 `Carthage/` 目录跟源码一起待在 worktree 里，由 `git worktree` 本身隔离。
 
 </details>
 
@@ -238,8 +220,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 <br/>
 
 行。`swift build` / `swift test` 默认就把产物写进每个 worktree 自己的
-`.build/`——天然隔离，shim 不用注入 flag。shim 仍然会包住 `swift` 但只
-做透明 passthrough。
+`.build/`——天然隔离，shim 不用注入 flag。shim 仍然会包住 `swift` 但只做透明 passthrough。
 
 </details>
 
@@ -248,8 +229,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 
 <br/>
 
-不会——它会拒绝执行。`vch remove` 在 worktree 脏的时候会带着明确提示
-中止。加一次 `--force` 才会强删（连带丢掉未提交改动）；加两次 `--force`
+不会——它会拒绝执行。`vch remove` 在 worktree 脏的时候会带着明确提示中止。加一次 `--force` 才会强删（连带丢掉未提交改动）；加两次 `--force`
 还允许删除有未合并提交的分支。没有静默的破坏路径。
 
 </details>
@@ -259,9 +239,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 
 <br/>
 
-能。任何「我想要个并行沙盒」的场景都行：同时试两套互不相同的实现、跑
-长测试套件的同时在主 worktree 继续写代码，等等。CLI 跟 agent 解耦——
-所谓 agent 集成只是 `--exec "<your command>"`。
+能。任何「我想要个并行沙盒」的场景都行：同时试两套互不相同的实现、跑长测试套件的同时在主 worktree 继续写代码，等等。CLI 跟 agent 解耦——所谓 agent 集成只是 `--exec "<your command>"`。
 
 </details>
 

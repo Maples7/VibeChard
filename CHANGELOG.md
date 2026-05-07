@@ -62,6 +62,21 @@ The English README is the source of truth; localized READMEs may lag.
   for dirty trees, twice for unmerged branches), and using vch
   without an AI agent.
 
+### Fixed
+- Localized README typography across `README.zh-CN.md`,
+  `README.zh-TW.md`, `README.ja.md`, `README.ko.md`: merged
+  paragraph line breaks where the previous line ended with a
+  CJK-side character (Chinese / Japanese / Hangul ideograph or
+  CJK punctuation `、，。「」（）`, em-dash `——`) and the next
+  line began with another CJK character. GFM joins consecutive
+  lines in the same paragraph with a literal U+0020 space, which
+  inside a CJK run renders as a visible gap mid-sentence (e.g.
+  zh-CN FAQ Q5 used to show "跑 长测试套件" with the space). The
+  fix is purely whitespace: 92 + 13 + 2 such pairs were merged
+  in-place across the four files; English-CJK and code-CJK
+  boundaries (where a space *is* the convention) were left alone,
+  matching the existing copy style.
+
 ## [0.1.3] - 2026-05-07
 
 ### Added
