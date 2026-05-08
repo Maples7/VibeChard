@@ -58,8 +58,7 @@ public enum LsofParser {
         var order: [Int32] = []
 
         for raw in fieldOutput.split(separator: "\n", omittingEmptySubsequences: false) {
-            guard !raw.isEmpty else { continue }
-            let kind = raw.first!
+            guard let kind = raw.first else { continue }
             let value = String(raw.dropFirst())
             switch kind {
             case "p":

@@ -109,9 +109,9 @@ public struct CleanService: Sendable {
             // Filter to holders that touch caches we'd actually
             // delete. An editor at the worktree root or a shell
             // cd'd in shouldn't gate cleanup of `.agent-build/`.
+            let managedSubstrings = Workspace.managedDirPrefixes.map { "/\($0)" }
             let blocking = blockingHolders.filter { holder in
-                holder.samplePath.contains("/.agent-build/")
-                    || holder.samplePath.contains("/.vch/")
+                managedSubstrings.contains { holder.samplePath.contains($0) }
             }
             if !blocking.isEmpty {
                 throw VibeChardError.cleanBlockedByHolders(

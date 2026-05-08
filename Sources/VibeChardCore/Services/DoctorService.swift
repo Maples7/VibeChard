@@ -102,9 +102,9 @@ public struct DoctorService: Sendable {
             guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
             report.checkedTasks.append(raw)
 
-            let statePath = "\(entry.path)/.vch/state.json"
+            let statePath = "\(entry.path)/\(Workspace.stateJsonRelativePath)"
             guard fs.fileExists(at: statePath) else {
-                report.stateProblems.append("\(raw): missing .vch/state.json")
+                report.stateProblems.append("\(raw): missing \(Workspace.stateJsonRelativePath)")
                 continue
             }
             do {

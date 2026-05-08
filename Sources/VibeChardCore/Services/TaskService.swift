@@ -156,7 +156,7 @@ public struct TaskService: Sendable {
         // tracked .gitignore is never touched.
         try? git.appendLocalExcludes(
             worktreeCwd: wtPath,
-            patterns: [".vch/", ".agent-build/"]
+            patterns: Workspace.managedDirPrefixes
         )
 
         // Record `baseRef` as the resolved short SHA so `vch list` shows
@@ -203,7 +203,7 @@ public struct TaskService: Sendable {
         // once `appendLocalExcludes` has been called at least once, but
         // skip them explicitly so a fresh repo's first `vch new` still
         // does the right thing.
-        let skipPrefixes = [".vch/", ".agent-build/"]
+        let skipPrefixes = Workspace.managedDirPrefixes
 
         var copied = 0
         for rel in entries {
@@ -246,7 +246,7 @@ public struct TaskService: Sendable {
             // Only consider entries whose leaf matches our `<repo>-<task>` pattern.
             guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
 
-            let statePath = "\(entry.path)/.vch/state.json"
+            let statePath = "\(entry.path)/\(Workspace.stateJsonRelativePath)"
             var state: TaskState? = nil
             if fs.fileExists(at: statePath) {
                 if let data = try? fs.readFile(at: statePath) {
@@ -429,9 +429,9 @@ public struct TaskService: Sendable {
             guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
             report.checkedTasks.append(raw)
 
-            let statePath = "\(entry.path)/.vch/state.json"
+            let statePath = "\(entry.path)/\(Workspace.stateJsonRelativePath)"
             guard fs.fileExists(at: statePath) else {
-                report.problems.append("\(raw): missing .vch/state.json")
+                report.problems.append("\(raw): missing \(Workspace.stateJsonRelativePath)")
                 continue
             }
             do {

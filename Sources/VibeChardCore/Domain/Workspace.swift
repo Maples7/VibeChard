@@ -85,4 +85,23 @@ public struct Workspace: Equatable, Sendable {
         if p.hasSuffix("/") && p != "/" { return String(p.dropLast()) }
         return p
     }
+
+    // MARK: - Layout constants
+    //
+    // Single source of truth for the worktree-relative paths vch
+    // owns. Used by callers that iterate worktree contents *before*
+    // they have a `TaskName` in scope (Doctor, BugReport,
+    // TaskService porcelain scans), where the per-task helpers
+    // above can't apply. Anything that does have a `TaskName`
+    // should still call `statePath(for:)` / `vchDir(for:)` /
+    // `agentBuildDir(for:)` — those compose these constants.
+
+    /// Per-worktree state file, relative to the worktree root.
+    public static let stateJsonRelativePath = ".vch/state.json"
+
+    /// Worktree-relative directory prefixes that vch manages
+    /// (`.vch/` for state, `.agent-build/` for caches). Callers
+    /// scanning a worktree should skip entries with these prefixes
+    /// to avoid touching vch's own scratch directories.
+    public static let managedDirPrefixes: [String] = [".vch/", ".agent-build/"]
 }
