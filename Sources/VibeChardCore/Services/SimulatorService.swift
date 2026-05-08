@@ -234,7 +234,12 @@ public struct SimulatorService: Sendable {
             case (nil, nil): return lhs.udid < rhs.udid
             }
         }
-        return sorted.first!
+        // Safe by construction: the guard above rejects empty `matches`,
+        // so `sorted` carries the same count and `first` is non-nil.
+        guard let pick = sorted.first else {
+            throw VibeChardError.simulatorTemplateNotFound(name: name)
+        }
+        return pick
     }
 
     /// Normalize the user's `--runtime` argument into a comparable

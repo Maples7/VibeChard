@@ -36,7 +36,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.zh-TW.png" alt="vch list 輸出：3 個 agent 任務並行，2 個 ok 1 個 fail，以及 vch state 詳情" width="720">
 </p>
 
-> **狀態：alpha (v0.2.0)。** CLI 介面已大致穩定但尚未凍結；
+> **狀態：alpha (v0.3.0)。** CLI 介面已大致穩定但尚未凍結；
 > `.vch/state.json` 的 schema 之後還可能新增欄位。需要穩定請固定 tag。
 
 ## 為什麼要單獨做一個 CLI？
@@ -226,7 +226,7 @@ git stash pop                # foo 還原為原本狀態
 | `vch logs <name> [--test]` | 印出任務最近一次 `vch test` 的完整 xcodebuild log。當精簡摘要指向某個失敗時，可用它檢視前後脈絡。目前只支援 `--test`；log 每次測試會覆寫。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 顯式管理任務的模擬器副本。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 將 `agent/<name>` 合併回基準分支（在 `vch new` 時記錄於 `state.json` 的主 worktree 分支）並刪除 worktree。預設 `--no-ff`；預設提交訊息 `Merge agent/<name>: <最近一個非合併提交的標題>`。下列狀況下拒絕合併：空合併、主 worktree 不在目標分支上、主 worktree 中與任務分支 diff 重疊的路徑未提交（可用 `--allow-dirty` 跳過）。`--keep` 跳過自動 rm；`--dry-run` 只列出計畫不動任何東西。 |
-| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。`--allow-dirty` 允許未提交改動；`--allow-unmerged` 強刪未合併的分支。`-f / --force` 是兩個旗標的廢棄別名，會在 stderr 警告，計畫在 0.4.0 刪除。 |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。`--allow-dirty` 允許未提交改動；`--allow-unmerged` 強刪未合併的分支。`-f` / `--force` 是廢棄別名——傳一次等於 `--allow-dirty`，傳兩次等於 `--allow-dirty --allow-unmerged`；stderr 會告警，計畫在 0.4.0 刪除。 |
 | `vch repair` | 用 `git worktree list` 的實際狀態重新對齊 `.vch/state.json`。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 清理任務的 `DerivedData` + `ModuleCache`（預設）。`--swiftpm` 連 SwiftPM clone 目錄一起刪，`--logs` 刪 `.vch/last-test.log`，`--all` 為全刪。若有進程還開著 `.agent-build/` 或 `.vch/` 裡的檔案（如正在 indexing 的 Xcode）會拒絕；`--dry-run` 只列要刪的項目不真刪。 |
 | `vch doctor [--clean] [--json]` | 偵測孤兒模擬器副本、失效綁定、毀損的 `state.json`。有發現就以非零退出。 |

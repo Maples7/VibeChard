@@ -37,7 +37,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ja.png" alt="vch list の出力: 3 つのエージェントタスクを並列実行、ok 2 つ ・ fail 1 つ、そして vch state の詳細" width="720">
 </p>
 
-> **ステータス: alpha (v0.2.0)。** CLI のインターフェースはほぼ落ち着いていますが
+> **ステータス: alpha (v0.3.0)。** CLI のインターフェースはほぼ落ち着いていますが
 > まだ凍結されていません。`.vch/state.json` のスキーマには今後フィールドが
 > 追加される可能性があります。安定が必要ならタグを固定してください。
 
@@ -233,7 +233,7 @@ ignore されたファイルを原子的に移送する」操作には git 由�
 | `vch logs <name> [--test]` | タスク直近の `vch test` の xcodebuild フルログを表示。簡潔サマリが失敗を示したとき周辺ログを確認するのに便利。現状は `--test` のみ対応；ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。 |
-| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。`-f / --force` は両フラグの非推奨エイリアスで、stderr に警告を出力して 0.4.0 で削除予定。 |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。`-f` / `--force` は非推奨エイリアスで、一回で `--allow-dirty`、二回で `--allow-dirty --allow-unmerged` にマップされます。stderr に警告を出力し、0.4.0 で削除予定です。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | タスクの `DerivedData` + `ModuleCache` を削除（デフォルト）。`--swiftpm` で SwiftPM クローンディレクトリも、`--logs` で `.vch/last-test.log` も、`--all` で全部を削除。`.agent-build/` または `.vch/` 以下のファイルを開いているプロセス（インデックス中の Xcode など）があれば拒否。`--dry-run` は削除予定の一覧を表示して何も触らずに返る。 |
 | `vch doctor [--clean] [--json]` | 孤児シミュレータークローン、古いステートバインディング、破損 `state.json` を検出。検出時は非ゼロ終了。 |

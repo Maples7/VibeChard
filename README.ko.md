@@ -38,7 +38,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ko.png" alt="vch list 출력: 3개의 에이전트 task 병렬 실행, ok 2개 · fail 1개, 그리고 vch state 세부 정보" width="720">
 </p>
 
-> **상태: alpha (v0.2.0).** CLI 표면은 거의 안정화되었지만 아직 동결되지
+> **상태: alpha (v0.3.0).** CLI 표면은 거의 안정화되었지만 아직 동결되지
 > 않았습니다. `.vch/state.json` 스키마에는 이후 필드가 추가될 수 있습니다.
 > 안정성이 필요하면 태그를 고정하세요.
 
@@ -235,7 +235,7 @@ ignore 파일을 원자적으로 옮기기" 는 git 에 native primitive 가 없
 | `vch logs <name> [--test]` | 태스크의 가장 최근 `vch test` 의 전체 xcodebuild 로그를 출력. 간결 요약이 어떤 실패를 가리킬 때 주변 컨텍스트 확인에 유용. 현재는 `--test` 만 지원하며, 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. |
-| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. `-f / --force` 는 두 플래그의 디프리케이티드 이별칭으로, stderr에 경고를 출력하며 0.4.0 에서 제거될 예정입니다. |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. `-f` / `--force` 는 디프리케이티드 별칭이며, 한 번 전달하면 `--allow-dirty`, 두 번 전달하면 `--allow-dirty --allow-unmerged` 로 매핑됩니다. stderr에 경고를 출력하며 0.4.0 에서 제거될 예정입니다. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 작업의 `DerivedData` + `ModuleCache` 삭제（기본）. `--swiftpm` 는 SwiftPM 클론 디렉터리도, `--logs` 는 `.vch/last-test.log` 도, `--all` 은 전부 삭제. `.agent-build/` 또는 `.vch/` 내 파일을 여는 프로세스（인덱싱 중인 Xcode 등）가 있으면 거부. `--dry-run` 은 삭제 예정 항목만 나열하고 아무것도 건들지 않음. |
 | `vch doctor [--clean] [--json]` | 고아 시뮬레이터 클론, 오래된 상태 바인딩, 손상된 `state.json` 탐지. 발견 시 비정상 종료. |

@@ -85,7 +85,7 @@ public struct BugReportService: Sendable {
             if entry.path == workspace.mainWorktreePath { continue }
             guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
 
-            let statePath = "\(entry.path)/.vch/state.json"
+            let statePath = "\(entry.path)/\(Workspace.stateJsonRelativePath)"
             if fs.fileExists(at: statePath), let data = try? fs.readFile(at: statePath) {
                 entries.append(BugReportEntry(
                     path: "tasks/\(raw)/state.json",
