@@ -54,17 +54,19 @@ public enum CompletionsInstaller {
         shell: CompletionShell,
         home: String
     ) -> CompletionsInstallPlan {
-        let normalizedHome = stripTrailingSlash(home)
+        // `PathOps.join` (FilePath under the hood) handles trailing
+        // slashes on `home` lexically, so the previous manual
+        // `stripTrailingSlash` step is no longer needed.
         switch shell {
         case .zsh:
             // Convention: `~/.zsh/completions/_vch`. We deliberately
             // do NOT touch the user's `.zshrc` — printing the snippet
             // is enough; auto-edit is invasive and out of scope per
             // AGENTS.md rule #7 ("no config-file writes" spirit).
-            let dir = "\(normalizedHome)/.zsh/completions"
+            let dir = PathOps.join(home, ".zsh/completions")
             return CompletionsInstallPlan(
                 shell: .zsh,
-                targetPath: "\(dir)/_vch",
+                targetPath: PathOps.join(dir, "_vch"),
                 postInstallHint: """
                 Add this once to your ~/.zshrc (if not already present):
 
@@ -74,10 +76,10 @@ public enum CompletionsInstaller {
             )
         case .bash:
             // Standard XDG-ish location used by bash-completion v2.
-            let dir = "\(normalizedHome)/.local/share/bash-completion/completions"
+            let dir = PathOps.join(home, ".local/share/bash-completion/completions")
             return CompletionsInstallPlan(
                 shell: .bash,
-                targetPath: "\(dir)/vch",
+                targetPath: PathOps.join(dir, "vch"),
                 postInstallHint: """
                 If `vch <Tab>` does not work, ensure bash-completion is
                 installed and sourced in your ~/.bashrc:
@@ -87,25 +89,12 @@ public enum CompletionsInstaller {
                 """
             )
         case .fish:
-            let dir = "\(normalizedHome)/.config/fish/completions"
+            let dir = PathOps.join(home, ".config/fish/completions")
             return CompletionsInstallPlan(
                 shell: .fish,
-                targetPath: "\(dir)/vch.fish",
+                targetPath: PathOps.join(dir, "vch.fish"),
                 postInstallHint: ""  // fish auto-loads from this dir.
             )
         }
-    }
-
-    private static func stripTrailingSlash(_ s: String) -> String {
-        // We always concatenate with a leading `/` afterwards, so for
-        // the filesystem-root edge case we must return "" — otherwise
-        // we'd emit `//.zsh/...` (still valid POSIX, but ugly and
-        // surprises tests).
-        if s == "/" { return "" }
-        var out = s
-        while out.hasSuffix("/") && out.count > 1 {
-            out.removeLast()
-        }
-        return out
     }
 }

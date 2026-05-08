@@ -41,13 +41,13 @@ public enum OpenService {
         let sorted = rootContents.sorted()
 
         if let ws = sorted.first(where: { $0.hasSuffix(".xcworkspace") }) {
-            return .xcworkspace(absolutePath: "\(worktreePath)/\(ws)")
+            return .xcworkspace(absolutePath: PathOps.join(worktreePath, ws))
         }
         if let proj = sorted.first(where: { $0.hasSuffix(".xcodeproj") }) {
-            return .xcodeproj(absolutePath: "\(worktreePath)/\(proj)")
+            return .xcodeproj(absolutePath: PathOps.join(worktreePath, proj))
         }
         if sorted.contains("Package.swift") {
-            return .swiftPackage(packageFilePath: "\(worktreePath)/Package.swift")
+            return .swiftPackage(packageFilePath: PathOps.join(worktreePath, "Package.swift"))
         }
         return .bareDirectory
     }

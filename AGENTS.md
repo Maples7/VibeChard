@@ -11,7 +11,11 @@ Apple project without trampling each other's `DerivedData`, `ModuleCache`,
 SwiftPM caches, or simulator state.
 
 Locked v1 plan, with rationale and acceptance criteria, lives in agent memory
-under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
+under `/memories/repo/vibechard-plan.md`. Read it for the *original Q-decision
+rationale* if you have access — but treat it as a historical artifact, not a
+current-state spec. The plan itself carries a STALE WARNING; per Engineering
+discipline #1 below, when the plan and the source tree disagree, **the source
+tree wins.**
 
 ## Hard rules (do not break)
 
@@ -91,8 +95,8 @@ Sources/
 ├── VibeChardCore/           ← all business logic
 │   ├── Domain/              ← pure value types, errors, exit codes
 │   ├── System/              ← IO abstractions (protocol + Disk* impl)
-│   ├── Planning/            ← pure transforms: planners, parsers, generators
-│   └── Services/            ← orchestrators that compose Planning + System
+│   ├── Logic/               ← pure transforms: planners, parsers, generators
+│   └── Services/            ← orchestrators that compose Logic + System
 ├── vch/                     ← thin ArgumentParser shell, calls Core
 │   ├── VchCLI.swift         ← @main root command
 │   ├── Commands/            ← one file per subcommand (or related cluster)
@@ -103,7 +107,7 @@ Sources/
 The four sub-buckets in `VibeChardCore/` are organisational only — there
 is one Swift module. Cross-bucket imports are unrestricted; the buckets
 just keep the file list scannable. Rough rule of thumb: **Domain** has
-no IO, **Planning** has no IO, **System** wraps a single IO concern
+no IO, **Logic** has no IO, **System** wraps a single IO concern
 behind a protocol, **Services** compose the previous three to do real
 work.
 
@@ -123,8 +127,15 @@ and exit-code mapping. Every behavior must be unit-testable from
 
 The grill-me session that produced this design is captured in
 `/memories/repo/vibechard-plan.md`. If you find yourself wanting to violate
-a rule above, do **not** silently revise it. Surface the trade-off in the
-PR description and propose a Q-amendment first.
+one of the **Hard rules 1–10** above, do **not** silently revise it. Surface
+the trade-off in the PR description and propose a Q-amendment first.
+
+This ceremony does **not** apply to ordinary command-surface evolution
+(new subcommands, new flags, new output fields) during 0.x. Those just
+ship behind a CHANGELOG entry. Q-amendment is for the load-bearing rules
+— Apple-only, BYO Agent, no telemetry, two deps, three targets, the shim
+staying minimal, no config files, the reserved subcommand list,
+`~/Library/Developer/` immunity, and the multi-language README sync rule.
 
 ## Useful local commands
 
