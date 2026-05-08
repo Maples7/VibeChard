@@ -41,6 +41,9 @@ public enum ShellEnvScript {
     # `vch new`, so `vch_new fix --base main --copy-untracked` works.
     # When --exec is requested, vch execve's into the agent and cd is
     # not meaningful — we delegate transparently in that case.
+    # Otherwise we pass --cd so we get the machine-readable contract
+    # (stdout = path only); status / hints route to stderr where the
+    # user still sees them.
     #   vch_new <task-name> [--base <ref>] [--copy-untracked] [--exec <cmd>]
     vch_new() {
         local _arg
@@ -53,7 +56,7 @@ public enum ShellEnvScript {
             esac
         done
         local _vch_path
-        _vch_path="$(command vch new "$@")" || return $?
+        _vch_path="$(command vch new --cd "$@")" || return $?
         cd "$_vch_path"
     }
 

@@ -30,6 +30,18 @@ final class ShellEnvScriptTests: XCTestCase {
                       "vch_new must call `command vch new` to bypass shell aliases")
     }
 
+    func testVchNewUsesCdContractForPathCapture() {
+        // #32B: when the helper captures stdout to drive the parent
+        // shell's `cd`, it must opt into the machine-readable
+        // `--cd` contract. Without this we'd silently break the
+        // moment vch added another stdout line. Eats our own dog
+        // food and pins the contract to a regression-safe assert.
+        XCTAssertTrue(
+            ShellEnvScript.zshBash.contains("command vch new --cd"),
+            "vch_new must invoke `command vch new --cd` so stdout = path only"
+        )
+    }
+
     func testZshBashUsesCommandVchToAvoidRecursionFromAlias() {
         // If a user has aliased `vch=...`, the helper must invoke the
         // real binary via `command vch path`. Bare `vch path` would

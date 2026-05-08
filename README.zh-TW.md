@@ -178,11 +178,42 @@ vch exec task-a -- xcodebuild test \
   -only-testing:MyAppTests/Foo
 ```
 
+## Cookbook
+
+不夠格做成指令、但又常常會用上的場景，記在這裡。
+
+### 從未提交的 WIP 上分叉新任務
+
+`agent/foo` 做到一半，想再開一條 `agent/foo-experiment` 從 foo 的
+**目前未提交狀態**（不只是已提交歷史）出發。`vch new --base agent/foo`
+只能帶上已提交的 commit；未提交的 diff 與未追蹤檔案得靠 stash：
+
+```sh
+cd "$(vch path foo)"
+git stash push --include-untracked -m "fork-checkpoint"
+
+vch new foo-experiment --base agent/foo
+
+cd "$(vch path foo-experiment)"
+git stash apply              # 用 apply 不要用 pop —— stash 條目保留
+
+cd "$(vch path foo)"
+git stash pop                # foo 還原為原本狀態
+```
+
+`apply` + `pop` 的組合讓同一份 checkpoint 落到兩個 worktree。如果不
+需要把 WIP 還原到 foo，把最後一行換成 `git stash drop` 即可。
+
+為什麼不做成 `vch fork`：「原子地把 staged + unstaged + 未追蹤 +
+按規則忽略的檔案搬過去」在 git 裡沒有原生原語，詳見
+[#27](https://github.com/Maples7/VibeChard/issues/27)。上面這套手動
+腳本足夠穩，不值得加內建指令。
+
 ## 指令一覽
 
 | 指令 | 作用 |
 |---|---|
-| `vch new <name>` | 在 `../<repo>-<name>` 建立 worktree，分支為 `agent/<name>`。`--exec "<cmd>"` 在 worktree 內直接執行指令（例如 AI agent）。`--copy-untracked` 會連同未追蹤、未被忽略的檔案（如 `.env`、`.vscode/settings.json`）一起複製過來。 |
+| `vch new <name>` | 在 `../<repo>-<name>` 建立 worktree，分支為 `agent/<name>`。`--exec "<cmd>"` 在 worktree 內直接執行指令（例如 AI agent）。`--copy-untracked` 會連同未追蹤、未被忽略的檔案（如 `.env`、`.vscode/settings.json`）一起複製過來。`--cd` 啟用機器可讀契約：stdout 只輸出 worktree 絕對路徑，狀態與提示全走 stderr —— 給 fish / nushell 這類用不了 `vch shellenv` 的 shell 寫 `cd "$(vch new --cd foo)"` 這種 wrapper。與 `--exec` 互斥。 |
 | `vch list` | 列出目前工作區下所有任務。`--json` 為機器可讀格式；`-v`/`--verbose` 增加 `BASE` 與 `PATH` 欄位；`--git-status` 增加 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 欄位（每個 worktree 多跑一次 `git rev-list` + `git status`）。 |
 | `vch state <name>` | 漂亮印出任務的 `.vch/state.json`。`--json` 輸出原始檔案內容。`--field <dotted>` 只輸出單個欄位值（如 `simulator.udid`），方便在腳本裡 `$(vch state foo --field simulator.udid)` 這樣取。 |
 | `vch path <name>` | 印出任務 worktree 的絕對路徑。 |
@@ -224,6 +255,31 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 
 `vch build`、`vch test` 與 `vch run` 跳過 PATH shim，直接呼叫 `xcodebuild`
 傳遞相同的 flag——因為它們在呼叫點就知道所有參數。
+
+### `vch exec` / `vch <name>` 為子行程注入了什麼
+
+`vch <name>`（= `vch exec <name> -- $SHELL`）和 `vch exec <name> --
+<cmd>` 都會在你既有的環境之上疊一層確定性的 env，跟 `vch build` /
+`vch test` / `vch run` 用的是同一套——所以你在 `vch <name>` 裡手敲
+`xcodebuild` 的行為與 `vch build` 完全一致。基本上不再需要另一個
+「把我丟進任務環境」的指令，`vch <name>` 已經是了：
+
+| 變數 | 設成 |
+|---|---|
+| `VCH_TASK_NAME` | 任務名稱（如 `add-paywall`），常用於 PS1 / 終端標題。 |
+| `VCH_TASK_ROOT` | worktree 絕對路徑。 |
+| `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData`（shim 讀取）。 |
+| `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages`（shim 讀取）。 |
+| `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult`（shim 讀取）。 |
+| `VCH_RESULT_BUNDLE_DIR` | result bundle 的父目錄。 |
+| `CLANG_MODULE_CACHE_PATH` | `<wt>/.agent-build/ModuleCache`（clang 讀取）。 |
+| `SWIFTPM_CACHE_DIR` | `<wt>/.agent-build/SourcePackages`（SwiftPM 讀取）。 |
+| `DEVELOPER_DIR` | 宿主選定的 Xcode（`xcode-select -p`）—— 僅當使用者尚未設定時注入。 |
+| `SIMCTL_CHILD_SIMULATOR_UDID` | 任務綁定的模擬器副本 —— 僅當已綁定時設定。 |
+| `PATH` | 在最前面附加 `<wt>/.vch/bin`，讓 `xcodebuild` / `xcrun` / `swift` 走 shim。 |
+
+`vch` 不會覆寫你已 export 的值——在 `vch exec` 之前手動 `export`
+任意一個，你的值優先。
 
 ## 設定
 

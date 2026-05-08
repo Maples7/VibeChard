@@ -196,11 +196,47 @@ vch exec task-a -- xcodebuild test \
   -only-testing:MyAppTests/Foo
 ```
 
+## Cookbook
+
+Patterns that aren't a built-in command but come up enough to write
+down.
+
+### Branching off mid-WIP work
+
+You're partway through `agent/foo` and want to spawn
+`agent/foo-experiment` from foo's **current uncommitted state**, not
+just its committed history. `vch new --base agent/foo` only carries
+committed history; the uncommitted diff (and any untracked files)
+needs the stash dance:
+
+```sh
+cd "$(vch path foo)"
+git stash push --include-untracked -m "fork-checkpoint"
+
+vch new foo-experiment --base agent/foo
+
+cd "$(vch path foo-experiment)"
+git stash apply              # apply, don't pop — leaves the entry intact
+
+cd "$(vch path foo)"
+git stash pop                # restore foo's WIP
+```
+
+`apply` + `pop` lets one checkpoint land in both worktrees. If you
+don't care about restoring foo, drop the final `git stash pop` and
+use `git stash drop` instead.
+
+This isn't a `vch fork` because the atomic "transfer staged +
+unstaged + untracked + selectively-ignored" operation has no native
+git primitive — see [#27](https://github.com/Maples7/VibeChard/issues/27)
+for the full discussion. The recipe above is the stable manual
+fallback.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. |
+| `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. `--cd` opts into the machine-readable contract: stdout prints **only** the absolute worktree path, all status/hints go to stderr — for fish/nushell wrappers like `cd "$(vch new --cd foo)"`. Mutually exclusive with `--exec`. |
 | `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns; `--git-status` adds `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` columns (one extra `git rev-list` + `git status` per worktree). |
 | `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. `--field <dotted>` prints just one scalar (e.g. `simulator.udid`) — designed for `$(vch state foo --field simulator.udid)` in scripts. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
@@ -248,6 +284,32 @@ gets isolated automatically. No flag-passing required.
 `vch build`, `vch test`, and `vch run` skip the PATH shim and call
 `xcodebuild` directly with the same flags, since they know the args at
 the call site.
+
+### What `vch exec` / `vch <name>` injects into the child
+
+`vch <name>` (= `vch exec <name> -- $SHELL`) and `vch exec <name> --
+<cmd>` give the child a deterministic env layered on top of yours.
+The same set drives `vch build` / `vch test` / `vch run`, so any
+ad-hoc `xcodebuild` you type inside `vch <name>` behaves identically
+to `vch build`. You rarely need a separate "drop me into the task's
+env" command — `vch <name>` already is one:
+
+| Variable | Set to |
+|---|---|
+| `VCH_TASK_NAME` | The task name (e.g. `add-paywall`). Useful for PS1 / window title. |
+| `VCH_TASK_ROOT` | Absolute worktree path. |
+| `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData` (read by the shim). |
+| `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages` (read by the shim). |
+| `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult` (read by the shim). |
+| `VCH_RESULT_BUNDLE_DIR` | Parent dir of the result bundle. |
+| `CLANG_MODULE_CACHE_PATH` | `<wt>/.agent-build/ModuleCache` (read by clang). |
+| `SWIFTPM_CACHE_DIR` | `<wt>/.agent-build/SourcePackages` (read by SwiftPM). |
+| `DEVELOPER_DIR` | Host's selected Xcode via `xcode-select -p` — only set if you didn't already export one. |
+| `SIMCTL_CHILD_SIMULATOR_UDID` | The task's bound simulator clone — only set if a clone is bound. |
+| `PATH` | Prepended with `<wt>/.vch/bin` so `xcodebuild` / `xcrun` / `swift` route through the shim. |
+
+`vch` never clobbers a value you've already exported — set any of
+these manually before `vch exec` and your value wins.
 
 ## Configuration
 
