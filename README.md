@@ -249,7 +249,7 @@ fallback.
 | `vch logs <name> [--test]` | Print the full xcodebuild log from the task's most recent run. Useful when the concise `vch test` summary points at a failure and you want the surrounding context. Currently `--test` is the only flavor; the `vch test` log is overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. |
-| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--allow-unmerged` force-deletes a branch that isn't fully merged. `-f` / `--force` is a deprecated alias — pass once for `--allow-dirty`, twice for `--allow-dirty --allow-unmerged`; emits a stderr warning, scheduled for removal in 0.4.0. |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--allow-unmerged` force-deletes a branch that isn't fully merged. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | Delete the task's `DerivedData` + `ModuleCache` (default). Add `--swiftpm` to also drop the SwiftPM clone dir, `--logs` to drop `.vch/last-test.log`, `--all` for everything. Refuses if any process still has a file open inside `.agent-build/` or `.vch/` (e.g. an Xcode that's actively indexing); `--dry-run` lists what would be removed. |
 | `vch doctor [--clean] [--json]` | Detect orphan simulator clones, stale state bindings, and corrupt `state.json`s. Exits non-zero on any finding. |
@@ -385,14 +385,6 @@ It refuses. `vch remove` aborts on a dirty worktree with a clear
 message. Pass `--allow-dirty` to override (deletes uncommitted changes);
 pass `--allow-unmerged` (or both flags together) to also allow removing
 branches with unmerged commits. There is no silent destructive path.
-The legacy `--force` (once) / `--force --force` (twice) syntax still
-works but is deprecated and prints a warning suggesting the named
-flags; it is scheduled for removal in 0.4.0 (pre-1.0 minors are
-allowed to break per CONTRIBUTING.md). Per-task simulator clones are
-also renamed in v0.3.0: `<original>-vch-<task>` instead of
-`<original> · vch[<task>]`. Existing clones keep working —
-`vch doctor` recognizes both schemes when scanning for orphans, and
-UDIDs (not display names) are the source of truth.
 
 </details>
 

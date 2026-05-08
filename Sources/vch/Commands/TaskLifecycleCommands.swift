@@ -532,20 +532,12 @@ struct RemoveCommand: ParsableCommand {
     var name: String
 
     @Flag(name: .long,
-          help: "Discard uncommitted changes and remove the worktree anyway (replaces `--force`).")
+          help: "Discard uncommitted changes and remove the worktree anyway.")
     var allowDirty: Bool = false
 
     @Flag(name: .long,
-          help: "Delete the branch even if it has commits not merged into its base (replaces `--force --force`).")
+          help: "Delete the branch even if it has commits not merged into its base.")
     var allowUnmerged: Bool = false
-
-    @Flag(
-        name: .shortAndLong,
-        help: ArgumentHelp(
-            "Deprecated alias: pass once for `--allow-dirty`, twice for `--allow-dirty --allow-unmerged`. Scheduled for removal in 0.4.0."
-        )
-    )
-    var force: Int
 
     @Flag(name: .long, help: "Keep the per-task simulator clone (default: delete it).")
     var keepSim: Bool = false
@@ -557,24 +549,13 @@ struct RemoveCommand: ParsableCommand {
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
             let service = TaskService(workspace: workspace, git: DiskGitClient())
 
-            // Translate `--force` (deprecated) into the named flags so
-            // both the busy-worktree pre-check and `RemoveOptions` see
-            // the same effective state. Emit one warning per call.
-            if force >= 1 {
-                CLIBridge.eprintln("warning: --force is deprecated; use --allow-dirty"
-                                   + (force >= 2 ? " --allow-unmerged" : "")
-                                   + ". Scheduled for removal in 0.4.0.")
-            }
-            let dirtyAllowed = allowDirty || force >= 1
-            let unmergedAllowed = allowUnmerged || force >= 2
-
             // #10: refuse to delete the worktree out from under an open
             // editor / shell unless the user explicitly forces. We do
             // this BEFORE reading state.json (which is also held by us
             // for the simulator-cleanup step) so the diagnostic lands
             // before we touch anything.
             let wtPath = workspace.worktreePath(for: task)
-            if !dirtyAllowed,
+            if !allowDirty,
                FileManager.default.fileExists(atPath: wtPath) {
                 let scanner = DiskWorktreeHolderScanner()
                 if let holders = try? scanner.findHolders(of: wtPath),
@@ -589,8 +570,8 @@ struct RemoveCommand: ParsableCommand {
             let simRecord = readSimulatorRecord(workspace: workspace, task: task)
 
             let opts = TaskService.RemoveOptions(
-                allowDirty: dirtyAllowed,
-                allowUnmergedBranch: unmergedAllowed
+                allowDirty: allowDirty,
+                allowUnmergedBranch: allowUnmerged
             )
             try service.removeTask(task, options: opts)
 
