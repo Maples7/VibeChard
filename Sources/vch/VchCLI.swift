@@ -30,6 +30,7 @@ struct VchCLI: ParsableCommand {
             LandCommand.self,
             RemoveCommand.self,
             // Maintenance / diagnostics.
+            CleanCommand.self,
             RepairCommand.self,
             DoctorCommand.self,
             // Shell integration + meta.

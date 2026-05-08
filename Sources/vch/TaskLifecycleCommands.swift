@@ -55,6 +55,21 @@ struct NewCommand: ParsableCommand {
             )
             print(path)
 
+            // #32A: nudge first-time users toward `vch shellenv` so
+            // that `vch_new <name>` auto-cds. Skipped when --exec is
+            // set (we're about to execve, banner would be lost) or
+            // when the user already sources the helpers / opted out.
+            if exec == nil {
+                let env = ProcessInfo.processInfo.environment
+                let stdoutIsTTY = isatty(fileno(stdout)) != 0
+                if let hint = NewTaskHint.message(
+                    stdoutIsTTY: stdoutIsTTY,
+                    env: env
+                ) {
+                    CLIBridge.eprintln(hint)
+                }
+            }
+
             // BYO Agent integration point (AGENTS.md rule #2):
             // hand off to /bin/sh -c "<cmd>" inside the new worktree
             // with isolation env active. We `execve` instead of fork+
@@ -66,7 +81,8 @@ struct NewCommand: ParsableCommand {
                 let shimPath = try ExecCommand.resolveShimPath(env: env)
                 let execService = ExecService(
                     workspace: workspace,
-                    git: DiskGitClient()
+                    git: DiskGitClient(),
+                    developerDir: XcodeSelectDeveloperDirResolver()
                 )
                 let plan = try execService.prepare(
                     task: task,
@@ -95,6 +111,12 @@ struct ListCommand: ParsableCommand {
     @Flag(name: .shortAndLong, help: "Add columns: PATH, BASE.")
     var verbose: Bool = false
 
+    @Flag(
+        name: [.long, .customLong("git")],
+        help: "Add columns: AHEAD/BEHIND, DIRTY, LAST COMMIT (one git rev-list + status per worktree). Stays off the default path so existing scripts don't slow down."
+    )
+    var gitStatus: Bool = false
+
     func run() throws {
         try CLIBridge.run {
             let cwd = FileManager.default.currentDirectoryPath
@@ -103,11 +125,21 @@ struct ListCommand: ParsableCommand {
                 workspace: workspace,
                 git: DiskGitClient()
             )
-            let summaries = try service.listTasks()
+            var summaries = try service.listTasks()
+            if gitStatus {
+                // Sequential is fine for typical 1–5 worktrees
+                // (~50ms per worktree). If users hit a bigger fleet
+                // we can hoist this into a TaskGroup later — the
+                // service method is already pure so the rewrite is
+                // local to this CLI layer.
+                summaries = summaries.map { s in
+                    s.with(gitStatus: service.gitStatus(forSummary: s))
+                }
+            }
             if json {
                 try printSummariesJSON(summaries)
             } else {
-                printSummariesTable(summaries, verbose: verbose)
+                printSummariesTable(summaries, verbose: verbose, gitStatus: gitStatus)
             }
         }
     }
@@ -123,13 +155,13 @@ struct ListCommand: ParsableCommand {
         }
     }
 
-    private func printSummariesTable(_ summaries: [TaskSummary], verbose: Bool) {
+    private func printSummariesTable(_ summaries: [TaskSummary], verbose: Bool, gitStatus: Bool) {
         if summaries.isEmpty {
             print("(no vch tasks; use `vch new <name>`)")
             return
         }
-        let header: [String]
-        let rows: [[String]]
+        var header: [String]
+        var rows: [[String]]
         if verbose {
             header = ["NAME", "BRANCH", "BASE", "SIM", "CREATED", "BUILD", "PATH"]
             rows = summaries.map { s in
@@ -153,6 +185,22 @@ struct ListCommand: ParsableCommand {
                     s.createdAt.map(humanDate) ?? "-",
                     buildStatusLabel(s),
                 ]
+            }
+        }
+        if gitStatus {
+            // Inserted before the optional PATH column so PATH stays
+            // last (verbose layout) and so the columns read
+            // left-to-right as: identity → build → git → path.
+            let extraHeader = ["AHEAD/BEHIND", "DIRTY", "LAST COMMIT"]
+            let insertAt = verbose ? header.count - 1 : header.count
+            header.insert(contentsOf: extraHeader, at: insertAt)
+            for (i, s) in summaries.enumerated() {
+                let extra = [
+                    aheadBehindLabel(s.gitStatus),
+                    dirtyLabel(s.gitStatus),
+                    lastCommitLabel(s.gitStatus),
+                ]
+                rows[i].insert(contentsOf: extra, at: insertAt)
             }
         }
         // Width is computed on the *uncolored* text. Colors are
@@ -184,6 +232,20 @@ struct ListCommand: ParsableCommand {
                     return ANSI.wrap(padded, .placeholder, enabled: colorize)
                 }
                 return padded
+            case "AHEAD/BEHIND":
+                return raw == "-"
+                    ? ANSI.wrap(padded, .placeholder, enabled: colorize)
+                    : padded
+            case "DIRTY":
+                switch raw {
+                case "yes":  return ANSI.wrap(padded, .fail, enabled: colorize)
+                case "no":   return ANSI.wrap(padded, .ok, enabled: colorize)
+                default:     return ANSI.wrap(padded, .placeholder, enabled: colorize)
+                }
+            case "LAST COMMIT":
+                return raw == "-"
+                    ? ANSI.wrap(padded, .placeholder, enabled: colorize)
+                    : padded
             default:
                 return padded
             }
@@ -215,18 +277,58 @@ struct ListCommand: ParsableCommand {
         return success ? "ok" : "fail"
     }
 
+    /// Render `AHEAD/BEHIND` as e.g. `3/0`. `-` means we couldn't
+    /// query (no recorded base branch, or git failed).
+    private func aheadBehindLabel(_ git: GitStatus?) -> String {
+        guard let git, let a = git.aheadCount, let b = git.behindCount else {
+            return "-"
+        }
+        return "\(a)/\(b)"
+    }
+
+    /// Three-state label so an unknown git result is visibly distinct
+    /// from a known-clean worktree.
+    private func dirtyLabel(_ git: GitStatus?) -> String {
+        guard let git else { return "-" }
+        return git.isDirty ? "yes" : "no"
+    }
+
+    private func lastCommitLabel(_ git: GitStatus?) -> String {
+        guard let git, let s = git.lastCommitSubject, !s.isEmpty else {
+            return "-"
+        }
+        // Keep table rows readable; full text still shows up in --json.
+        let limit = 60
+        if s.count > limit {
+            let head = s.prefix(limit - 1)
+            return "\(head)…"
+        }
+        return s
+    }
+
     private struct JSONEntry: Encodable {
         let name: String
         let branch: String
         let path: String
         let createdAt: Date?
         let baseRef: String?
+        let baseBranch: String?
         let simulator: String?
         let lastBuild: BuildJSON?
+        /// `--git-status`-only payload. Nil keeps the JSON shape
+        /// stable for scripts that don't ask for git enrichment.
+        let git: GitJSON?
 
         struct BuildJSON: Encodable {
             let success: Bool
             let finishedAt: Date
+        }
+
+        struct GitJSON: Encodable {
+            let aheadCount: Int?
+            let behindCount: Int?
+            let isDirty: Bool
+            let lastCommitSubject: String?
         }
 
         init(_ s: TaskSummary) {
@@ -235,11 +337,22 @@ struct ListCommand: ParsableCommand {
             self.path = s.path
             self.createdAt = s.createdAt
             self.baseRef = s.baseRef
+            self.baseBranch = s.baseBranch
             self.simulator = s.simulatorName
             if let success = s.lastBuildSucceeded, let when = s.lastBuildAt {
                 self.lastBuild = BuildJSON(success: success, finishedAt: when)
             } else {
                 self.lastBuild = nil
+            }
+            if let g = s.gitStatus {
+                self.git = GitJSON(
+                    aheadCount: g.aheadCount,
+                    behindCount: g.behindCount,
+                    isDirty: g.isDirty,
+                    lastCommitSubject: g.lastCommitSubject
+                )
+            } else {
+                self.git = nil
             }
         }
     }

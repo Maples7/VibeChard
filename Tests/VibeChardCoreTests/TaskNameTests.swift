@@ -46,6 +46,7 @@ final class TaskNameTests: XCTestCase {
     func testRejectsReservedSubcommands() {
         for r in ["new", "list", "ls", "path", "exec", "open",
                   "build", "test", "run", "logs", "sim", "state", "completions",
+                  "clean",
                   "remove", "rm", "repair", "doctor", "land",
                   "shellenv", "version", "help"] {
             XCTAssertThrowsError(try TaskName(r), "expected reserved name '\(r)' to fail") { error in

@@ -189,7 +189,7 @@ vch exec task-a -- xcodebuild test \
 | 명령어 | 동작 |
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. |
-| `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. |
+| `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. `--git-status` 는 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 열 추가（worktree 당 `git rev-list` + `git status` 한 번 새로 실행）. |
 | `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. `--field <dotted>` 는 단일 스칼라 값(예: `simulator.udid`)만 출력 — 스크립트에서 `$(vch state foo --field simulator.udid)` 으로 쓰기 위해 설계. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
@@ -203,7 +203,9 @@ vch exec task-a -- xcodebuild test \
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--force` 두 번이면 더티 트리 + 머지되지 않은 브랜치도 허용. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
+| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 작업의 `DerivedData` + `ModuleCache` 삭제（기본）. `--swiftpm` 는 SwiftPM 클론 디렉터리도, `--logs` 는 `.vch/last-test.log` 도, `--all` 은 전부 삭제. `.agent-build/` 또는 `.vch/` 내 파일을 여는 프로세스（인덱싱 중인 Xcode 등）가 있으면 거부. `--dry-run` 은 삭제 예정 항목만 나열하고 아무것도 건들지 않음. |
 | `vch doctor [--clean] [--json]` | 고아 시뮬레이터 클론, 오래된 상태 바인딩, 손상된 `state.json` 탐지. 발견 시 비정상 종료. |
+| `vch doctor --bug-report [--out <path>] [--json]` | 로컬에서 민감정보 제거된 진단 tarball 생성. 모든 작업의 `state.json` + `last-test.log`, porcelain worktree 목록, `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` 출력을 포함. `$HOME` 경로는 손질 완료. 네트워크 접근 없음. 기본 출력 `./vch-bug-report-<UTC 타임스탬프>.tgz`. |
 | `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` 셰 헬퍼 출력 (bash/zsh). |
 | `vch completions install [--shell <s>]` | `zsh` / `bash` / `fish` 용 완성 스크립트 설치 (`$SHELL` 에서 자동 감지). `--print` 는 미리보기, `--force` 는 덮어쓰기. |
 | `vch version` | 버전과 툴체인 정보 출력 (`--json` 으로 기계 판독). |
@@ -233,7 +235,9 @@ Tuist, 내부에서 `xcodebuild` 를 호출하는 스크립트 — 가 자동으
 ## 설정
 
 없습니다. 작업별 상태는 모두 `<worktree>/.vch/state.json` 에 저장됩니다.
-`~/.vchrc` 도, `.vch.toml` 도, 어떤 전역 설정 파일도 없습니다. 유일한런타임 노브는 위에서 언급한 `VCH_*` 환경 변수뿐입니다(보통 `vch exec` 가직접 설정하므로 손으로 만질 일은 거의 없습니다).
+`~/.vchrc` 도, `.vch.toml` 도, 어떤 전역 설정 파일도 없습니다. 유일한런타임 노브는 위에서 언급한 `VCH_*` 환경 변수뿐입니다(보통 `vch exec` 가직접 설정하므로 손으로 만질 일은 거의 없습니다). `vch build`/`vch test`/`vch run` 은 호스트에서 선택된 `DEVELOPER_DIR`(`xcode-select -p` 로 해석)을 자식 프로세스에 전파합니다 — 직접 환경 변수를 설정하면 덮어쓸 수 있습니다.
+
+`vch new` 가 `eval "$(vch shellenv)"` 힌트를 출력했다면 `VCH_NEW_HINT=0` 으로 끌 수 있습니다(또는 shell helper 를 설치해도 사라집니다).
 
 ## VibeChard 가 아닌 것
 

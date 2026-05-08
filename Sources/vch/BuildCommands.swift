@@ -32,7 +32,11 @@ private enum BuildOrTest {
             workspace: workspace,
             simctl: DiskSimctlClient()
         )
-        let service = BuildService(workspace: workspace, simulator: simulator)
+        let service = BuildService(
+            workspace: workspace,
+            simulator: simulator,
+            developerDir: XcodeSelectDeveloperDirResolver()
+        )
 
         // #6 reduced — single-scheme auto-pick. CLI flag wins, then
         // state.json's last-recorded scheme, then a single shared

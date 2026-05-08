@@ -56,6 +56,11 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// at the path xcodebuild reported. Usually means the build
     /// targeted a different destination than expected. (#18)
     case runAppBundleNotFound(path: String)
+    /// `vch clean` refused because at least one process still holds
+    /// a file inside the worktree's `.agent-build/` or `.vch/`
+    /// (typically `xcodebuild` mid-flight). Re-run after the build
+    /// finishes; `--dry-run` always succeeds. (#26)
+    case cleanBlockedByHolders(task: String, holders: [WorktreeHolder])
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -110,6 +115,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "could not resolve PRODUCT_BUNDLE_IDENTIFIER for scheme '\(scheme)' — does this scheme build an app?"
         case let .runAppBundleNotFound(path):
             return "built app bundle not found at \(path) — was the build targeted at iOS Simulator?"
+        case let .cleanBlockedByHolders(task, holders):
+            let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
+            let body = lines.joined(separator: "\n")
+            return "refusing to clean '\(task)': \(holders.count) process\(holders.count == 1 ? "" : "es") still holding files inside .agent-build/ or .vch/ (xcodebuild mid-run?) — wait for it to finish or pass --dry-run:\n\(body)"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"

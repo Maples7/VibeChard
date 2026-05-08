@@ -23,15 +23,20 @@ public struct BuildService: Sendable {
     public let workspace: Workspace
     public let fs: FileSystem
     public let simulator: SimulatorService?
+    /// Resolver for `DEVELOPER_DIR` injection (#31). Nil in unit tests
+    /// so plans stay deterministic; the CLI passes a real one.
+    public let developerDir: DeveloperDirResolver?
 
     public init(
         workspace: Workspace,
         fs: FileSystem = DiskFileSystem(),
-        simulator: SimulatorService? = nil
+        simulator: SimulatorService? = nil,
+        developerDir: DeveloperDirResolver? = nil
     ) {
         self.workspace = workspace
         self.fs = fs
         self.simulator = simulator
+        self.developerDir = developerDir
     }
 
     public struct Options: Sendable {
@@ -148,6 +153,10 @@ public struct BuildService: Sendable {
         env["VCH_TASK_ROOT"]           = wt
         env["VCH_RESULT_BUNDLE_DIR"]   =
             (workspace.resultBundlePath(for: task) as NSString).deletingLastPathComponent
+        // #31: pin the toolchain root so a hand-typed xcrun inside a
+        // `vch <name>` sugar shell hits the same Xcode the build did.
+        // User/CI override always wins.
+        DeveloperDirInjection.apply(to: &env, resolver: developerDir)
 
         return ExecPlan(cwd: wt, argv: argv, env: env, installedShimSymlinks: [])
     }

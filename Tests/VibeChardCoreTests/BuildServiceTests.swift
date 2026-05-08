@@ -108,6 +108,59 @@ final class BuildServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - DEVELOPER_DIR injection (#31)
+
+    func testPrepareBuildInjectsDeveloperDirFromResolverWhenAbsent() throws {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(workspace.worktreePath(for: try TaskName("alpha")))
+        let service = BuildService(
+            workspace: workspace, fs: fs, simulator: nil,
+            developerDir: StubDeveloperDir("/Apps/Xcode.app/Contents/Developer")
+        )
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "App"),
+            baseEnv: ["PATH": "/usr/bin"]
+        )
+        XCTAssertEqual(plan.env["DEVELOPER_DIR"],
+                       "/Apps/Xcode.app/Contents/Developer")
+    }
+
+    func testPrepareBuildPreservesUserDeveloperDirOverride() throws {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(workspace.worktreePath(for: try TaskName("alpha")))
+        let service = BuildService(
+            workspace: workspace, fs: fs, simulator: nil,
+            developerDir: StubDeveloperDir("/Apps/Xcode.app/Contents/Developer")
+        )
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "App"),
+            baseEnv: [
+                "PATH": "/usr/bin",
+                "DEVELOPER_DIR": "/Custom/Xcode-beta.app/Contents/Developer",
+            ]
+        )
+        XCTAssertEqual(plan.env["DEVELOPER_DIR"],
+                       "/Custom/Xcode-beta.app/Contents/Developer")
+    }
+
+    func testPrepareBuildOmitsDeveloperDirWhenNoResolver() throws {
+        // Default init (no resolver, today's behavior) must stay
+        // deterministic for the existing unit test corpus.
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "App"),
+            baseEnv: ["PATH": "/usr/bin"]
+        )
+        XCTAssertNil(plan.env["DEVELOPER_DIR"])
+    }
+
     // MARK: - recordBuild / recordTest
 
     func testRecordBuildPersistsLastBuildAndUpdatesScheme() throws {
@@ -251,4 +304,10 @@ private extension InMemoryFileSystem {
     func readFile(forTesting path: String) -> Data {
         (try? readFile(at: path)) ?? Data()
     }
+}
+
+private struct StubDeveloperDir: DeveloperDirResolver {
+    let value: String?
+    init(_ value: String?) { self.value = value }
+    func resolve() -> String? { value }
 }

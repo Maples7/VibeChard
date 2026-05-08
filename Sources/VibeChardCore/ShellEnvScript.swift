@@ -21,6 +21,10 @@ public enum ShellEnvScript {
     public static let zshBash: String = """
     \(header)
 
+    # Marks this shell as having vch helpers loaded; the `vch new`
+    # binary uses this to skip its install-the-helpers hint (#32A).
+    export VCH_SHELL_HELPER=1
+
     # Resolve and `cd` into a vch-managed worktree:
     #   vch_cd <task-name>
     vch_cd() {

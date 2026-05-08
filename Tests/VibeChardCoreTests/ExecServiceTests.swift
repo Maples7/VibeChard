@@ -137,4 +137,58 @@ final class ExecServiceTests: XCTestCase {
         XCTAssertEqual(env["VCH_TASK_ROOT"],          "/repos/Demo-alpha")
         XCTAssertEqual(env["VCH_RESULT_BUNDLE_DIR"],  "/repos/Demo-alpha/.agent-build")
     }
+
+    // MARK: - DEVELOPER_DIR injection (#31)
+
+    func testBuildEnvInjectsDeveloperDirFromResolverWhenAbsent() {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(workspace.worktreePath(for: try! TaskName("alpha")))
+        let service = ExecService(
+            workspace: workspace, git: FakeGitClient(), fs: fs,
+            developerDir: StubDeveloperDir("/Apps/Xcode.app/Contents/Developer")
+        )
+        let env = service.buildEnv(
+            task: try! TaskName("alpha"),
+            worktree: "/repos/Demo-alpha",
+            baseEnv: [:]
+        )
+        XCTAssertEqual(env["DEVELOPER_DIR"],
+                       "/Apps/Xcode.app/Contents/Developer")
+    }
+
+    func testBuildEnvPreservesUserDeveloperDirOverride() {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(workspace.worktreePath(for: try! TaskName("alpha")))
+        let service = ExecService(
+            workspace: workspace, git: FakeGitClient(), fs: fs,
+            developerDir: StubDeveloperDir("/Apps/Xcode.app/Contents/Developer")
+        )
+        let env = service.buildEnv(
+            task: try! TaskName("alpha"),
+            worktree: "/repos/Demo-alpha",
+            baseEnv: ["DEVELOPER_DIR": "/Custom/Xcode-beta.app/Contents/Developer"]
+        )
+        XCTAssertEqual(env["DEVELOPER_DIR"],
+                       "/Custom/Xcode-beta.app/Contents/Developer")
+    }
+
+    func testBuildEnvOmitsDeveloperDirWhenNoResolver() {
+        // Default init (no resolver, today's behavior) must stay
+        // deterministic for the existing unit test corpus.
+        let (service, _, _) = makeService(seedingTask: "alpha")
+        let env = service.buildEnv(
+            task: try! TaskName("alpha"),
+            worktree: "/repos/Demo-alpha",
+            baseEnv: [:]
+        )
+        XCTAssertNil(env["DEVELOPER_DIR"])
+    }
+}
+
+private struct StubDeveloperDir: DeveloperDirResolver {
+    let value: String?
+    init(_ value: String?) { self.value = value }
+    func resolve() -> String? { value }
 }

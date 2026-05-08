@@ -1,5 +1,38 @@
 import Foundation
 
+/// Optional `vch list --git-status` columns for a managed task.
+/// Each field is optional so we can degrade gracefully when the
+/// underlying git query fails (corrupt repo, missing base branch,
+/// detached HEAD, etc.) without ripping the whole row out of the
+/// listing.
+public struct GitStatus: Equatable, Sendable {
+    /// Commits on the task branch that aren't on `baseBranch`.
+    /// Nil when the base branch is unknown or `git rev-list` fails.
+    public let aheadCount: Int?
+    /// Commits on `baseBranch` that aren't on the task branch.
+    public let behindCount: Int?
+    /// True iff `git status --porcelain` produced any output
+    /// (modifications, untracked, deletions). False when status
+    /// failed — we don't want a flaky git to lie about "DIRTY".
+    public let isDirty: Bool
+    /// Subject line of the most recent non-merge commit on the task
+    /// branch. Nil if the branch has no non-merge commits or the
+    /// query failed.
+    public let lastCommitSubject: String?
+
+    public init(
+        aheadCount: Int?,
+        behindCount: Int?,
+        isDirty: Bool,
+        lastCommitSubject: String?
+    ) {
+        self.aheadCount = aheadCount
+        self.behindCount = behindCount
+        self.isDirty = isDirty
+        self.lastCommitSubject = lastCommitSubject
+    }
+}
+
 /// Compact view of a managed task, used by `vch list` and JSON output.
 public struct TaskSummary: Equatable, Sendable {
     public let name: String
@@ -7,9 +40,13 @@ public struct TaskSummary: Equatable, Sendable {
     public let path: String
     public let createdAt: Date?
     public let baseRef: String?
+    public let baseBranch: String?
     public let simulatorName: String?
     public let lastBuildSucceeded: Bool?
     public let lastBuildAt: Date?
+    /// Populated only when the caller asked for `--git-status`. Nil
+    /// otherwise so the cheap path stays cheap.
+    public let gitStatus: GitStatus?
 
     public init(
         name: String,
@@ -17,18 +54,39 @@ public struct TaskSummary: Equatable, Sendable {
         path: String,
         createdAt: Date?,
         baseRef: String?,
+        baseBranch: String? = nil,
         simulatorName: String?,
         lastBuildSucceeded: Bool?,
-        lastBuildAt: Date?
+        lastBuildAt: Date?,
+        gitStatus: GitStatus? = nil
     ) {
         self.name = name
         self.branch = branch
         self.path = path
         self.createdAt = createdAt
         self.baseRef = baseRef
+        self.baseBranch = baseBranch
         self.simulatorName = simulatorName
         self.lastBuildSucceeded = lastBuildSucceeded
         self.lastBuildAt = lastBuildAt
+        self.gitStatus = gitStatus
+    }
+
+    /// Return a copy with `gitStatus` replaced. Lets the CLI enrich
+    /// summaries without recomputing the cheap fields.
+    public func with(gitStatus: GitStatus?) -> TaskSummary {
+        TaskSummary(
+            name: name,
+            branch: branch,
+            path: path,
+            createdAt: createdAt,
+            baseRef: baseRef,
+            baseBranch: baseBranch,
+            simulatorName: simulatorName,
+            lastBuildSucceeded: lastBuildSucceeded,
+            lastBuildAt: lastBuildAt,
+            gitStatus: gitStatus
+        )
     }
 }
 
@@ -202,6 +260,7 @@ public struct TaskService: Sendable {
                 path: entry.path,
                 createdAt: state?.createdAt,
                 baseRef: state?.baseRef,
+                baseBranch: state?.baseBranch,
                 simulatorName: state?.simulator?.name,
                 lastBuildSucceeded: state?.lastBuild?.success,
                 lastBuildAt: state?.lastBuild?.finishedAt
@@ -216,6 +275,36 @@ public struct TaskService: Sendable {
             case (nil, nil):   return lhs.name < rhs.name
             }
         }
+    }
+
+    /// Compute the optional `--git-status` columns (#24) for one
+    /// summary. Each git query is best-effort: a transient git
+    /// failure degrades the matching field to `nil` instead of
+    /// erroring the whole `vch list`.
+    ///
+    /// `aheadCount` / `behindCount` need a base branch to compare
+    /// against. Source order: `summary.baseBranch` (recorded by
+    /// `vch new` when the main worktree had a checked-out branch),
+    /// then `summary.baseRef` (a short SHA, used as a literal commit
+    /// pointer), else nil.
+    public func gitStatus(forSummary summary: TaskSummary) -> GitStatus {
+        let wt = summary.path
+        let isDirty = (try? git.statusIsDirty(worktreeCwd: wt)) ?? false
+        let subject = (try? git.lastNonMergeSubject(repoCwd: wt, branch: "HEAD")) ?? nil
+
+        let base: String? = summary.baseBranch ?? summary.baseRef
+        var ahead: Int? = nil
+        var behind: Int? = nil
+        if let base, !base.isEmpty {
+            ahead  = try? git.revListCount(repoCwd: wt, base: base, head: "HEAD")
+            behind = try? git.revListCount(repoCwd: wt, base: "HEAD", head: base)
+        }
+        return GitStatus(
+            aheadCount: ahead,
+            behindCount: behind,
+            isDirty: isDirty,
+            lastCommitSubject: subject
+        )
     }
 
     // MARK: - path
