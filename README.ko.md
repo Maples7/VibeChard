@@ -38,7 +38,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ko.png" alt="vch list 출력: 3개의 에이전트 task 병렬 실행, ok 2개 · fail 1개, 그리고 vch state 세부 정보" width="720">
 </p>
 
-> **상태: alpha (v0.3.0).** CLI 표면은 거의 안정화되었지만 아직 동결되지
+> **상태: alpha.** CLI 표면은 거의 안정화되었지만 아직 동결되지
 > 않았습니다. `.vch/state.json` 스키마에는 이후 필드가 추가될 수 있습니다.
 > 안정성이 필요하면 태그를 고정하세요.
 
@@ -368,7 +368,7 @@ shim 은 투명한 passthrough 로 `swift` 를 감싸지만 argv 는 수정하�
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 284 개 테스트, M 시리즈에서 약 41 초
+swift test --parallel
 ```
 
 CI 는 push 마다 같은 명령과 shim 스모크 프로브를 실행합니다:

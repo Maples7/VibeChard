@@ -36,7 +36,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.zh-CN.png" alt="vch list 输出：3 个 agent 任务并行，2 个 ok 1 个 fail，以及 vch state 详情" width="720">
 </p>
 
-> **状态：alpha (v0.3.0)。** CLI 接口已基本稳定但尚未冻结；
+> **状态：alpha。** CLI 接口已基本稳定但尚未冻结；
 > `.vch/state.json` 的 schema 之后还可能加字段。需要稳定的话请固定 tag。
 
 ## 为什么单独做一个 CLI？
@@ -355,7 +355,7 @@ test` / `vch run` 用的是同一套——所以你在 `vch <name>` 里手敲
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 284 个测试，M 系芯片上约 41 秒
+swift test --parallel
 ```
 
 CI 在每次 push 上跑相同的命令，外加一个 shim 的烟雾测试：

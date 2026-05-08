@@ -38,7 +38,7 @@ own simulator clone — and your `~/Library/Developer/` stays untouched.
   <img src="docs/images/vch-list.en.png" alt="vch list output: three parallel agent tasks, two ok one fail, with vch state details" width="720">
 </p>
 
-> **Status: alpha (v0.3.0).** The CLI surface is settling but not yet
+> **Status: alpha.** The CLI surface is settling but not yet
 > frozen; on-disk `.vch/state.json` may gain fields. Pin a tag if you
 > need stability.
 
@@ -413,7 +413,7 @@ so-called “agent integration” is just `--exec "<your command>"`.
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 284 tests, ~41s on M-series
+swift test --parallel
 ```
 
 CI runs the same commands plus a shim smoke probe on every push:
