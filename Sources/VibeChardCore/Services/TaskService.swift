@@ -212,8 +212,8 @@ public struct TaskService: Sendable {
             if rel.contains("../") || rel == ".." { continue }
             if skipPrefixes.contains(where: { rel.hasPrefix($0) }) { continue }
 
-            let src = "\(sourceWorktree)/\(rel)"
-            let dst = "\(destWorktree)/\(rel)"
+            let src = PathOps.join(sourceWorktree, rel)
+            let dst = PathOps.join(destWorktree, rel)
 
             // Make sure the destination's parent exists; the new
             // worktree only has whatever git checked out, so untracked
@@ -246,7 +246,7 @@ public struct TaskService: Sendable {
             // Only consider entries whose leaf matches our `<repo>-<task>` pattern.
             guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
 
-            let statePath = "\(entry.path)/\(Workspace.stateJsonRelativePath)"
+            let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
             var state: TaskState? = nil
             if fs.fileExists(at: statePath) {
                 if let data = try? fs.readFile(at: statePath) {
@@ -429,7 +429,7 @@ public struct TaskService: Sendable {
             guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
             report.checkedTasks.append(raw)
 
-            let statePath = "\(entry.path)/\(Workspace.stateJsonRelativePath)"
+            let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
             guard fs.fileExists(at: statePath) else {
                 report.problems.append("\(raw): missing \(Workspace.stateJsonRelativePath)")
                 continue

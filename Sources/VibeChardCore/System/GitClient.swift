@@ -228,7 +228,7 @@ public struct DiskGitClient: GitClient {
         if excludePath.isEmpty { return }
         // git may return a relative path; resolve against the worktree cwd.
         if !excludePath.hasPrefix("/") {
-            excludePath = "\(worktreeCwd)/\(excludePath)"
+            excludePath = PathOps.join(worktreeCwd, excludePath)
         }
 
         // Read existing contents (file may not exist) and append only the

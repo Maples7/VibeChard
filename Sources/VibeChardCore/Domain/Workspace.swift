@@ -29,46 +29,46 @@ public struct Workspace: Equatable, Sendable {
 
     /// Sibling worktree path for a task: `<parent>/<repo>-<task>`.
     public func worktreePath(for task: TaskName) -> String {
-        "\(parentDirectory)/\(repoName)-\(task.raw)"
+        PathOps.join(parentDirectory, "\(repoName)-\(task.raw)")
     }
 
     public func statePath(for task: TaskName) -> String {
-        "\(worktreePath(for: task))/.vch/state.json"
+        PathOps.join(worktreePath(for: task), Self.stateJsonRelativePath)
     }
 
     public func vchDir(for task: TaskName) -> String {
-        "\(worktreePath(for: task))/.vch"
+        PathOps.join(worktreePath(for: task), ".vch")
     }
 
     public func vchBinDir(for task: TaskName) -> String {
-        "\(worktreePath(for: task))/.vch/bin"
+        PathOps.join(worktreePath(for: task), ".vch/bin")
     }
 
     public func agentBuildDir(for task: TaskName) -> String {
-        "\(worktreePath(for: task))/.agent-build"
+        PathOps.join(worktreePath(for: task), ".agent-build")
     }
 
     public func derivedDataDir(for task: TaskName) -> String {
-        "\(agentBuildDir(for: task))/DerivedData"
+        PathOps.join(agentBuildDir(for: task), "DerivedData")
     }
 
     public func moduleCacheDir(for task: TaskName) -> String {
-        "\(agentBuildDir(for: task))/ModuleCache"
+        PathOps.join(agentBuildDir(for: task), "ModuleCache")
     }
 
     public func swiftpmCacheDir(for task: TaskName) -> String {
-        "\(agentBuildDir(for: task))/SwiftPM"
+        PathOps.join(agentBuildDir(for: task), "SwiftPM")
     }
 
     public func resultBundlePath(for task: TaskName) -> String {
-        "\(agentBuildDir(for: task))/Result.xcresult"
+        PathOps.join(agentBuildDir(for: task), "Result.xcresult")
     }
 
     /// Path of the last `vch test` xcodebuild firehose, tee'd
     /// regardless of whether `--verbose` was passed (#9). Lives next
     /// to `state.json` so `vch rm` cleans it up automatically.
     public func lastTestLogPath(for task: TaskName) -> String {
-        "\(vchDir(for: task))/last-test.log"
+        PathOps.join(vchDir(for: task), "last-test.log")
     }
 
     /// Recognize a worktree path as belonging to vch (i.e. the leaf is
@@ -98,6 +98,11 @@ public struct Workspace: Equatable, Sendable {
 
     /// Per-worktree state file, relative to the worktree root.
     public static let stateJsonRelativePath = ".vch/state.json"
+
+    /// Per-worktree last-test log, relative to the worktree root.
+    /// Mirrors `lastTestLogPath(for:)` for callers iterating worktrees
+    /// without a `TaskName` in scope (BugReport).
+    public static let lastTestLogRelativePath = ".vch/last-test.log"
 
     /// Worktree-relative directory prefixes that vch manages
     /// (`.vch/` for state, `.agent-build/` for caches). Callers

@@ -114,7 +114,7 @@ public struct RunService: Sendable {
             )
         }
 
-        let appPath = "\(dir)/\(wrapper)"
+        let appPath = PathOps.join(dir, wrapper)
         guard fs.directoryExists(at: appPath) else {
             throw VibeChardError.runAppBundleNotFound(path: appPath)
         }
