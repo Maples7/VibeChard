@@ -37,7 +37,7 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ja.png" alt="vch list の出力: 3 つのエージェントタスクを並列実行、ok 2 つ ・ fail 1 つ、そして vch state の詳細" width="720">
 </p>
 
-> **ステータス: alpha (v0.3.0)。** CLI のインターフェースはほぼ落ち着いていますが
+> **ステータス: alpha。** CLI のインターフェースはほぼ落ち着いていますが
 > まだ凍結されていません。`.vch/state.json` のスキーマには今後フィールドが
 > 追加される可能性があります。安定が必要ならタグを固定してください。
 
@@ -358,7 +358,7 @@ xcbeautify の上流パイプ、最終的に `xcodebuild` を叩くカスタム�
 ```sh
 swift build -c release
 ./.build/release/vch version
-swift test --parallel             # 284 テスト、M シリーズで約 41 秒
+swift test --parallel
 ```
 
 CI は push のたびに同じコマンド + シムのスモークテストを実行します：
