@@ -240,6 +240,37 @@ vch sync foo --no-fetch               # 오프라인, 이미 fetch 된 ref 로�
 수동으로 마무리하면 됩니다. 성공한 `vch sync` 는 `state.json` 에
 `lastSync` 블록을 기록합니다 (`vch state <name>` 에서 확인 가능).
 
+### `vch land` 시 생성된 산출물 보존하기
+
+`vch land` 는 **커밋된** 내용만 대상 브랜치로 옮깁니다. 태스크
+worktree 안에 있더라도 git 이 추적하지 않는 것 — 커밋되지 않은
+변경, untracked 파일, `.gitignore` 로 제외된 것 (재생성된 이미지,
+빌드 산출물, 캐시 등) — 은 **이번 머지에 포함되지 않으며**, 성공
+적인 land 후 기본으로 실행되는 `vch rm` 이 worktree 와 함께 그
+모든 것을 같이 지웁니다.
+
+이게 물어뜯는 건 특정한 형태의 워크플로우입니다: 태스크 worktree
+안의 어떤 스크립트가 리포지토리에서 의도적으로 `.gitignore` 한
+산출물을 재생성하고, 새 산출물이 괜찮은지 확인한 뒤 `vch land`
+를 실행하고 나서야 — 재생성된 파일들이 머지를 건너오지 않았다는
+것, 메인에는 여전히 옛날 것만 보인다는 것을 깨닫는 패턴입니다.
+
+이 산출물들을 대상 브랜치의 worktree 로 가져오고 싶다면, 복사가
+끝날 때까지 vch 에게 worktree 를 지우지 말라고 알려주세요:
+
+```sh
+vch land foo --keep                              # 머지하되 agent-foo/ 는 유지
+rsync -a "$(vch path foo)/docs/images/" \
+      docs/images/                               # 정말 필요한 것만 복사
+vch rm foo                                       # 그 뒤에 정리
+```
+
+복사 도구는 `cp -R` 이든 `tar -c | tar -x` 든 `git lfs migrate` 든
+프로젝트에 맞는 것을 고르세요. vch 는 일부러 "어떤 산출물을 옮겨야
+**하는지**", "어떻게 옮겨야 하는지" 에 대해 입장을 정하지 않습니다
+— 그 답은 당신 프로젝트가 무엇을, 왜 ignore 하고 있는지에 전적
+으로 달려 있기 때문입니다.
+
 ## 명령어
 
 | 명령어 | 동작 |
@@ -256,7 +287,7 @@ vch sync foo --no-fetch               # 오프라인, 이미 fetch 된 ref 로�
 | `vch run   <name> [flags] [-- launch-args]` | 작업에 묶인 시뮬레이터 클론 위에서 앱을 빌드/설치/실행. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일하며, `PRODUCT_BUNDLE_IDENTIFIER` 는 `xcodebuild -showBuildSettings -json` 에서 자동 해석됨. `--` 이후의 인자는 그대로 `simctl launch` 로 전달됨(예: `vch run alpha -- -UsePreviewSampleData`). 필요하면 클론을 부팅하고 `Simulator.app` 을 엽니다. |
 | `vch logs <name> [--test]` | 태스크의 가장 최근 `vch test` 의 전체 xcodebuild 로그를 출력. 간결 요약이 어떤 실패를 가리킬 때 주변 컨텍스트 확인에 유용. 현재는 `--test` 만 지원하며, 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. |
+| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. **커밋된** 내용만 옮겨갑니다 — 커밋되지 않은 변경, untracked 파일, `.gitignore` 로 제외된 산출물은 worktree 와 함께 삭제됩니다 (`--keep` + 수동 복사; cookbook 의 「`vch land` 시 생성된 산출물 보존하기」 참고). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 기록된 기본 브랜치의 upstream 을 fetch 하고 `agent/<name>` 을 그 위에 rebase. `--merge` 는 `git merge --no-ff` 사용 (태스크 브랜치가 동료가 읽는 곳에 push 된 경우에만 권장). `--onto <ref>` 로 기본 변경, `--no-fetch` 로 네트워크 스킵, `--allow-dirty` 는 더티 worktree 검사를 git 에 위임, `--dry-run` 은 ahead/behind 와 계획 전략만 출력하고 아무 것도 쓰지 않음. 모든 git 작업은 태스크 worktree 안에서 실행되어 메인 worktree 는 절대 건드리지 않음. 성공 시 `lastSync` 를 기록. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
