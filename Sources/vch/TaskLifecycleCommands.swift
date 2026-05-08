@@ -509,11 +509,11 @@ struct RemoveCommand: ParsableCommand {
     var name: String
 
     @Flag(name: .long,
-          help: "Allow removing a worktree with uncommitted changes (replaces `--force`).")
+          help: "Discard uncommitted changes and remove the worktree anyway (replaces `--force`).")
     var allowDirty: Bool = false
 
     @Flag(name: .long,
-          help: "Force-delete the branch even if it isn't fully merged (replaces `--force --force`).")
+          help: "Delete the branch even if it has commits not merged into its base (replaces `--force --force`).")
     var allowUnmerged: Bool = false
 
     @Flag(
