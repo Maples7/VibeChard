@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Removed
+- `vch remove --force` / `-f` (the deprecated alias introduced in
+  0.3.0). Use `--allow-dirty` for a dirty worktree and
+  `--allow-unmerged` for an unmerged branch (or both together).
+  Pre-1.0 minors are allowed to break per CONTRIBUTING.md.
+
 ## [0.3.0] - 2026-05-08
 
 ### Added

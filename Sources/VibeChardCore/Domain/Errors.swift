@@ -22,7 +22,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
     /// `vch remove` refused because at least one process still holds
     /// a file inside the worktree. Each `WorktreeHolder` is rendered
-    /// `pid:command (samplePath)`. Bypass with `--force`. (#10)
+    /// `pid:command (samplePath)`. Bypass with `--allow-dirty`. (#10)
     case worktreeBusy(path: String, holders: [WorktreeHolder])
     /// `vch logs` could not find the requested log file. Used when a
     /// user runs `vch logs <name>` before the task has executed any

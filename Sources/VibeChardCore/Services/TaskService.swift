@@ -357,9 +357,9 @@ public struct TaskService: Sendable {
             self.allowUnmergedBranch = allowUnmergedBranch
         }
 
-        /// `--force` once → allow dirty.
+        /// Allow dirty worktree only.
         public static let forceDirty = RemoveOptions(allowDirty: true, allowUnmergedBranch: false)
-        /// `--force` twice → allow dirty + unmerged branch deletion.
+        /// Allow dirty worktree and unmerged-branch deletion.
         public static let forceAll = RemoveOptions(allowDirty: true, allowUnmergedBranch: true)
     }
 

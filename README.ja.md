@@ -233,7 +233,7 @@ ignore されたファイルを原子的に移送する」操作には git 由�
 | `vch logs <name> [--test]` | タスク直近の `vch test` の xcodebuild フルログを表示。簡潔サマリが失敗を示したとき周辺ログを確認するのに便利。現状は `--test` のみ対応；ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。 |
-| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。`-f` / `--force` は非推奨エイリアスで、一回で `--allow-dirty`、二回で `--allow-dirty --allow-unmerged` にマップされます。stderr に警告を出力し、0.4.0 で削除予定です。 |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | タスクの `DerivedData` + `ModuleCache` を削除（デフォルト）。`--swiftpm` で SwiftPM クローンディレクトリも、`--logs` で `.vch/last-test.log` も、`--all` で全部を削除。`.agent-build/` または `.vch/` 以下のファイルを開いているプロセス（インデックス中の Xcode など）があれば拒否。`--dry-run` は削除予定の一覧を表示して何も触らずに返る。 |
 | `vch doctor [--clean] [--json]` | 孤児シミュレータークローン、古いステートバインディング、破損 `state.json` を検出。検出時は非ゼロ終了。 |
@@ -339,7 +339,7 @@ xcbeautify の上流パイプ、最終的に `xcodebuild` を叩くカスタム�
 
 <br/>
 
-失われません — `vch remove` は dirty な worktree では明確なメッセージとともに中断します。`--allow-dirty` を付けると上書きで削除（未コミット変更を失います）、`--allow-unmerged` を付ける（または両方併用）と未マージのコミットを持つブランチも削除できます。無言で破壊的に動くパスはありません。旧記法の `--force`（1 回）/ `--force --force`（2 回）も動作しますが非推奨で、名前付きフラグを推奨する警告を出力して 0.4.0 で削除予定です（pre-1.0 の minor では破壊的変更が許容されます—CONTRIBUTING.md 参照）。 v0.3.0 ではタスクごとのシミュレータークローン名も、`<original> · vch[<task>]` から `<original>-vch-<task>` に変更されています。既存クローンはそのまま動作します — `vch doctor` は両方の命名規則を認識し、UDID（表示名ではなく）が真のソースです。
+失われません — `vch remove` は dirty な worktree では明確なメッセージとともに中断します。`--allow-dirty` を付けると上書きで削除（未コミット変更を失います）、`--allow-unmerged` を付ける（または両方併用）と未マージのコミットを持つブランチも削除できます。無言で破壊的に動くパスはありません。
 
 </details>
 

@@ -124,7 +124,7 @@ final class TaskServiceIntegrationTests: XCTestCase {
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
 
-        // With --force once: removes worktree and branch (branch is unmerged
+        // With allowDirty: removes worktree and branch (branch is unmerged
         // because we made a commit on it... but we haven't, so it should
         // actually still be considered fully merged → branch -d succeeds).
         try service.removeTask(task, options: .forceDirty)
@@ -161,7 +161,7 @@ final class TaskServiceIntegrationTests: XCTestCase {
         let exists = try DiskGitClient().branchExists(repoCwd: workspace.mainWorktreePath, name: "agent/alpha")
         XCTAssertTrue(exists)
 
-        // Recovery: --force --force should force-delete it.
+        // Recovery: allowUnmergedBranch should force-delete it.
         // The worktree is already gone, so call git directly through service:
         // but service.removeTask requires the worktree to exist. Use the
         // public service hook only when valid; here we exercise force-delete
