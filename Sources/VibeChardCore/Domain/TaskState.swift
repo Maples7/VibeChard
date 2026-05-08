@@ -44,6 +44,11 @@ public struct TaskState: Codable, Equatable, Sendable {
     /// Most recent `vch exec`/`vch new --exec` invocation. M3.
     public var lastExec: ExecRecord?
 
+    /// Most recent successful `vch sync` invocation, including no-op
+    /// runs (where `appliedCommits == 0`). Only written on success;
+    /// dry-run and conflict paths leave it untouched. (#25)
+    public var lastSync: SyncRecord?
+
     public init(
         schemaVersion: Int = TaskState.currentSchemaVersion,
         name: String,
@@ -55,7 +60,8 @@ public struct TaskState: Codable, Equatable, Sendable {
         simulator: SimulatorRecord? = nil,
         lastBuild: BuildRecord? = nil,
         lastTest: TestRecord? = nil,
-        lastExec: ExecRecord? = nil
+        lastExec: ExecRecord? = nil,
+        lastSync: SyncRecord? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.name = name
@@ -68,6 +74,7 @@ public struct TaskState: Codable, Equatable, Sendable {
         self.lastBuild = lastBuild
         self.lastTest = lastTest
         self.lastExec = lastExec
+        self.lastSync = lastSync
     }
 
     public struct SimulatorRecord: Codable, Equatable, Sendable {
@@ -141,6 +148,44 @@ public struct TaskState: Codable, Equatable, Sendable {
             self.startedAt = startedAt
             self.exitedAt = exitedAt
             self.exitCode = exitCode
+        }
+    }
+
+    /// Outcome of a successful `vch sync` run. Mirrors the
+    /// `lastBuild` / `lastTest` / `lastExec` pattern: optional on
+    /// `TaskState`, populated only on success. (#25)
+    public struct SyncRecord: Codable, Equatable, Sendable {
+        public let finishedAt: Date
+        /// Resolved commit SHA the rebase / merge landed onto. Stored
+        /// instead of just the ref label because labels (`origin/main`)
+        /// drift over time while a SHA is a stable historical fact.
+        public let baseSHA: String
+        /// Human-readable resolved ref the user saw, e.g. `origin/main`
+        /// or whatever was passed to `--onto`.
+        public let baseLabel: String
+        /// Strategy actually used. Stored as a string (matching
+        /// `simulator.runtimeIdentifier`'s convention) for forward-
+        /// compatibility with future strategies.
+        public let strategy: String
+        /// Number of task-branch commits the rebase replayed onto the
+        /// new base. `0` for a no-op run (already up to date).
+        public let appliedCommits: Int
+        public let durationSeconds: Double
+
+        public init(
+            finishedAt: Date,
+            baseSHA: String,
+            baseLabel: String,
+            strategy: String,
+            appliedCommits: Int,
+            durationSeconds: Double
+        ) {
+            self.finishedAt = finishedAt
+            self.baseSHA = baseSHA
+            self.baseLabel = baseLabel
+            self.strategy = strategy
+            self.appliedCommits = appliedCommits
+            self.durationSeconds = durationSeconds
         }
     }
 

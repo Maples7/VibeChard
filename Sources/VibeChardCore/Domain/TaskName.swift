@@ -21,7 +21,7 @@ public struct TaskName: Hashable, Sendable {
     public static let reserved: Set<String> = [
         "new", "list", "ls", "path", "exec", "open",
         "build", "test", "run", "logs", "sim", "state", "completions",
-        "clean",
+        "clean", "sync",
         "remove", "rm", "repair", "doctor", "land",
         "shellenv", "version", "help",
     ]

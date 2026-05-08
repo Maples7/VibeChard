@@ -66,6 +66,23 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// (typically `xcodebuild` mid-flight). Re-run after the build
     /// finishes; `--dry-run` always succeeds. (#26)
     case cleanBlockedByHolders(task: String, holders: [WorktreeHolder])
+    /// `vch sync` could not figure out which ref to rebase onto:
+    /// nothing was passed via `--onto` and `state.json` has no
+    /// recorded `baseBranch` (typically because `vch new` ran on a
+    /// detached HEAD). Pass `--onto <ref>` explicitly. (#25)
+    case syncBaseUnresolved(taskName: String)
+    /// `vch sync` aborted because the task worktree has uncommitted
+    /// changes. Pass `--allow-dirty` to let git decide whether the
+    /// rebase / merge can still proceed. (#25)
+    case syncDirtyWorktree(taskName: String, worktreePath: String)
+    /// `git rebase` (or `git merge --no-ff`) hit a conflict while
+    /// running `vch sync`. The git stderr was already streamed
+    /// to the user; this wraps the failure to attach a hint that
+    /// includes the task worktree path (since the user is *not*
+    /// in that cwd — that's the whole point of vch). `mode` decides
+    /// whether the hint mentions `git rebase --continue` or
+    /// `git merge --continue`. (#25)
+    case syncRebaseConflict(taskName: String, worktreePath: String, mode: SyncPlan.Strategy)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -126,6 +143,25 @@ public enum VibeChardError: Error, CustomStringConvertible {
             let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
             let body = lines.joined(separator: "\n")
             return "refusing to clean '\(task)': \(holders.count) process\(holders.count == 1 ? "" : "es") still holding files inside .agent-build/ or .vch/ (xcodebuild mid-run?) — wait for it to finish or pass --dry-run:\n\(body)"
+        case let .syncBaseUnresolved(taskName):
+            return "refusing to sync: cannot determine base for task '\(taskName)' (no recorded baseBranch in state.json — vch new on detached HEAD?); pass --onto <ref> explicitly"
+        case let .syncDirtyWorktree(taskName, worktreePath):
+            return "refusing to sync: task '\(taskName)' has uncommitted changes at \(worktreePath). Either:\n  - cd \(worktreePath) && git stash\n  - or pass --allow-dirty (git will decide whether the rebase can proceed)"
+        case let .syncRebaseConflict(taskName, worktreePath, mode):
+            let verb: String
+            let continueCmd: String
+            let abortCmd: String
+            switch mode {
+            case .rebase:
+                verb = "rebase"
+                continueCmd = "git add -A && git rebase --continue"
+                abortCmd = "git rebase --abort"
+            case .merge:
+                verb = "merge"
+                continueCmd = "git add -A && git commit"
+                abortCmd = "git merge --abort"
+            }
+            return "\(verb) paused on a conflict in 'agent/\(taskName)'.\n  resolve: cd \(worktreePath) && (edit files) && \(continueCmd)\n  abort:   cd \(worktreePath) && \(abortCmd)"
         case let .externalCommandFailed(cmd, code, stderr):
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"

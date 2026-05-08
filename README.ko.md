@@ -218,6 +218,28 @@ ignore 파일을 원자적으로 옮기기" 는 git 에 native primitive 가 없
 위 레시피는 충분히 안정적인 수동 대안이라 내장 명령으로 만들 가치가
 없다고 판단했습니다.
 
+### 장기 태스크 최신 상태 유지
+
+`agent/<name>` 이 오래 살아남아 base 브랜치가 앞으로 나아간 경우,
+`vch sync <name>` 가 기록된 base 의 upstream 을 fetch 하고 태스크
+브랜치를 그 위로 rebase 합니다 — 메인 worktree 는 절대 건드리지
+않습니다:
+
+```sh
+vch sync foo                          # fetch + rebase
+vch sync foo --dry-run                # ahead/behind 와 계획 미리보기
+vch sync foo --merge                  # git merge --no-ff 로 전환
+                                      # (agent/foo 가 동료가 읽는 곳에 push 된 경우에만)
+vch sync foo --onto origin/release-2  # 일회성 base 변경
+vch sync foo --no-fetch               # 오프라인, 이미 fetch 된 ref 로만 동작
+```
+
+기본 정책은 "rebase, 강제 푸시 없음, autostash 없음" — vch 는 절대
+당신의 작업을 다시 쓰거나 숨기지 않습니다. git 이 거부하면 (커밋되지
+않은 변경, 충돌) 작업이 깨끗이 중단되며 태스크 worktree 에 들어가서
+수동으로 마무리하면 됩니다. 성공한 `vch sync` 는 `state.json` 에
+`lastSync` 블록을 기록합니다 (`vch state <name>` 에서 확인 가능).
+
 ## 명령어
 
 | 명령어 | 동작 |
@@ -235,6 +257,7 @@ ignore 파일을 원자적으로 옮기기" 는 git 에 native primitive 가 없
 | `vch logs <name> [--test]` | 태스크의 가장 최근 `vch test` 의 전체 xcodebuild 로그를 출력. 간결 요약이 어떤 실패를 가리킬 때 주변 컨텍스트 확인에 유용. 현재는 `--test` 만 지원하며, 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. |
+| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 기록된 기본 브랜치의 upstream 을 fetch 하고 `agent/<name>` 을 그 위에 rebase. `--merge` 는 `git merge --no-ff` 사용 (태스크 브랜치가 동료가 읽는 곳에 push 된 경우에만 권장). `--onto <ref>` 로 기본 변경, `--no-fetch` 로 네트워크 스킵, `--allow-dirty` 는 더티 worktree 검사를 git 에 위임, `--dry-run` 은 ahead/behind 와 계획 전략만 출력하고 아무 것도 쓰지 않음. 모든 git 작업은 태스크 worktree 안에서 실행되어 메인 worktree 는 절대 건드리지 않음. 성공 시 `lastSync` 를 기록. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 작업의 `DerivedData` + `ModuleCache` 삭제（기본）. `--swiftpm` 는 SwiftPM 클론 디렉터리도, `--logs` 는 `.vch/last-test.log` 도, `--all` 은 전부 삭제. `.agent-build/` 또는 `.vch/` 내 파일을 여는 프로세스（인덱싱 중인 Xcode 등）가 있으면 거부. `--dry-run` 은 삭제 예정 항목만 나열하고 아무것도 건들지 않음. |

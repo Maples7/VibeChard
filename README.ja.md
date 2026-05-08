@@ -216,6 +216,29 @@ ignore されたファイルを原子的に移送する」操作には git 由�
 十分に安定した手動代替で、組み込みコマンドにする価値はないと
 判断しました。
 
+### 長期タスクを最新に保つ
+
+`agent/<name>` が長く生きてベースブランチが先へ進んだ場合、
+`vch sync <name>` が記録されたベースの upstream を fetch し、
+タスクブランチをその上に rebase します — メイン worktree には
+一切触れません：
+
+```sh
+vch sync foo                          # fetch + rebase
+vch sync foo --dry-run                # ahead/behind と計画をプレビュー
+vch sync foo --merge                  # git merge --no-ff に切り替え
+                                      # （agent/foo を共同作業者が見える場所に push 済みのときだけ）
+vch sync foo --onto origin/release-2  # 一度だけベースを差し替え
+vch sync foo --no-fetch               # オフライン、既に fetch 済みの ref で動く
+```
+
+デフォルトは「rebase、強制 push なし、autostash なし」— vch があな
+たの作業を書き換えたり隠したりすることはありません。git が拒否
+した場合（未コミット変更、コンフリクト）、動作はきれいに中断する
+ので、タスク worktree に入って手動で仕上げます。成功時は
+`state.json` に `lastSync` ブロックが書き込まれます
+（`vch state <name>` で確認できます）。
+
 ## コマンド一覧
 
 | コマンド | 役割 |
@@ -233,6 +256,7 @@ ignore されたファイルを原子的に移送する」操作には git 由�
 | `vch logs <name> [--test]` | タスク直近の `vch test` の xcodebuild フルログを表示。簡潔サマリが失敗を示したとき周辺ログを確認するのに便利。現状は `--test` のみ対応；ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。 |
+| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 記録されたベースブランチの upstream を fetch し、`agent/<name>` を rebase で取り込む。`--merge` で `git merge --no-ff` に切り替え（タスクブランチが共同作業者から見える場所に push 済みのときのみ推奨）。`--onto <ref>` でベースを上書き、`--no-fetch` で fetch をスキップ、`--allow-dirty` で dirty worktree チェックを git 側に委ねる、`--dry-run` は ahead/behind と計画戦略を表示するだけで何も書かない。git 操作はすべてタスク worktree 内で行い、メイン worktree には触れない。成功時に `lastSync` を記録する。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | タスクの `DerivedData` + `ModuleCache` を削除（デフォルト）。`--swiftpm` で SwiftPM クローンディレクトリも、`--logs` で `.vch/last-test.log` も、`--all` で全部を削除。`.agent-build/` または `.vch/` 以下のファイルを開いているプロセス（インデックス中の Xcode など）があれば拒否。`--dry-run` は削除予定の一覧を表示して何も触らずに返る。 |

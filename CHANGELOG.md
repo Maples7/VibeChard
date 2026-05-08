@@ -8,6 +8,31 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Added
+- `vch sync <name>` brings a task branch back up to date with its
+  recorded base after fetching the upstream. Default strategy is
+  `git rebase`; pass `--merge` for `git merge --no-ff` (use when
+  `agent/<name>` was manually pushed somewhere a coworker reads
+  from). `--onto <ref>` overrides the base, accepting anything
+  `git rev-parse` can resolve. `--no-fetch` skips the network call
+  for offline use. `--allow-dirty` is a pass-through that lets git
+  decide whether the operation can proceed; default behaviour is
+  to refuse on uncommitted changes. `--dry-run` prints the planned
+  strategy with ahead/behind counts and writes nothing. All git
+  work runs inside the task worktree, so the user's main worktree
+  is never disturbed. Reserved-name list grows to include `sync`.
+  Closes the `<name>`-shaped half of #25; `--all` deferred to a
+  follow-up.
+
+### Changed
+- `state.json` gains an optional `lastSync` record (no schema
+  bump; additive optional field, follows the `lastBuild` /
+  `lastTest` / `lastExec` precedent). `vch state` and
+  `vch state <field>` surface the new dotted keys
+  `lastSync.finishedAt`, `lastSync.baseSHA`, `lastSync.baseLabel`,
+  `lastSync.strategy`, `lastSync.appliedCommits`, and
+  `lastSync.durationSeconds`.
+
 ### Removed
 - `vch remove --force` / `-f` (the deprecated alias introduced in
   0.3.0). Use `--allow-dirty` for a dirty worktree and

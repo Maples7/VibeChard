@@ -109,4 +109,47 @@ final class TaskStateTests: XCTestCase {
         let restored = try TaskState.parse(try original.jsonData())
         XCTAssertEqual(restored.baseBranch, "develop")
     }
+
+    func testRoundtripsLastSync() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_500)
+        let original = TaskState(
+            name: "foo",
+            branch: "agent/foo",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "abc1234",
+            baseBranch: "origin/main",
+            lastSync: TaskState.SyncRecord(
+                finishedAt: now,
+                baseSHA: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                baseLabel: "origin/main",
+                strategy: "rebase",
+                appliedCommits: 3,
+                durationSeconds: 0.512
+            )
+        )
+        let restored = try TaskState.parse(try original.jsonData())
+        let sync = try XCTUnwrap(restored.lastSync)
+        XCTAssertEqual(sync.finishedAt.timeIntervalSince1970, 1_700_000_500)
+        XCTAssertEqual(sync.baseSHA, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+        XCTAssertEqual(sync.baseLabel, "origin/main")
+        XCTAssertEqual(sync.strategy, "rebase")
+        XCTAssertEqual(sync.appliedCommits, 3)
+        XCTAssertEqual(sync.durationSeconds, 0.512, accuracy: 1e-6)
+    }
+
+    func testParsesStateWithoutLastSync() throws {
+        // Schema-stable: state.json files written before #25 must still
+        // parse without `lastSync`.
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "foo",
+          "branch": "agent/foo",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "abc1234"
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNil(state.lastSync)
+    }
 }
