@@ -98,14 +98,40 @@ final class SimulatorServiceTests: XCTestCase {
 
     // MARK: - cloneDisplayName
 
-    func testCloneDisplayNameUsesMiddleDotConvention() throws {
+    func testCloneDisplayNameUsesHyphenSuffix() throws {
         let (service, _, _) = makeService(
             seedingTask: "alpha",
             seedingState: emptyState("alpha")
         )
         let name = service.cloneDisplayName(originalName: "iPhone 16",
                                             task: try TaskName("alpha"))
-        XCTAssertEqual(name, "iPhone 16 · vch[alpha]")
+        XCTAssertEqual(name, "iPhone 16-vch-alpha")
+    }
+
+    func testStripCloneSuffixHandlesBothSchemes() throws {
+        let task = try TaskName("alpha")
+        XCTAssertEqual(
+            SimulatorService.stripCloneSuffix(
+                from: "iPhone 16-vch-alpha", task: task),
+            "iPhone 16"
+        )
+        XCTAssertEqual(
+            SimulatorService.stripCloneSuffix(
+                from: "iPhone 16 \u{00B7} vch[alpha]", task: task),
+            "iPhone 16"
+        )
+        // No suffix → leave the name alone.
+        XCTAssertEqual(
+            SimulatorService.stripCloneSuffix(
+                from: "iPhone 16", task: task),
+            "iPhone 16"
+        )
+        // Suffix for a different task → leave alone.
+        XCTAssertEqual(
+            SimulatorService.stripCloneSuffix(
+                from: "iPhone 16-vch-beta", task: task),
+            "iPhone 16-vch-beta"
+        )
     }
 
     // MARK: - ensureClone
@@ -149,20 +175,20 @@ final class SimulatorServiceTests: XCTestCase {
             task: try TaskName("alpha"), requestedDevice: "iPhone 16"
         )
         XCTAssertEqual(resolved?.udid, "CLONE-1")
-        XCTAssertEqual(resolved?.name, "iPhone 16 · vch[alpha]")
+        XCTAssertEqual(resolved?.name, "iPhone 16-vch-alpha")
         XCTAssertTrue(resolved?.createdNow ?? false)
 
         // simctl.clone called exactly once with the right args.
         XCTAssertEqual(simctl.cloneCalls.count, 1)
         XCTAssertEqual(simctl.cloneCalls.first?.source, "TPL-NEW")
-        XCTAssertEqual(simctl.cloneCalls.first?.newName, "iPhone 16 · vch[alpha]")
+        XCTAssertEqual(simctl.cloneCalls.first?.newName, "iPhone 16-vch-alpha")
 
         // state.json now carries the simulator record.
         let data = try fs.readFile(at: "/repos/Demo-alpha/.vch/state.json")
         let state = try TaskState.parse(data)
         XCTAssertEqual(state.simulator?.cloneUDID, "CLONE-1")
         XCTAssertEqual(state.simulator?.sourceUDID, "TPL-NEW")
-        XCTAssertEqual(state.simulator?.name, "iPhone 16 · vch[alpha]")
+        XCTAssertEqual(state.simulator?.name, "iPhone 16-vch-alpha")
         // #4: persist the original template name so subsequent calls
         // with the same `--device` reuse the clone.
         XCTAssertEqual(state.simulator?.templateName, "iPhone 16")
@@ -202,6 +228,28 @@ final class SimulatorServiceTests: XCTestCase {
         seed.simulator = TaskState.SimulatorRecord(
             cloneUDID: "OLD-CLONE", sourceUDID: "OLD-SRC",
             name: "iPhone 16 · vch[alpha]"
+            // templateName intentionally omitted.
+        )
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: seed
+        )
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"), requestedDevice: "iPhone 16"
+        )
+        XCTAssertEqual(resolved?.udid, "OLD-CLONE")
+        XCTAssertFalse(resolved?.createdNow ?? true)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+    }
+
+    // #29: a state.json written by an in-development vch that
+    // dropped `templateName` but used the new hyphen suffix must
+    // still reuse via suffix-strip.
+    func testEnsureCloneReusesHyphenSuffixBindingWithoutTemplateName() throws {
+        var seed = emptyState("alpha")
+        seed.simulator = TaskState.SimulatorRecord(
+            cloneUDID: "OLD-CLONE", sourceUDID: "OLD-SRC",
+            name: "iPhone 16-vch-alpha"
             // templateName intentionally omitted.
         )
         let (service, _, simctl) = makeService(

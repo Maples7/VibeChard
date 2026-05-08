@@ -6,11 +6,12 @@ import Foundation
 /// state.json sanity), then layers simulator-specific checks on top.
 ///
 /// Detects:
-/// - **Orphan vch[*] simulator clones** — devices in `simctl list`
-///   whose name looks like a vch clone (`· vch[<task>]`) but whose
-///   UDID isn't bound to any live task. Common cause:
-///   `vch remove --keep-sim` left them, or removal happened while
-///   simctl was offline. `--clean` deletes these.
+/// - **Orphan vch simulator clones** — devices in `simctl list` whose
+///   name carries the vch suffix (`-vch-<task>` for v0.3.0+ clones, or
+///   the pre-v0.3.0 `· vch[<task>]` form) but whose UDID isn't bound
+///   to any live task. Common cause: `vch remove --keep-sim` left
+///   them, or removal happened while simctl was offline. `--clean`
+///   deletes these.
 /// - **Stale simulator bindings** — a task's `state.simulator.cloneUDID`
 ///   doesn't exist in `simctl list` anymore (someone deleted the
 ///   device out-of-band). `--clean` does NOT auto-fix these — the
@@ -34,11 +35,21 @@ public struct DoctorService: Sendable {
         self.fs = fs
     }
 
-    /// Marker every vch-managed clone has in its name. We do not look
-    /// at the prefix because the user's original device name may
-    /// contain anything; the `· vch[<task>]` suffix is our canonical
-    /// stamp.
-    public static let cloneNameMarker = "· vch["
+    /// Markers every vch-managed clone has in its name. We do not
+    /// look at the prefix because the user's original device name may
+    /// contain anything; the suffixes below are our canonical stamps.
+    ///
+    /// - `-vch-` is the v0.3.0+ scheme (`<original>-vch-<task>`).
+    /// - `· vch[` is the pre-v0.3.0 scheme
+    ///   (`<original> · vch[<task>]`); kept so existing clones still
+    ///   surface as orphans when their tasks vanish.
+    public static let cloneNameMarkers: [String] = ["-vch-", "· vch["]
+
+    /// Pre-v0.3.0 single-marker accessor. Retained as the first entry
+    /// of `cloneNameMarkers` for any external callers that might still
+    /// reference it; new code should use `cloneNameMarkers`.
+    @available(*, deprecated, renamed: "cloneNameMarkers")
+    public static var cloneNameMarker: String { cloneNameMarkers.last ?? "-vch-" }
 
     public struct StaleBinding: Equatable, Sendable {
         public let taskName: String
@@ -123,10 +134,14 @@ public struct DoctorService: Sendable {
             return report
         }
 
-        // Orphans: devices whose name carries our marker but whose
-        // UDID isn't bound to any live task.
+        // Orphans: devices whose name carries either marker but whose
+        // UDID isn't bound to any live task. Both the v0.3.0 hyphen
+        // suffix and the pre-v0.3.0 middle-dot bracket suffix are
+        // recognized so users mid-upgrade aren't stranded.
         let liveUDIDs = Set(boundByUDID.keys)
-        let vchNamed = allDevices.filter { $0.name.contains(Self.cloneNameMarker) }
+        let vchNamed = allDevices.filter { device in
+            Self.cloneNameMarkers.contains(where: { device.name.contains($0) })
+        }
         report.orphanClones = vchNamed
             .filter { !liveUDIDs.contains($0.udid) }
             .sorted { $0.name < $1.name }
