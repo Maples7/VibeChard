@@ -55,14 +55,57 @@ under `/memories/repo/vibechard-plan.md`. Read it first if you have access.
     rather than letting it silently drift. Pure typo / link / formatting
     fixes are exempt.
 
+## Engineering discipline
+
+These are workflow expectations, not project policies. They live here
+because past sessions repeatedly rediscovered them the hard way.
+
+1. **Source code is the source of truth.** When evaluating whether a
+   change is feasible, necessary, or correct, **read the code**.
+   Plan documents (`/memories/repo/vibechard-plan.md`, milestone
+   result notes, even your own previous CHANGELOG entries) drift
+   between sessions. Treat them as hypotheses to verify, not facts
+   to act on. If the plan and the code disagree, the code wins.
+2. **Add tests when behaviour changes.** Any meaningful logic change
+   to `VibeChardCore` or `vch` deserves a unit test in
+   `Tests/VibeChardCoreTests/` — usually one new test case in an
+   existing file, or one small new file. Bug fixes get a regression
+   test that would have failed pre-fix. Pure refactors and pure
+   moves don't need new tests, but the existing suite must stay
+   green and you must say so in the PR.
+3. **Update CHANGELOG.md whenever the change is user-visible.**
+   New flags, behaviour changes, deprecations, removals, and bug
+   fixes go under `[Unreleased]`. Pure docs and internal refactors
+   are exempt. Every CHANGELOG line must be defensible from the
+   diff — if a bullet has no matching code, you shipped a lie.
+4. **Keep README in sync with the source.** Command-table rows,
+   flag descriptions, examples, and architecture claims must reflect
+   the current code. The 5-locale sync rule (#10 above) applies to
+   any substantive update — but the rule above it is that README
+   must not lie about what the binary does.
+
 ## Architecture map
 
 ```
 Sources/
 ├── VibeChardCore/           ← all business logic
+│   ├── Domain/              ← pure value types, errors, exit codes
+│   ├── System/              ← IO abstractions (protocol + Disk* impl)
+│   ├── Planning/            ← pure transforms: planners, parsers, generators
+│   └── Services/            ← orchestrators that compose Planning + System
 ├── vch/                     ← thin ArgumentParser shell, calls Core
+│   ├── VchCLI.swift         ← @main root command
+│   ├── Commands/            ← one file per subcommand (or related cluster)
+│   └── Support/             ← CLI plumbing (CLIBridge, PlanLauncher, completion)
 └── vch-xcodebuild-shim/     ← standalone, no deps, exec replacement
 ```
+
+The four sub-buckets in `VibeChardCore/` are organisational only — there
+is one Swift module. Cross-bucket imports are unrestricted; the buckets
+just keep the file list scannable. Rough rule of thumb: **Domain** has
+no IO, **Planning** has no IO, **System** wraps a single IO concern
+behind a protocol, **Services** compose the previous three to do real
+work.
 
 `vch` should never contain logic; only argument parsing, output formatting,
 and exit-code mapping. Every behavior must be unit-testable from
