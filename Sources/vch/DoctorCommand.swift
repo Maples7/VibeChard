@@ -16,10 +16,36 @@ struct DoctorCommand: ParsableCommand {
     @Flag(name: .long, help: "Emit machine-readable JSON.")
     var json: Bool = false
 
+    @Flag(
+        name: .long,
+        help: "Bundle a redacted diagnostics tarball locally (no network). $HOME paths are scrubbed."
+    )
+    var bugReport: Bool = false
+
+    @Option(
+        name: .long,
+        help: "Override the default `--bug-report` output path."
+    )
+    var out: String?
+
     func run() throws {
         try CLIBridge.run {
             let cwd = FileManager.default.currentDirectoryPath
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
+
+            // --bug-report short-circuits the diagnose+clean path.
+            // The bundle should reflect on-disk state as the user
+            // experienced it, not the post-clean state.
+            if bugReport {
+                if clean {
+                    CLIBridge.eprintln(
+                        "warning: --clean ignored when --bug-report is set"
+                    )
+                }
+                try runBugReport(workspace: workspace, cwd: cwd)
+                return
+            }
+
             let doctor = DoctorService(
                 workspace: workspace,
                 git: DiskGitClient(),
@@ -160,6 +186,60 @@ struct DoctorCommand: ParsableCommand {
             return false
         } else {
             return !report.orphanClones.isEmpty
+        }
+    }
+
+    // MARK: - --bug-report
+
+    private func runBugReport(workspace: Workspace, cwd: String) throws {
+        let service = BugReportService(
+            workspace: workspace,
+            git: DiskGitClient()
+        )
+        let entries = try service.collect()
+
+        // Resolve output path. Relative paths anchor to CWD so
+        // `--out reports/foo.tgz` lands inside the worktree, not in
+        // some surprising tmp dir.
+        let outPath: String
+        if let raw = out, !raw.isEmpty {
+            outPath = (raw as NSString).isAbsolutePath
+                ? raw
+                : (cwd as NSString).appendingPathComponent(raw)
+        } else {
+            outPath = (cwd as NSString)
+                .appendingPathComponent(service.defaultOutputName())
+        }
+        let outURL = URL(fileURLWithPath: outPath)
+
+        let archiver = DiskTarGzArchiver()
+        try archiver.write(entries, to: outURL)
+
+        if json {
+            struct Out: Encodable {
+                let outPath: String
+                let entries: [String]
+                let totalBytes: Int
+            }
+            let payload = Out(
+                outPath: outURL.path,
+                entries: entries.map(\.path),
+                totalBytes: entries.reduce(0) { $0 + $1.data.count }
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(payload)
+            if let str = String(data: data, encoding: .utf8) { print(str) }
+        } else {
+            CLIBridge.eprintln("vch bug report bundled \(entries.count) files:")
+            for e in entries {
+                CLIBridge.eprintln("  - \(e.path)  (\(e.data.count) bytes)")
+            }
+            CLIBridge.eprintln("")
+            CLIBridge.eprintln("→ \(outURL.path)")
+            CLIBridge.eprintln(
+                "Privacy: $HOME paths are scrubbed. Inspect before sharing."
+            )
         }
     }
 }

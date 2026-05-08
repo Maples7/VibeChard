@@ -185,7 +185,7 @@ vch exec task-a -- xcodebuild test \
 | 命令 | 作用 |
 |---|---|
 | `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。 |
-| `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列。 |
+| `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列；`--git-status` 增加 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列（每个 worktree 多跑一次 `git rev-list` + `git status`）。 |
 | `vch state <name>` | 漂亮打印任务的 `.vch/state.json`。`--json` 输出原始文件内容。`--field <dotted>` 只输出单个字段值（如 `simulator.udid`），方便在脚本里 `$(vch state foo --field simulator.udid)` 这样取。 |
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中打开 worktree。自动识别 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（项目文件用 Xcode，否则用 VS Code）。`--with` 支持 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名（透传给 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆盖默认值。不传 `<name>` 时使用 `$PWD` 所在的 worktree。 |
@@ -199,7 +199,9 @@ vch exec task-a -- xcodebuild test \
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。 |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。两次 `--force` 才允许脏树 + 未合并分支。 |
 | `vch repair` | 用 `git worktree list` 的实际状态重新对齐 `.vch/state.json`。 |
+| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 清理任务的 `DerivedData` + `ModuleCache`（默认）。`--swiftpm` 还会删 SwiftPM 克隆目录，`--logs` 删 `.vch/last-test.log`，`--all` 表示全删。如果有进程还在用 `.agent-build/` 或 `.vch/` 内的文件（比如 Xcode 正在索引）会拒绝；`--dry-run` 只列要删的内容不真删。 |
 | `vch doctor [--clean] [--json]` | 检测孤儿模拟器克隆、失效绑定、损坏的 `state.json`。有发现就退出非零。 |
+| `vch doctor --bug-report [--out <path>] [--json]` | 在本地打包一份脱敏诊断 tarball：每个任务的 `state.json` + `last-test.log`、porcelain worktree 列表、以及 `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` 的输出。`$HOME` 路径会被替换。不联网。默认输出 `./vch-bug-report-<UTC 时间戳>.tgz`。 |
 | `vch shellenv` | 输出 `vch_cd` / `vch_new` / `vch_clean` shell 助手函数（bash/zsh）。 |
 | `vch completions install [--shell <s>]` | 安装 `zsh` / `bash` / `fish` 的补全脚本（默认从 `$SHELL` 自动识别）。`--print` 预览；`--force` 覆盖已有文件。 |
 | `vch version` | 打印版本与工具链信息（`--json` 为机器可读格式）。 |
@@ -228,7 +230,10 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 ## 配置
 
 无。所有任务级状态都在 `<worktree>/.vch/state.json` 里。没有 `~/.vchrc`、没有 `.vch.toml`、没有任何全局配置文件。唯一的运行时旋钮是上面提到的那几个 `VCH_*` 环境变量
-（一般由 `vch exec` 自己设置，你很少需要手动配）。
+（一般由 `vch exec` 自己设置，你很少需要手动配）。`vch build`/`vch test`/`vch run` 还会把宿主选定的 `DEVELOPER_DIR`（通过 `xcode-select -p` 解出）传给子进程——手动设置该环境变量即可覆盖。
+
+如果 `vch new` 提示了 `eval "$(vch shellenv)"`，可以用 `VCH_NEW_HINT=0`
+关闭这条提示（或者直接安装好 shell helper）。
 
 ## VibeChard 不是什么
 

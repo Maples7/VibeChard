@@ -8,6 +8,47 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Added
+- `vch list --git-status` enriches the table with `AHEAD/BEHIND`,
+  `DIRTY`, and `LAST COMMIT` columns. The base for ahead/behind is
+  the recorded `baseBranch` (recorded by `vch new` since 0.2.0),
+  falling back to the recorded short SHA when no branch was active.
+  Each git query is best-effort — a flaky repo degrades the affected
+  field to `-` instead of breaking the whole listing. Off the cheap
+  default path (one extra `git rev-list` + `git status` per
+  worktree). JSON output gains an optional `git` block when the flag
+  is set; the default JSON shape is unchanged. Closes #24.
+- `vch clean <name>` removes the task's `DerivedData` and
+  `ModuleCache` (default), with `--swiftpm` for the SwiftPM clone
+  dir, `--logs` for `.vch/last-test.log`, and `--all` for everything.
+  Refuses to delete when any process still has a file open inside
+  `.agent-build/` or `.vch/` (e.g. an Xcode that's actively
+  indexing); `--dry-run` lists what would be removed. Reserved-name
+  list grows to include `clean`. Closes #26.
+- `vch doctor --bug-report` bundles a redacted local diagnostics
+  tarball: every task's `state.json` and (capped) `last-test.log`,
+  the porcelain worktree list, and `sw_vers` / `xcode-select -p` /
+  `xcrun -f xcodebuild` / `swift --version` output. `$HOME` paths
+  are scrubbed in every textual entry. No network calls — the user
+  is the only one deciding what to share. Default output:
+  `./vch-bug-report-<UTC-stamp>.tgz`; override with `--out`. Plan
+  Q10.
+
+### Changed
+- `vch build`, `vch test`, `vch run`, and `vch exec` now propagate
+  the host's selected `DEVELOPER_DIR` (resolved via `xcode-select
+  -p` and cached) into the child process, mirroring xcodebuild's own
+  behaviour. Prevents stale-Xcode mismatches when an agent is run
+  outside a regular shell. The user's existing `DEVELOPER_DIR`
+  override always wins. Closes #31 (partial — full closure pending
+  PR-C).
+- `vch new` prints a one-line hint about `eval "$(vch shellenv)"`
+  when stdout is a TTY and the shell helper sentinel
+  (`VCH_SHELL_HELPER`) is not set. Suppress with `VCH_NEW_HINT=0`.
+  `vch shellenv` now exports the sentinel so the hint vanishes once
+  helpers are installed. Closes #32 (partial — `#32B` shipping in
+  PR-C).
+
 ## [0.2.0] - 2026-05-07
 
 ### Added

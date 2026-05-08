@@ -21,15 +21,20 @@ public struct ExecService: Sendable {
     public let workspace: Workspace
     public let git: GitClient
     public let fs: FileSystem
+    /// Resolver for `DEVELOPER_DIR` injection (#31). Nil in unit tests
+    /// so plans stay deterministic; the CLI passes a real one.
+    public let developerDir: DeveloperDirResolver?
 
     public init(
         workspace: Workspace,
         git: GitClient,
-        fs: FileSystem = DiskFileSystem()
+        fs: FileSystem = DiskFileSystem(),
+        developerDir: DeveloperDirResolver? = nil
     ) {
         self.workspace = workspace
         self.git = git
         self.fs = fs
+        self.developerDir = developerDir
     }
 
     /// Names of the three shim symlinks we install into `<wt>/.vch/bin/`.
@@ -117,6 +122,10 @@ public struct ExecService: Sendable {
         env["VCH_TASK_ROOT"] = worktree
         env["VCH_RESULT_BUNDLE_DIR"] =
             (workspace.resultBundlePath(for: task) as NSString).deletingLastPathComponent
+        // #31: pin the toolchain root so a hand-typed xcrun inside the
+        // child shell hits the same Xcode that the parent picked. User
+        // override (already in baseEnv) always wins.
+        DeveloperDirInjection.apply(to: &env, resolver: developerDir)
 
         return env
     }

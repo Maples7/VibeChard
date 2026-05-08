@@ -30,7 +30,11 @@ struct ExecCommand: ParsableCommand {
 
             let shimPath = try Self.resolveShimPath(env: env)
 
-            let service = ExecService(workspace: workspace, git: DiskGitClient())
+            let service = ExecService(
+                workspace: workspace,
+                git: DiskGitClient(),
+                developerDir: XcodeSelectDeveloperDirResolver()
+            )
             let plan = try service.prepare(
                 task: task,
                 command: command,

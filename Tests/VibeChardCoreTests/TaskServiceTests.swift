@@ -353,4 +353,94 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertTrue(report.problems.contains(where: { $0.contains("orphan") && $0.contains("missing") }))
         XCTAssertTrue(report.problems.contains(where: { $0.contains("junk") }))
     }
+
+    // MARK: - listTasks baseBranch propagation (#24)
+
+    func testListPopulatesBaseBranchFromState() throws {
+        let (service, git, fs, _) = makeService()
+        let state = TaskState(
+            name: "feature",
+            branch: "agent/feature",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbeef",
+            baseBranch: "develop"
+        )
+        try fs.writeFileAtomic(state.jsonData(), to: "/Users/me/Repo-feature/.vch/state.json")
+        git.entries.append(WorktreeEntry(path: "/Users/me/Repo-feature", branch: "agent/feature"))
+
+        let summaries = try service.listTasks()
+        XCTAssertEqual(summaries.first?.baseBranch, "develop")
+        XCTAssertNil(summaries.first?.gitStatus,
+                     "listTasks must not enrich; that's gitStatus(forSummary:)")
+    }
+
+    // MARK: - gitStatus(forSummary:) (#24)
+
+    func testGitStatusReportsAheadBehindAndDirtyAndSubject() throws {
+        let (service, git, _, _) = makeService()
+        let summary = TaskSummary(
+            name: "feature",
+            branch: "agent/feature",
+            path: "/Users/me/Repo-feature",
+            createdAt: nil,
+            baseRef: "deadbeef",
+            baseBranch: "main",
+            simulatorName: nil,
+            lastBuildSucceeded: nil,
+            lastBuildAt: nil
+        )
+        git.dirtyWorktrees.insert("/Users/me/Repo-feature")
+        git.revListCountByRange["main..HEAD"] = 3
+        git.revListCountByRange["HEAD..main"] = 1
+        git.lastSubjectByBranch["HEAD"] = "wire up payment splitting"
+
+        let status = service.gitStatus(forSummary: summary)
+        XCTAssertEqual(status.aheadCount, 3)
+        XCTAssertEqual(status.behindCount, 1)
+        XCTAssertTrue(status.isDirty)
+        XCTAssertEqual(status.lastCommitSubject, "wire up payment splitting")
+    }
+
+    func testGitStatusFallsBackToBaseRefWhenBaseBranchUnknown() throws {
+        let (service, git, _, _) = makeService()
+        let summary = TaskSummary(
+            name: "feature",
+            branch: "agent/feature",
+            path: "/Users/me/Repo-feature",
+            createdAt: nil,
+            baseRef: "abc1234",
+            baseBranch: nil,
+            simulatorName: nil,
+            lastBuildSucceeded: nil,
+            lastBuildAt: nil
+        )
+        // Recorded against the SHA range so we can verify the fallback.
+        git.revListCountByRange["abc1234..HEAD"] = 5
+        git.revListCountByRange["HEAD..abc1234"] = 0
+
+        let status = service.gitStatus(forSummary: summary)
+        XCTAssertEqual(status.aheadCount, 5)
+        XCTAssertEqual(status.behindCount, 0)
+    }
+
+    func testGitStatusLeavesAheadBehindNilWhenNoBaseAvailable() throws {
+        let (service, _, _, _) = makeService()
+        let summary = TaskSummary(
+            name: "orphan",
+            branch: "agent/orphan",
+            path: "/Users/me/Repo-orphan",
+            createdAt: nil,
+            baseRef: nil,
+            baseBranch: nil,
+            simulatorName: nil,
+            lastBuildSucceeded: nil,
+            lastBuildAt: nil
+        )
+        let status = service.gitStatus(forSummary: summary)
+        XCTAssertNil(status.aheadCount)
+        XCTAssertNil(status.behindCount)
+        // Dirty defaults to false (no entry in fake), subject nil.
+        XCTAssertFalse(status.isDirty)
+        XCTAssertNil(status.lastCommitSubject)
+    }
 }

@@ -39,7 +39,8 @@ public extension VibeChardError {
              .landNoIntoInferred,
              .landBranchMissing,
              .runBundleIDNotFound,
-             .runAppBundleNotFound:
+             .runAppBundleNotFound,
+             .cleanBlockedByHolders:
             return ExitCode.business
         case .externalCommandFailed:
             return ExitCode.external

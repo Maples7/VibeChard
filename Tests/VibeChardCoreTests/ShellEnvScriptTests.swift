@@ -48,4 +48,13 @@ final class ShellEnvScriptTests: XCTestCase {
     func testHeaderMentionsEvalUsage() {
         XCTAssertTrue(ShellEnvScript.header.contains("eval"))
     }
+
+    func testZshBashExportsShellHelperSentinel() {
+        // #32A: sourcing shellenv must mark the shell as helper-loaded
+        // so `vch new` knows it can skip its install-the-helpers hint.
+        XCTAssertTrue(
+            ShellEnvScript.zshBash.contains("export VCH_SHELL_HELPER=1"),
+            "shellenv must export VCH_SHELL_HELPER=1 (used by NewTaskHint)"
+        )
+    }
 }

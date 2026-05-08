@@ -79,7 +79,9 @@ struct RunCommand: ParsableCommand {
         let simctl = DiskSimctlClient()
         let simulator = SimulatorService(workspace: workspace, simctl: simctl)
         let buildService = BuildService(
-            workspace: workspace, simulator: simulator
+            workspace: workspace,
+            simulator: simulator,
+            developerDir: XcodeSelectDeveloperDirResolver()
         )
 
         // Reuse the same scheme-resolution rules as `vch build`/`vch

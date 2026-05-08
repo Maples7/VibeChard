@@ -186,7 +186,7 @@ vch exec task-a -- xcodebuild test \
 | コマンド | 役割 |
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。 |
-| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。 |
+| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。`--git-status` で `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列を追加（worktree ごとに `git rev-list` + `git status` を 1 回ずつ追加実行）。 |
 | `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。`--field <dotted>` で単一のスカラー値（例：`simulator.udid`）だけを出力——スクリプトで `$(vch state foo --field simulator.udid)` として使うため。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |
 | `vch open [<name>] [--with <ide>]` | worktree を IDE で開く。`*.xcworkspace` / `*.xcodeproj` / `Package.swift` を自動検出（プロジェクトファイルは Xcode、それ以外は VS Code）。`--with` は `xcode`、`code`/`vscode`、`cursor`、または任意のアプリ名（`open -a` に渡す）に対応。`VCH_OPEN_DEFAULT` でデフォルトを上書き可能。`<name>` 省略時は `$PWD` のある worktree を使う。 |
@@ -200,7 +200,9 @@ vch exec task-a -- xcodebuild test \
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。 |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--force` 2 回でダーティツリー＋未マージブランチも許容。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
+| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | タスクの `DerivedData` + `ModuleCache` を削除（デフォルト）。`--swiftpm` で SwiftPM クローンディレクトリも、`--logs` で `.vch/last-test.log` も、`--all` で全部を削除。`.agent-build/` または `.vch/` 以下のファイルを開いているプロセス（インデックス中の Xcode など）があれば拒否。`--dry-run` は削除予定の一覧を表示して何も触らずに返る。 |
 | `vch doctor [--clean] [--json]` | 孤児シミュレータークローン、古いステートバインディング、破損 `state.json` を検出。検出時は非ゼロ終了。 |
+| `vch doctor --bug-report [--out <path>] [--json]` | ローカルでサニタイズ済みの診断バンドル tarball を作成。全タスクの `state.json` + `last-test.log`、porcelain の worktree 一覧、`sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` の出力を同梱。`$HOME` パスは置換済み。ネットワークには一切接続しない。デフォルト出力は `./vch-bug-report-<UTC タイムスタンプ>.tgz`。 |
 | `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` のシェルヘルパーを出力（bash/zsh）。 |
 | `vch completions install [--shell <s>]` | `zsh` / `bash` / `fish` の補完スクリプトをインストール（`$SHELL` から自動検出）。`--print` でプレビュー、`--force` で上書き。 |
 | `vch version` | バージョンとツールチェイン情報を出力（`--json` で機械可読）。 |
@@ -226,7 +228,9 @@ Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的�
 
 ## 設定
 
-ありません。タスクごとの状態はすべて `<worktree>/.vch/state.json` に収まります。`~/.vchrc` も `.vch.toml` もグローバル設定ファイルもありません。唯一の実行時ノブは上記の `VCH_*` 環境変数です（通常は `vch exec` が自分でセットするので、手動で触る必要はほとんどありません）。
+ありません。タスクごとの状態はすべて `<worktree>/.vch/state.json` に収まります。`~/.vchrc` も `.vch.toml` もグローバル設定ファイルもありません。唯一の実行時ノブは上記の `VCH_*` 環境変数です（通常は `vch exec` が自分でセットするので、手動で触る必要はほとんどありません）。`vch build`/`vch test`/`vch run` はホストで選ばれている `DEVELOPER_DIR`（`xcode-select -p` で解決）を子プロセスに伝播します。手動で環境変数を設定すれば上書きできます。
+
+`vch new` が `eval "$(vch shellenv)"` のヒントを表示した場合、`VCH_NEW_HINT=0` で抑制できます（あるいはシェル helper をインストールすれば自動的に消えます）。
 
 ## VibeChard ではないもの
 

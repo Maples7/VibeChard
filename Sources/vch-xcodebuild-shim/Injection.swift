@@ -34,8 +34,9 @@ public enum ShimEnv {
     public static let alreadyInjected = "VCH_SHIM_INJECTED"
     /// Diagnostic / test override: when set, the shim hands argv to this
     /// path directly instead of resolving via `/usr/bin/xcrun -f`.
-    /// Looked up per tool, e.g. `VCH_SHIM_REAL_XCODEBUILD`. Documented
-    /// only in `vch doctor --bug-report`.
+    /// Looked up per tool, e.g. `VCH_SHIM_REAL_XCODEBUILD`. Used by the
+    /// integration tests and surfaced to users only via
+    /// `vch doctor --bug-report` (no other CLI plumbing).
     public static func realOverrideKey(for tool: InvokedTool) -> String {
         "VCH_SHIM_REAL_\(tool.rawValue.uppercased())"
     }

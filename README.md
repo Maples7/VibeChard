@@ -201,7 +201,7 @@ vch exec task-a -- xcodebuild test \
 | Command | What it does |
 |---|---|
 | `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. |
-| `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns. |
+| `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns; `--git-status` adds `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` columns (one extra `git rev-list` + `git status` per worktree). |
 | `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. `--field <dotted>` prints just one scalar (e.g. `simulator.udid`) — designed for `$(vch state foo --field simulator.udid)` in scripts. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
@@ -215,7 +215,9 @@ vch exec task-a -- xcodebuild test \
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. |
 | `vch remove <name> [--force [--force]] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. Two `--force`s allow dirty trees + unmerged branches. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
+| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | Delete the task's `DerivedData` + `ModuleCache` (default). Add `--swiftpm` to also drop the SwiftPM clone dir, `--logs` to drop `.vch/last-test.log`, `--all` for everything. Refuses if any process still has a file open inside `.agent-build/` or `.vch/` (e.g. an Xcode that's actively indexing); `--dry-run` lists what would be removed. |
 | `vch doctor [--clean] [--json]` | Detect orphan simulator clones, stale state bindings, and corrupt `state.json`s. Exits non-zero on any finding. |
+| `vch doctor --bug-report [--out <path>] [--json]` | Bundle a redacted local diagnostics tarball: every task's `state.json` + `last-test.log`, the porcelain worktree list, and `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` output. `$HOME` paths are scrubbed. No network. Default output: `./vch-bug-report-<UTC-stamp>.tgz`. |
 | `vch shellenv` | Emit `vch_cd` / `vch_new` / `vch_clean` shell helpers (bash/zsh). |
 | `vch completions install [--shell <s>]` | Install the completion script for `zsh` / `bash` / `fish` (auto-detected from `$SHELL`). `--print` previews; `--force` overwrites. |
 | `vch version` | Print version + toolchain info (`--json` for machine-readable). |
@@ -252,7 +254,13 @@ the call site.
 None. All per-task state lives at `<worktree>/.vch/state.json`. There
 are no `~/.vchrc`, no `.vch.toml`, no global config files. The only
 runtime knobs are the `VCH_*` env vars listed above (typically set by
-`vch exec` itself; you rarely set them by hand).
+`vch exec` itself; you rarely set them by hand). For build commands,
+vch also propagates the host's selected `DEVELOPER_DIR` (resolved via
+`xcode-select -p`) into the child process — set the env var manually
+to override.
+
+If `vch new` printed a hint about `eval "$(vch shellenv)"`, set
+`VCH_NEW_HINT=0` to silence it (or just install the shell helpers).
 
 ## What VibeChard is not
 
