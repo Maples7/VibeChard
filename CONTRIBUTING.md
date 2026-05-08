@@ -137,7 +137,7 @@ lands on `master`.
 1. **Land everything you want in the release** through PRs first.
    `## [Unreleased]` in CHANGELOG should describe what's in it.
 2. Open a `chore/release-x.y.z` branch. In one commit:
-   - Bump `Sources/VibeChardCore/VibeChard.swift` →
+   - Bump `Sources/VibeChardCore/Domain/VibeChard.swift` →
      `public static let version = "x.y.z"`.
    - In CHANGELOG, rename `## [Unreleased]` to
      `## [x.y.z] - YYYY-MM-DD`, then re-add an empty `## [Unreleased]`

@@ -44,7 +44,7 @@ jobs:
           # version` disagrees with the tag.
           tag="${GITHUB_REF_NAME#v}"
           src=$(grep -oE 'public static let version = "[^"]+"' \
-            Sources/VibeChardCore/VibeChard.swift \
+            Sources/VibeChardCore/Domain/VibeChard.swift \
             | sed -E 's/.*"([^"]+)".*/\1/')
           echo "tag=$tag src=$src"
           if [ "$tag" != "$src" ]; then
