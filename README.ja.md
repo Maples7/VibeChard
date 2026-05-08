@@ -239,6 +239,37 @@ vch sync foo --no-fetch               # オフライン、既に fetch 済みの
 `state.json` に `lastSync` ブロックが書き込まれます
 （`vch state <name>` で確認できます）。
 
+### `vch land` 時に生成された成果物を残す
+
+`vch land` は**コミット済み**の内容しかマージ先ブランチへ運びませ
+ん。タスク worktree 内で git に追跡されていないもの — 未コミット
+変更、untracked ファイル、`.gitignore` で除外されたもの（再生成
+された画像、ビルド成果物、キャッシュなど）— は **マージに含まれ
+ず**、land 成功後にデフォルトで走る `vch rm` が worktree ごと
+それらを削除します。
+
+ハマるのは特定の形のワークフローです：タスク worktree 内のスク
+リプトが、リポジトリで意図的に `.gitignore` 済みの成果物を再生成
+し、新しい成果物を確認したあと `vch land` を走らせ、後になって
+やっと「再生成したファイルがマージを跨いで来ていない」「メイン
+には古いままのものしか映っていない」と気付く、というパターンです。
+
+その成果物をマージ先ブランチの worktree に持ってきたい場合は、
+コピーが終わるまで vch に worktree を消させないでください：
+
+```sh
+vch land foo --keep                              # マージするが agent-foo/ は残す
+rsync -a "$(vch path foo)/docs/images/" \
+      docs/images/                               # 本当に必要なものだけコピー
+vch rm foo                                       # 終わってから片付ける
+```
+
+コピーは `cp -R` でも `tar -c | tar -x` でも `git lfs migrate` で
+も、案件に合うものを選んでください。vch は「どの成果物を運ぶ
+**べき**か」「どう運ぶべきか」をあえて決め打ちしません — それは
+プロジェクトが何を、なぜ ignore しているかに完全に依存するから
+です。
+
 ## コマンド一覧
 
 | コマンド | 役割 |
@@ -255,7 +286,7 @@ vch sync foo --no-fetch               # オフライン、既に fetch 済みの
 | `vch run   <name> [flags] [-- launch-args]` | タスクに紐づいたシミュレータークローン上でアプリをビルド・インストール・起動。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じで、`PRODUCT_BUNDLE_IDENTIFIER` は `xcodebuild -showBuildSettings -json` から自動解決。`--` 以降の引数はそのまま `simctl launch` に転送されます（例：`vch run alpha -- -UsePreviewSampleData`）。必要に応じてクローンをブートし `Simulator.app` を開きます。 |
 | `vch logs <name> [--test]` | タスク直近の `vch test` の xcodebuild フルログを表示。簡潔サマリが失敗を示したとき周辺ログを確認するのに便利。現状は `--test` のみ対応；ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。 |
+| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。**コミット済み**の内容しか持ち越されません — 未コミット変更、untracked ファイル、`.gitignore` で除外された成果物は worktree と一緒に削除されます（`--keep` + 手動コピー；cookbook の「`vch land` 時に生成された成果物を残す」を参照）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 記録されたベースブランチの upstream を fetch し、`agent/<name>` を rebase で取り込む。`--merge` で `git merge --no-ff` に切り替え（タスクブランチが共同作業者から見える場所に push 済みのときのみ推奨）。`--onto <ref>` でベースを上書き、`--no-fetch` で fetch をスキップ、`--allow-dirty` で dirty worktree チェックを git 側に委ねる、`--dry-run` は ahead/behind と計画戦略を表示するだけで何も書かない。git 操作はすべてタスク worktree 内で行い、メイン worktree には触れない。成功時に `lastSync` を記録する。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |

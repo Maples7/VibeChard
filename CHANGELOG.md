@@ -43,6 +43,16 @@ The English README is the source of truth; localized READMEs may lag.
   `--allow-unmerged` for an unmerged branch (or both together).
   Pre-1.0 minors are allowed to break per CONTRIBUTING.md.
 
+### Documentation
+- `vch land --help` and the README now spell out that `vch land`
+  only carries **committed** content into the destination branch:
+  uncommitted changes, untracked files, and `.gitignore`d artifacts
+  in the task worktree are not part of the merge and are deleted
+  along with the worktree on the auto-`vch rm` step. New cookbook
+  recipe "Preserving generated artifacts when landing" shows the
+  `--keep` → manual copy → `vch rm` recovery flow. No behaviour
+  change.
+
 ## [0.3.0] - 2026-05-08
 
 ### Added

@@ -254,6 +254,37 @@ conflicts), the operation aborts cleanly and you finish the rebase
 inside the task worktree by hand. Successful runs record a `lastSync`
 block in `state.json` (visible via `vch state <name>`).
 
+### Preserving generated artifacts when landing
+
+`vch land` only carries **committed** content into the destination
+branch. Anything in the task worktree that isn't tracked by git —
+uncommitted changes, untracked files, and anything excluded by
+`.gitignore` (regenerated images, build outputs, caches) — is **not**
+part of the merge, and on a successful land the default `vch rm` step
+deletes the worktree along with all of that.
+
+This bites a specific shape of workflow: a script in the task worktree
+regenerates artifacts that are deliberately `.gitignore`d in the repo.
+You confirm the new artifacts look good, run `vch land`, and only
+afterwards realise the regenerated files never made it across the
+merge — the new artifacts went away with the worktree, and main is
+still showing the old ones.
+
+If you need those artifacts on the destination branch's worktree, ask
+vch not to delete the worktree until you've copied them out:
+
+```sh
+vch land foo --keep                              # merge but keep agent-foo/
+rsync -a "$(vch path foo)/docs/images/" \
+      docs/images/                               # copy what you actually want
+vch rm foo                                       # then clean up
+```
+
+Pick whichever copy tool fits — `cp -R`, `tar -c | tar -x`, `git lfs
+migrate`, etc. vch deliberately doesn't take a side on which artifacts
+"should" be copied or how, because the answer depends on what your
+project ignores and why.
+
 ## Commands
 
 | Command | What it does |
@@ -270,7 +301,7 @@ block in `state.json` (visible via `vch state <name>`).
 | `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
 | `vch logs <name> [--test]` | Print the full xcodebuild log from the task's most recent run. Useful when the concise `vch test` summary points at a failure and you want the surrounding context. Currently `--test` is the only flavor; the `vch test` log is overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. |
+| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. Only **committed** content is carried over — uncommitted changes, untracked files, and `.gitignore`d artifacts in the worktree are lost when the worktree is removed (use `--keep` + manual copy; see the "Preserving generated artifacts" cookbook recipe). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | Fetch the recorded base branch's upstream and rebase `agent/<name>` onto it. `--merge` switches to `git merge --no-ff` (use only when the task branch has been pushed somewhere a coworker reads from). `--onto <ref>` overrides the base; `--no-fetch` skips the network call; `--allow-dirty` defers the dirty-worktree check to git itself; `--dry-run` prints ahead/behind counts and the planned strategy without writing. All git work runs inside the task worktree, so the main worktree is never touched. Records `lastSync` on success. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--allow-unmerged` force-deletes a branch that isn't fully merged. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |

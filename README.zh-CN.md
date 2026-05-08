@@ -231,6 +231,34 @@ vch sync foo --no-fetch               # 离线，仅靠已经 fetch 过的 ref �
 你可以进入任务 worktree 手动收尾。成功的 `vch sync` 会在
 `state.json` 写入 `lastSync` 块（`vch state <name>` 可见）。
 
+### `vch land` 时保留生成的产物
+
+`vch land` 只把**已 commit** 的内容带进目标分支。任务 worktree 里
+git 不跟踪的内容 —— 未提交改动、untracked 文件、被 `.gitignore`
+排除掉的内容（重新生成的图片、构建产物、缓存等等）—— **不会**
+进入这次合并；而成功 land 之后默认的 `vch rm` 会把 worktree 连同
+这些东西一起删掉。
+
+这种坑会咬住一类特定的工作流：任务 worktree 里的某个脚本会重新
+生成一批被 `.gitignore` 故意排除的产物，你确认了新产物没问题就
+跑了 `vch land`，事后才发现这些重新生成的文件根本没跨过合并
+—— 它们随 worktree 一起没了，主分支看到的还是旧版本。
+
+如果你需要把这些产物搬到目标分支的 worktree 里，先告诉 vch
+不要立刻删 worktree，等你拷贝完再删：
+
+```sh
+vch land foo --keep                              # 合并但保留 agent-foo/
+rsync -a "$(vch path foo)/docs/images/" \
+      docs/images/                               # 把你真正需要的部分拷过来
+vch rm foo                                       # 然后再清理
+```
+
+至于用 `cp -R` / `tar -c | tar -x` / `git lfs migrate` 还是别的
+工具搬，看你项目情况自己挑 —— vch 故意不去裁判 「哪些产物**应该**
+被搬」「应该怎么搬」，因为答案完全取决于你的项目为什么 ignore
+那些文件。
+
 ## 命令一览
 
 | 命令 | 作用 |
@@ -247,7 +275,7 @@ vch sync foo --no-fetch               # 离线，仅靠已经 fetch 过的 ref �
 | `vch run   <name> [flags] [-- launch-args]` | 在任务的模拟器克隆上构建、安装并启动 App。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 通过 `xcodebuild -showBuildSettings -json` 自动解析。`--` 之后的参数原样转发给 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要会自动启动模拟器并打开 `Simulator.app`。 |
 | `vch logs <name> [--test]` | 打印任务最近一次 `vch test` 的完整 xcodebuild 日志。精简摘要指向某个失败时，可用它查看上下文。目前只支持 `--test`；日志每次跑测试时覆盖。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆。 |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。 |
+| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。只有**已 commit** 的内容会被搬过去 —— 未提交改动、untracked 文件、被 `.gitignore` 排除的产物会随 worktree 一起被删（用 `--keep` + 手动拷贝；详见 cookbook 「`vch land` 时保留生成的产物」）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 拉取记录的基准分支的 upstream，并把 `agent/<name>` rebase 到其上。`--merge` 改用 `git merge --no-ff`（仅当任务分支已经被推到协作者会读的地方时再用）。`--onto <ref>` 覆盖基准；`--no-fetch` 跳过网络；`--allow-dirty` 把脏 worktree 检查交给 git 自己决定；`--dry-run` 只打印 ahead/behind 与计划策略，不写任何东西。所有 git 操作都在任务 worktree 内执行，绝不动主 worktree。成功后写入 `lastSync`。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。`--allow-dirty` 允许未提交改动；`--allow-unmerged` 强删未合并的分支。 |
 | `vch repair` | 用 `git worktree list` 的实际状态重新对齐 `.vch/state.json`。 |

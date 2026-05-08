@@ -9,7 +9,17 @@ import VibeChardCore
 struct LandCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "land",
-        abstract: "Merge a task branch back into its base and remove the worktree."
+        abstract: "Merge a task branch back into its base and remove the worktree.",
+        discussion: """
+            By default the task worktree is deleted after a successful merge. \
+            Files in the worktree that aren't tracked by git — uncommitted \
+            changes, untracked files, .gitignore'd artifacts (build outputs, \
+            generated assets, caches) — are NOT carried into the destination \
+            branch, and are lost when the worktree is removed. Pass --keep \
+            to preserve the worktree if you need to copy any of those out \
+            first; see the "Preserving generated artifacts" recipe in the \
+            README cookbook.
+            """
     )
 
     @Argument(help: "Task name to land.",
