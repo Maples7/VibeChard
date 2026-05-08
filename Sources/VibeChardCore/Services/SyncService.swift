@@ -117,8 +117,14 @@ public struct SyncService: Sendable {
         let state = try taskService.stateForTask(task)
         let worktreePath = workspace.worktreePath(for: task)
 
-        // 1. Resolve base label. Throw early — no IO yet.
-        guard let baseLabel = options.onto ?? state.baseBranch, !baseLabel.isEmpty else {
+        // 1. Resolve base label. Throw early — no IO yet. The label
+        //    is `var` because step 3 may *promote* an implicit
+        //    state.baseBranch (e.g. "main") to its remote-tracking
+        //    form ("origin/main") after a successful fetch — local
+        //    branches don't move when you `git fetch`, so we have to
+        //    rebase onto the remote-tracking ref to actually pick up
+        //    the new commits. (#25)
+        guard var baseLabel = options.onto ?? state.baseBranch, !baseLabel.isEmpty else {
             throw VibeChardError.syncBaseUnresolved(taskName: task.raw)
         }
 
@@ -174,6 +180,24 @@ public struct SyncService: Sendable {
             )
             fetched = true
             fetchedRemote = resolvedRemote
+
+            // Promote `baseLabel` to the freshly-fetched remote-
+            // tracking ref. `TaskService.newTask` records
+            // `state.baseBranch` as the *local* branch name (e.g.
+            // "main"), but `git fetch origin main` only updates
+            // `refs/remotes/origin/main`; the local `main` ref does
+            // not move. So if we left `baseLabel = "main"`, the
+            // subsequent rev-parse + rebase would target the stale
+            // pre-fetch SHA. The promotion fixes that.
+            //
+            // Skipped when the user passed `--onto` (escape hatch:
+            // they chose the rebase target explicitly), and a no-op
+            // when `state.baseBranch` was already a remote-tracking
+            // ref like "origin/main" (the resulting label is
+            // identical).
+            if options.onto == nil {
+                baseLabel = "\(resolvedRemote)/\(branchOnRemote)"
+            }
         } else {
             progress?(.fetchSkipped(reason: .noBaseBranch))
         }

@@ -20,9 +20,13 @@ The English README is the source of truth; localized READMEs may lag.
   to refuse on uncommitted changes. `--dry-run` prints the planned
   strategy with ahead/behind counts and writes nothing. All git
   work runs inside the task worktree, so the user's main worktree
-  is never disturbed. Reserved-name list grows to include `sync`.
-  Closes the `<name>`-shaped half of #25; `--all` deferred to a
-  follow-up.
+  is never disturbed. When `state.baseBranch` is a local branch
+  (the `vch new` default — `git fetch` does not advance local
+  refs), `vch sync` automatically rebases onto the
+  `<remote>/<branch>` form so the new commits are actually picked
+  up; pass `--onto` or `--no-fetch` to opt out. Reserved-name list
+  grows to include `sync`. Closes the `<name>`-shaped half of #25;
+  `--all` deferred to a follow-up.
 
 ### Changed
 - `state.json` gains an optional `lastSync` record (no schema

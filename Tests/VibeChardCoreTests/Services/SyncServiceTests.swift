@@ -103,7 +103,8 @@ final class SyncServiceTests: XCTestCase {
         git.revListCountByRange["\(baseSHA)..agent/alpha"] = 1
         git.revListCountByRange["agent/alpha..\(baseSHA)"] = 4
 
-        let outcome = try service.sync(task, options: .init(strategy: .merge))
+        var events: [SyncService.Event] = []
+        let outcome = try service.sync(task, options: .init(strategy: .merge)) { events.append($0) }
 
         XCTAssertEqual(outcome.strategy, .merge)
         XCTAssertEqual(git.rebaseCalls.count, 0)
@@ -113,6 +114,13 @@ final class SyncServiceTests: XCTestCase {
         XCTAssertEqual(git.mergeCalls[0].mode, .noFF)
         XCTAssertEqual(git.mergeCalls[0].message,
                        "Merge origin/main into agent/alpha")
+
+        // .merging event fired with the right pair.
+        XCTAssertTrue(events.contains {
+            if case .merging(let tb, let onto) = $0,
+               tb == "agent/alpha", onto == "origin/main" { return true }
+            return false
+        })
 
         let workspace = Workspace(mainWorktreePath: mainRepo)
         let state = try loadState(fs, workspace, task)
@@ -131,12 +139,23 @@ final class SyncServiceTests: XCTestCase {
         git.revListCountByRange["\(baseSHA)..agent/alpha"] = 1   // ahead 1
         git.revListCountByRange["agent/alpha..\(baseSHA)"] = 0  // behind 0
 
-        let outcome = try service.sync(task, options: .init())
+        var events: [SyncService.Event] = []
+        let outcome = try service.sync(task, options: .init()) { events.append($0) }
 
         XCTAssertEqual(outcome.appliedCommits, 0)
         XCTAssertEqual(outcome.behindCount, 0)
         XCTAssertEqual(git.rebaseCalls.count, 0)  // no rebase invoked
         XCTAssertEqual(git.mergeCalls.count, 0)
+
+        // .alreadyUpToDate event fired (instead of .rebasing).
+        XCTAssertTrue(events.contains {
+            if case .alreadyUpToDate(let tb, let onto) = $0,
+               tb == "agent/alpha", onto == "origin/main" { return true }
+            return false
+        })
+        XCTAssertFalse(events.contains {
+            if case .rebasing = $0 { return true } else { return false }
+        })
 
         let workspace = Workspace(mainWorktreePath: mainRepo)
         let sync = try XCTUnwrap(loadState(fs, workspace, task).lastSync)
@@ -156,7 +175,8 @@ final class SyncServiceTests: XCTestCase {
         git.revListCountByRange["\(baseSHA)..agent/alpha"] = 2
         git.revListCountByRange["agent/alpha..\(baseSHA)"] = 3
 
-        let outcome = try service.sync(task, options: .init(dryRun: true))
+        var events: [SyncService.Event] = []
+        let outcome = try service.sync(task, options: .init(dryRun: true)) { events.append($0) }
 
         XCTAssertTrue(outcome.dryRun)
         XCTAssertEqual(outcome.appliedCommits, 0)
@@ -166,6 +186,17 @@ final class SyncServiceTests: XCTestCase {
         XCTAssertTrue(outcome.fetched)
         XCTAssertEqual(git.rebaseCalls.count, 0)
         XCTAssertEqual(git.mergeCalls.count, 0)
+
+        // .dryRunPlan event reports the planner's resolved counts.
+        XCTAssertTrue(events.contains {
+            if case .dryRunPlan(let strategy, let label, let ahead, let behind) = $0,
+               strategy == .rebase, label == "origin/main",
+               ahead == 2, behind == 3 { return true }
+            return false
+        })
+        XCTAssertFalse(events.contains {
+            if case .rebasing = $0 { return true } else { return false }
+        })
 
         // No state mutation.
         let workspace = Workspace(mainWorktreePath: mainRepo)
@@ -230,6 +261,84 @@ final class SyncServiceTests: XCTestCase {
         XCTAssertEqual(git.fetchCalls[0].branch, "main")
     }
 
+    // MARK: - baseLabel promotion (local-branch → remote-tracking ref)
+
+    func testPromotesLocalBaseBranchToRemoteTrackingAfterFetch() throws {
+        // Real-world recording: TaskService.newTask captures
+        // git.currentBranch() of the main worktree, which is a *local*
+        // branch like "main" — never "origin/main". After
+        // `git fetch origin main`, only refs/remotes/origin/main moves;
+        // local `main` stays at the pre-fetch SHA. SyncService must
+        // promote baseLabel to "origin/main" before rev-parse + rebase,
+        // otherwise we rebase against stale history.
+        let (service, fs, git, _, task) = makeService(
+            seedingTask: "alpha",
+            seedingState: baseState(name: "alpha", baseBranch: "main")
+        )
+        git.upstreamRemoteByBranch["main"] = "origin"
+        let baseSHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        // Crucially: the SHA is keyed by the *promoted* label, not "main".
+        git.revParseByRef["origin/main"] = baseSHA
+        git.revListCountByRange["\(baseSHA)..agent/alpha"] = 2
+        git.revListCountByRange["agent/alpha..\(baseSHA)"] = 1
+
+        let outcome = try service.sync(task, options: .init())
+
+        XCTAssertEqual(outcome.baseLabel, "origin/main",
+                       "promotion should advance baseLabel to the remote-tracking ref")
+        XCTAssertEqual(outcome.baseSHA, baseSHA)
+        XCTAssertEqual(git.rebaseCalls[0].onto, "origin/main",
+                       "rebase target must be the freshly-fetched ref, not stale local main")
+        // lastSync should record the promoted label so `vch state` reports
+        // what we actually rebased onto.
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let sync = try XCTUnwrap(loadState(fs, workspace, task).lastSync)
+        XCTAssertEqual(sync.baseLabel, "origin/main")
+    }
+
+    func testNoFetchSkipsPromotion() throws {
+        // With --no-fetch we trust whatever the user has locally. Don't
+        // silently rewrite "main" to "origin/main" — local `main` is
+        // exactly the ref the user opted into.
+        let (service, _, git, _, task) = makeService(
+            seedingTask: "alpha",
+            seedingState: baseState(name: "alpha", baseBranch: "main")
+        )
+        let baseSHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        git.revParseByRef["main"] = baseSHA
+        git.revListCountByRange["\(baseSHA)..agent/alpha"] = 0
+        git.revListCountByRange["agent/alpha..\(baseSHA)"] = 1
+
+        let outcome = try service.sync(task, options: .init(noFetch: true))
+
+        XCTAssertEqual(outcome.baseLabel, "main",
+                       "no-fetch path should not promote baseLabel")
+        XCTAssertEqual(git.rebaseCalls[0].onto, "main")
+    }
+
+    func testOntoOverridesPromotion() throws {
+        // The promotion only kicks in when --onto is absent. An
+        // explicit --onto is the user's escape hatch: pass it through
+        // verbatim even though we still fetch state.baseBranch's upstream.
+        let (service, _, git, _, task) = makeService(
+            seedingTask: "alpha",
+            seedingState: baseState(name: "alpha", baseBranch: "main")
+        )
+        git.upstreamRemoteByBranch["main"] = "origin"
+        let baseSHA = "11111111111111111111111111111111ffffffff"
+        git.revParseByRef["v1.2.3"] = baseSHA
+        git.revListCountByRange["\(baseSHA)..agent/alpha"] = 0
+        git.revListCountByRange["agent/alpha..\(baseSHA)"] = 1
+
+        let outcome = try service.sync(task, options: .init(onto: "v1.2.3"))
+
+        XCTAssertEqual(outcome.baseLabel, "v1.2.3")
+        XCTAssertEqual(git.rebaseCalls[0].onto, "v1.2.3")
+        // Fetch still went to origin/main (state.baseBranch's upstream).
+        XCTAssertEqual(git.fetchCalls[0].remote, "origin")
+        XCTAssertEqual(git.fetchCalls[0].branch, "main")
+    }
+
     func testOntoRescuesTaskWithoutRecordedBaseBranch() throws {
         // state.baseBranch is nil (e.g. task created off detached HEAD)
         // — without --onto we'd throw syncBaseUnresolved. With --onto,
@@ -285,12 +394,18 @@ final class SyncServiceTests: XCTestCase {
         git.revListCountByRange["\(baseSHA)..agent/alpha"] = 0
         git.revListCountByRange["agent/alpha..\(baseSHA)"] = 0
 
-        let outcome = try service.sync(task, options: .init())
+        var events: [SyncService.Event] = []
+        let outcome = try service.sync(task, options: .init()) { events.append($0) }
 
         XCTAssertTrue(outcome.fetchedFallback)
         XCTAssertEqual(outcome.fetchedRemote, "origin")
         XCTAssertEqual(git.fetchCalls[0].remote, "origin")
         XCTAssertEqual(git.fetchCalls[0].branch, "main")
+        // .fallbackToOrigin event fired with the recorded baseBranch.
+        XCTAssertTrue(events.contains {
+            if case .fallbackToOrigin(let bb) = $0, bb == "main" { return true }
+            return false
+        })
     }
 
     func testUsesConfiguredUpstreamWhenSet() throws {
