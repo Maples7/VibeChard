@@ -2,8 +2,10 @@ import Foundation
 
 /// Owns the lazy-clone semantics decided in Q8: per-task `xcrun simctl
 /// clone`, only on the first build/test that needs a sim. Names follow
-/// `<original> · vch[<task>]` so both vch and the user can spot the
-/// clones in `Simulator.app` and `xcrun simctl list`.
+/// `<original>-vch-<task>` so both vch and the user can spot the
+/// clones in `Simulator.app` and `xcrun simctl list`. (The pre-v0.3.0
+/// scheme was `<original> · vch[<task>]`; legacy clones are still
+/// recognized via dual-prefix scanning — UDID is the source of truth.)
 public struct SimulatorService: Sendable {
     public let workspace: Workspace
     public let fs: FileSystem
@@ -74,14 +76,15 @@ public struct SimulatorService: Sendable {
             if let requested = requestedDevice {
                 // #4: previously this compared `requested` against
                 // `existing.name`, which is the *clone display name*
-                // (`iPhone 16 · vch[<task>]`) and therefore never
-                // matched the user's `--device 'iPhone 16'`. Compare
-                // against the persisted template name instead, falling
-                // back to a suffix-strip on legacy state written by
-                // vch ≤ v0.1.x (no `templateName` field).
+                // and therefore never matched the user's
+                // `--device 'iPhone 16'`. Compare against the persisted
+                // template name instead, falling back to a suffix-strip
+                // on legacy state written by vch ≤ v0.1.x (no
+                // `templateName` field). Both the v0.3.0 hyphen suffix
+                // (`-vch-<task>`) and the pre-v0.3.0 middle-dot suffix
+                // (` · vch[<task>]`) are recognized.
                 let bound = existing.templateName
-                    ?? existing.name.replacingOccurrences(
-                        of: " · vch[\(task.raw)]", with: "")
+                    ?? Self.stripCloneSuffix(from: existing.name, task: task)
                 if bound != requested {
                     throw VibeChardError.simulatorAlreadyBound(
                         taskName: task.raw,
@@ -262,12 +265,30 @@ public struct SimulatorService: Sendable {
         return nil
     }
 
-    /// `<original> · vch[<task>]` — the middle dot (U+00B7) is a
-    /// pre-existing convention from Apple's Simulator app naming.
-    /// Capped at 255 chars (HFS+/APFS limit) defensively.
+    /// `<original>-vch-<task>` — plain ASCII suffix, friendlier for
+    /// shells, JSON, and Apple's Simulator picker. Pre-v0.3.0 used
+    /// `<original> · vch[<task>]`; existing clones keep working via
+    /// dual-prefix scanning in `DoctorService`. Capped at 255 chars
+    /// (HFS+/APFS limit) defensively.
     func cloneDisplayName(originalName: String, task: TaskName) -> String {
-        let raw = "\(originalName) · vch[\(task.raw)]"
+        let raw = "\(originalName)-vch-\(task.raw)"
         if raw.count <= 255 { return raw }
         return String(raw.prefix(255))
+    }
+
+    /// Best-effort strip of either clone-name suffix from a persisted
+    /// `state.simulator.name`. Used only when `templateName` is absent
+    /// (legacy state written by vch ≤ v0.1.x). Falls through to the
+    /// untouched name when neither suffix matches.
+    static func stripCloneSuffix(from name: String, task: TaskName) -> String {
+        let modern = "-vch-\(task.raw)"
+        if name.hasSuffix(modern) {
+            return String(name.dropLast(modern.count))
+        }
+        let legacy = " · vch[\(task.raw)]"
+        if name.hasSuffix(legacy) {
+            return String(name.dropLast(legacy.count))
+        }
+        return name
     }
 }

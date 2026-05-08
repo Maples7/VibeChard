@@ -195,7 +195,7 @@ vch exec task-a -- xcodebuild test \
 | `vch logs <name> [--test]` | 印出任務最近一次 `vch test` 的完整 xcodebuild log。當精簡摘要指向某個失敗時，可用它檢視前後脈絡。目前只支援 `--test`；log 每次測試會覆寫。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 顯式管理任務的模擬器副本。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 將 `agent/<name>` 合併回基準分支（在 `vch new` 時記錄於 `state.json` 的主 worktree 分支）並刪除 worktree。預設 `--no-ff`；預設提交訊息 `Merge agent/<name>: <最近一個非合併提交的標題>`。下列狀況下拒絕合併：空合併、主 worktree 不在目標分支上、主 worktree 中與任務分支 diff 重疊的路徑未提交（可用 `--allow-dirty` 跳過）。`--keep` 跳過自動 rm；`--dry-run` 只列出計畫不動任何東西。 |
-| `vch remove <name> [--force [--force]] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。兩次 `--force` 才允許髒樹 + 未合併分支。 |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。`--allow-dirty` 允許未提交改動；`--allow-unmerged` 強刪未合併的分支。`-f / --force` 是兩個旗標的廢棄別名，會在 stderr 警告，1.0 裡刪除。 |
 | `vch repair` | 用 `git worktree list` 的實際狀態重新對齊 `.vch/state.json`。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 清理任務的 `DerivedData` + `ModuleCache`（預設）。`--swiftpm` 連 SwiftPM clone 目錄一起刪，`--logs` 刪 `.vch/last-test.log`，`--all` 為全刪。若有進程還開著 `.agent-build/` 或 `.vch/` 裡的檔案（如正在 indexing 的 Xcode）會拒絕；`--dry-run` 只列要刪的項目不真刪。 |
 | `vch doctor [--clean] [--json]` | 偵測孤兒模擬器副本、失效綁定、毀損的 `state.json`。有發現就以非零退出。 |
@@ -279,8 +279,7 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 
 <br/>
 
-不會——它會拒絕執行。`vch remove` 在 worktree 骧的時候會帶著明確提示中止。加一次 `--force` 才會強刪（連帶丟掉未提交改動）；加兩次 `--force`
-還允許刪除有未合併提交的分支。沒有靜默的破壞路徑。
+不會——它會拒絕執行。`vch remove` 在 worktree 骧的時候會帶著明確提示中止。加 `--allow-dirty` 才會強刪（連帶丟掉未提交改動）；加 `--allow-unmerged`（或兩個旗標同時使用）還允許刪除有未合併提交的分支。沒有靜默的破壞路徑。舊語法 `--force`（一次） / `--force --force`（兩次）仍然能用，但已廢棄，會警告提示改用有名字的旗標，1.0 裡會刪除。v0.3.0 中按任務模擬器副本名也從 `<original> · vch[<task>]` 改為 `<original>-vch-<task>`。現有副本不受影響——`vch doctor` 在掃描孤兒時兩種命名都認，以 UDID（而非顯示名）為準。
 
 </details>
 

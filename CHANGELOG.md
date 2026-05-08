@@ -48,6 +48,23 @@ The English README is the source of truth; localized READMEs may lag.
   `vch shellenv` now exports the sentinel so the hint vanishes once
   helpers are installed. Closes #32 (partial — `#32B` shipping in
   PR-C).
+- **Per-task simulator clone naming** changed from
+  `<original> · vch[<task>]` to `<original>-vch-<task>` — plain
+  ASCII suffix that is friendlier for shells, JSON, and Apple's
+  Simulator picker. `vch doctor` recognizes both the new hyphen
+  suffix and the legacy middle-dot bracket form when scanning for
+  orphans, so existing clones keep working without migration (UDID,
+  not display name, is the source of truth). New `vch build` /
+  `vch test` / `vch run` clones use the new shape. Closes #29.
+
+### Deprecated
+- `vch remove --force` (once) and `--force --force` (twice) are now
+  deprecated aliases for `--allow-dirty` and `--allow-dirty
+  --allow-unmerged` respectively. Both still work and now emit a
+  one-line stderr warning suggesting the named flags. Removed in
+  1.0. Error messages for dirty worktrees and unmerged branches
+  point at the named flags instead of the old `--force` recipe.
+  Closes #30.
 
 ## [0.2.0] - 2026-05-07
 

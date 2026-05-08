@@ -107,6 +107,27 @@ final class DoctorServiceTests: XCTestCase {
         XCTAssertTrue(report.hasFindings)
     }
 
+    // #29: orphan detection recognizes BOTH the v0.3.0+ hyphen suffix
+    // and the pre-v0.3.0 middle-dot bracket suffix in the same sweep.
+    func testDiagnoseDetectsOrphansAcrossLegacyAndModernNaming() throws {
+        let (svc, _, _, _) = makeService(
+            seed: [
+                ("alpha", .init(cloneUDID: "C-1", sourceUDID: "S-1",
+                                 name: "iPhone 16-vch-alpha")),
+            ],
+            simctlDevices: [
+                dev("C-1", "iPhone 16-vch-alpha"),
+                dev("ORPHAN-NEW", "iPhone 16-vch-gone-modern"),
+                dev("ORPHAN-OLD", "iPhone 16 · vch[gone-legacy]"),
+                dev("USER-A", "iPhone 16"), // user device, no marker
+            ]
+        )
+        let report = try svc.diagnose()
+        XCTAssertEqual(report.orphanClones.map(\.udid).sorted(),
+                       ["ORPHAN-NEW", "ORPHAN-OLD"])
+        XCTAssertTrue(report.staleBindings.isEmpty)
+    }
+
     func testDiagnoseDoesNotFlagUserDevicesWithoutMarker() throws {
         // None of these have ` · vch[`; they're user devices.
         let (svc, _, _, _) = makeService(
