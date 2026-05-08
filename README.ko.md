@@ -184,11 +184,45 @@ vch exec task-a -- xcodebuild test \
   -only-testing:MyAppTests/Foo
 ```
 
+## Cookbook
+
+내장 명령으로 만들기엔 이르지만 자주 등장하는 패턴들을 모아둡니다.
+
+### 커밋되지 않은 WIP 에서 새 작업 분기하기
+
+`agent/foo` 작업 도중에 `agent/foo-experiment` 를 foo 의 **현재
+미커밋 상태**에서 (커밋된 히스토리만이 아니라) 분기하고 싶을 때.
+`vch new --base agent/foo` 는 커밋된 히스토리만 가져갑니다 — 미커밋
+diff 와 미추적 파일은 stash 로 옮겨야 합니다:
+
+```sh
+cd "$(vch path foo)"
+git stash push --include-untracked -m "fork-checkpoint"
+
+vch new foo-experiment --base agent/foo
+
+cd "$(vch path foo-experiment)"
+git stash apply              # apply (pop 아님) — stash 항목은 그대로
+
+cd "$(vch path foo)"
+git stash pop                # foo 를 원래 상태로 복원
+```
+
+`apply` + `pop` 조합으로 동일한 체크포인트를 두 worktree 에 동시에
+착륙시킬 수 있습니다. foo 의 WIP 를 복원할 필요가 없으면 마지막 줄을
+`git stash drop` 으로 바꾸세요.
+
+`vch fork` 로 만들지 않은 이유: "staged + unstaged + 미추적 + 선택적
+ignore 파일을 원자적으로 옮기기" 는 git 에 native primitive 가 없습니다.
+자세한 논의는 [#27](https://github.com/Maples7/VibeChard/issues/27).
+위 레시피는 충분히 안정적인 수동 대안이라 내장 명령으로 만들 가치가
+없다고 판단했습니다.
+
 ## 명령어
 
 | 명령어 | 동작 |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. |
+| `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. `--cd` 는 기계 판독 가능 계약: stdout 에는 worktree 절대 경로만 출력하고, 상태와 힌트는 모두 stderr 로 보냅니다. `vch shellenv` 헬퍼를 못 쓰는 fish / nushell 같은 셸에서 `cd "$(vch new --cd foo)"` 형태로 래핑하기 위한 진입점입니다. `--exec` 와 상호 배타. |
 | `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. `--git-status` 는 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 열 추가（worktree 당 `git rev-list` + `git status` 한 번 새로 실행）. |
 | `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. `--field <dotted>` 는 단일 스칼라 값(예: `simulator.udid`)만 출력 — 스크립트에서 `$(vch state foo --field simulator.udid)` 으로 쓰기 위해 설계. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
@@ -231,6 +265,32 @@ Tuist, 내부에서 `xcodebuild` 를 호출하는 스크립트 — 가 자동으
 플래그를 손으로 전달할 필요가 없습니다.
 
 `vch build`, `vch test`, `vch run` 은 호출 시점에 인자를 모두 알고 있으므로 PATH shim 을 거치지 않고 같은 플래그로 `xcodebuild` 를 직접 호출합니다.
+
+### `vch exec` / `vch <name>` 가 자식 프로세스에 주입하는 것
+
+`vch <name>`(= `vch exec <name> -- $SHELL`) 와 `vch exec <name> --
+<cmd>` 는 사용자의 환경 위에 결정적인 env 한 겹을 얹습니다. 이는
+`vch build` / `vch test` / `vch run` 이 사용하는 것과 정확히 같은
+집합이라, `vch <name>` 안에서 직접 `xcodebuild` 를 호출해도 `vch
+build` 와 동일하게 동작합니다. "작업 환경에 들어가기" 전용의 별도
+명령은 거의 필요 없습니다 — `vch <name>` 가 이미 그 역할을 합니다:
+
+| 변수 | 값 |
+|---|---|
+| `VCH_TASK_NAME` | 작업 이름(예: `add-paywall`). PS1 / 터미널 타이틀에 유용. |
+| `VCH_TASK_ROOT` | worktree 절대 경로. |
+| `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData` (shim 이 읽음). |
+| `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages` (shim 이 읽음). |
+| `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult` (shim 이 읽음). |
+| `VCH_RESULT_BUNDLE_DIR` | result bundle 의 부모 디렉터리. |
+| `CLANG_MODULE_CACHE_PATH` | `<wt>/.agent-build/ModuleCache` (clang 이 읽음). |
+| `SWIFTPM_CACHE_DIR` | `<wt>/.agent-build/SourcePackages` (SwiftPM 이 읽음). |
+| `DEVELOPER_DIR` | `xcode-select -p` 로 해석된 호스트의 선택 Xcode — 사용자가 이미 export 하지 않은 경우에만 주입. |
+| `SIMCTL_CHILD_SIMULATOR_UDID` | 작업에 묶인 시뮬레이터 클론 — 클론이 묶여 있을 때만 설정. |
+| `PATH` | `<wt>/.vch/bin` 을 맨 앞에 추가해 `xcodebuild` / `xcrun` / `swift` 가 shim 을 거치도록. |
+
+`vch` 는 사용자가 이미 export 한 값을 덮어쓰지 않습니다 — `vch exec`
+이전에 직접 export 한 값이 항상 우선합니다.
 
 ## 설정
 

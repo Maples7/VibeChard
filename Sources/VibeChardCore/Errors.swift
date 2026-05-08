@@ -48,6 +48,11 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// `vch land` was invoked with more than one strategy flag among
     /// `--no-ff`, `--ff-only`, `--squash`. (#7)
     case landConflictingStrategies
+    /// `vch new --cd` and `--exec` were both passed. The two
+    /// contracts are incompatible: `--cd` promises stdout = the
+    /// worktree path; `--exec` execve's into the agent before vch
+    /// would ever print. (#32B)
+    case newConflictingCdExec
     /// `vch run` could not extract `PRODUCT_BUNDLE_IDENTIFIER` from
     /// `xcodebuild -showBuildSettings -json` for the resolved scheme
     /// — typically because the scheme has no app target. (#18)
@@ -111,6 +116,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "refusing to land: branch '\(branch)' does not exist (was it deleted outside vch?)"
         case .landConflictingStrategies:
             return "--no-ff, --ff-only, --squash are mutually exclusive"
+        case .newConflictingCdExec:
+            return "--cd and --exec are mutually exclusive: --cd promises stdout = worktree path, --exec replaces vch with the command before any output"
         case let .runBundleIDNotFound(scheme):
             return "could not resolve PRODUCT_BUNDLE_IDENTIFIER for scheme '\(scheme)' — does this scheme build an app?"
         case let .runAppBundleNotFound(path):

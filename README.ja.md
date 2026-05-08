@@ -181,11 +181,46 @@ vch exec task-a -- xcodebuild test \
   -only-testing:MyAppTests/Foo
 ```
 
+## Cookbook
+
+組み込みコマンドにするほどではないが、よく出てくるパターンをまとめておきます。
+
+### 未コミット WIP から新タスクを枝分かれする
+
+`agent/foo` の作業途中で、`agent/foo-experiment` を foo の **現在の
+未コミット状態**（コミット済み履歴だけではなく）から起こしたいケース。
+`vch new --base agent/foo` はコミット済み履歴しか持っていけないので、
+未コミットの diff と未追跡ファイルは stash 経由で運びます：
+
+```sh
+cd "$(vch path foo)"
+git stash push --include-untracked -m "fork-checkpoint"
+
+vch new foo-experiment --base agent/foo
+
+cd "$(vch path foo-experiment)"
+git stash apply              # apply（pop ではなく）— stash エントリは残す
+
+cd "$(vch path foo)"
+git stash pop                # foo 側を元の状態に復帰
+```
+
+`apply` + `pop` の組み合わせで、同じ checkpoint を両方の worktree
+に着地させられます。foo 側を元に戻す必要がない場合は最後の行を
+`git stash drop` に置き換えてください。
+
+なぜ `vch fork` にしないか：「staged + unstaged + 未追跡 + 選択的に
+ignore されたファイルを原子的に移送する」操作には git 由来のプリ
+ミティブが存在しないからです。詳細は
+[#27](https://github.com/Maples7/VibeChard/issues/27)。上のレシピは
+十分に安定した手動代替で、組み込みコマンドにする価値はないと
+判断しました。
+
 ## コマンド一覧
 
 | コマンド | 役割 |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。 |
+| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。`--cd` は機械可読コントラクト：stdout には worktree の絶対パスのみを出力し、ステータスやヒントは stderr へ流れます。fish / nushell など `vch shellenv` を使えないシェルから `cd "$(vch new --cd foo)"` 形式でラップするための入口。`--exec` とは排他。 |
 | `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。`--git-status` で `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列を追加（worktree ごとに `git rev-list` + `git status` を 1 回ずつ追加実行）。 |
 | `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。`--field <dotted>` で単一のスカラー値（例：`simulator.udid`）だけを出力——スクリプトで `$(vch state foo --field simulator.udid)` として使うため。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |
@@ -225,6 +260,32 @@ vch exec task-a -- xcodebuild test \
 Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的に隔離されます。フラグを手で渡す必要はありません。
 
 `vch build`、`vch test`、`vch run` は PATH シムをスキップして直接 `xcodebuild` を同じフラグで呼び出します。呼び出し地点で引数がすべて分かっているためです。
+
+### `vch exec` / `vch <name>` が子プロセスに注入するもの
+
+`vch <name>`（= `vch exec <name> -- $SHELL`）と `vch exec <name>
+-- <cmd>` は、あなたの環境の上に決定的な env を一段重ねます。これは
+`vch build` / `vch test` / `vch run` が使うものとまったく同じ集合
+なので、`vch <name>` の中で手で `xcodebuild` を叩いても挙動は
+`vch build` と一致します。「タスクの環境に入りたい」専用の別コマンドは
+基本必要ありません — `vch <name>` がすでにそれです：
+
+| 変数 | 設定値 |
+|---|---|
+| `VCH_TASK_NAME` | タスク名（例 `add-paywall`）。PS1 や端末タイトルに便利。 |
+| `VCH_TASK_ROOT` | worktree の絶対パス。 |
+| `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData`（シムが読む）。 |
+| `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages`（シムが読む）。 |
+| `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult`（シムが読む）。 |
+| `VCH_RESULT_BUNDLE_DIR` | result bundle の親ディレクトリ。 |
+| `CLANG_MODULE_CACHE_PATH` | `<wt>/.agent-build/ModuleCache`（clang が読む）。 |
+| `SWIFTPM_CACHE_DIR` | `<wt>/.agent-build/SourcePackages`（SwiftPM が読む）。 |
+| `DEVELOPER_DIR` | `xcode-select -p` で解決したホストの選択 Xcode — ユーザーが既に export していない場合のみ注入。 |
+| `SIMCTL_CHILD_SIMULATOR_UDID` | タスクに紐づくシミュレータークローン — クローンが紐付いているときだけ設定。 |
+| `PATH` | 先頭に `<wt>/.vch/bin` を付加して `xcodebuild` / `xcrun` / `swift` をシム経由に。 |
+
+`vch` がユーザーの export 済みの値を上書きすることはありません — `vch exec`
+の前に手動で `export` した値が常に優先されます。
 
 ## 設定
 

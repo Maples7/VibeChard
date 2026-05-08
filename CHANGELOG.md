@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-08
+
 ### Added
 - `vch list --git-status` enriches the table with `AHEAD/BEHIND`,
   `DIRTY`, and `LAST COMMIT` columns. The base for ahead/behind is
@@ -33,6 +35,29 @@ The English README is the source of truth; localized READMEs may lag.
   is the only one deciding what to share. Default output:
   `./vch-bug-report-<UTC-stamp>.tgz`; override with `--out`. Plan
   Q10.
+- `vch new --cd` opts into a machine-readable contract: stdout
+  prints **only** the absolute worktree path (no extra log lines,
+  no progress), all status / hints route to stderr. Lets fish /
+  nushell / any non-bash-zsh shell wrap with `cd "$(vch new --cd
+  foo)"` without parsing. Mutually exclusive with `--exec` (exit 2
+  on conflict — `--exec` execve's into the agent before vch would
+  ever print). The `vch_new` shellenv helper now uses `--cd` itself,
+  pinning the contract via test as well as documentation. Closes
+  #32 (B half; A shipped in 0.3.0 above).
+- README cookbook section ("Branching off mid-WIP work") documents
+  the `git stash --include-untracked` + `vch new --base agent/<src>`
+  + `git stash apply` recipe for forking a task off another task's
+  uncommitted state. Mirrored across 5 locales. Replaces the
+  `vch fork` proposal in #27 (closed as won't-fix; the atomic
+  staged + unstaged + untracked + selectively-ignored transfer has
+  no native git primitive and the manual recipe is stable enough).
+- README "What `vch exec` / `vch <name>` injects into the child"
+  section enumerates the deterministic env vars set in the child
+  process (`VCH_TASK_*`, `VCH_DERIVED_DATA_PATH`,
+  `CLANG_MODULE_CACHE_PATH`, `SWIFTPM_CACHE_DIR`, `DEVELOPER_DIR`,
+  `SIMCTL_CHILD_SIMULATOR_UDID`, `PATH` shim). Closes #31 — the
+  `vch shell` proposal becomes redundant once users know `vch
+  <name>` already drops them into the task's full env.
 
 ### Changed
 - `vch build`, `vch test`, `vch run`, and `vch exec` now propagate
@@ -40,14 +65,14 @@ The English README is the source of truth; localized READMEs may lag.
   -p` and cached) into the child process, mirroring xcodebuild's own
   behaviour. Prevents stale-Xcode mismatches when an agent is run
   outside a regular shell. The user's existing `DEVELOPER_DIR`
-  override always wins. Closes #31 (partial — full closure pending
-  PR-C).
+  override always wins. Closes #31 (the env-injection half;
+  `vch shell` itself stays parked, see README).
 - `vch new` prints a one-line hint about `eval "$(vch shellenv)"`
   when stdout is a TTY and the shell helper sentinel
-  (`VCH_SHELL_HELPER`) is not set. Suppress with `VCH_NEW_HINT=0`.
-  `vch shellenv` now exports the sentinel so the hint vanishes once
-  helpers are installed. Closes #32 (partial — `#32B` shipping in
-  PR-C).
+  (`VCH_SHELL_HELPER`) is not set. Suppress with `VCH_NEW_HINT=0`,
+  or with the new `--cd` flag (machine-readable mode). `vch
+  shellenv` exports the sentinel so the hint vanishes once helpers
+  are installed. Closes #32 (A half).
 - **Per-task simulator clone naming** changed from
   `<original> · vch[<task>]` to `<original>-vch-<task>` — plain
   ASCII suffix that is friendlier for shells, JSON, and Apple's
@@ -479,7 +504,8 @@ Initial public release. Scope is the v1 plan locked in
 - Three fixed targets: `VibeChardCore`, `vch`, `vch-xcodebuild-shim`.
 - No config files in v1; per-worktree state lives in `.vch/state.json`.
 
-[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Maples7/VibeChard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Maples7/VibeChard/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/Maples7/VibeChard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Maples7/VibeChard/compare/v0.1.1...v0.1.2

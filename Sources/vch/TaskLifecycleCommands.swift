@@ -39,8 +39,29 @@ struct NewCommand: ParsableCommand {
     )
     var exec: String?
 
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "Machine-readable contract for shell wrappers: stdout "
+                + "prints ONLY the absolute worktree path; all status, "
+                + "progress, and the `vch_new` install hint are routed "
+                + "to stderr. Lets fish / nushell / any shell wrap with "
+                + "`cd \"$(vch new --cd foo)\"` without parsing. "
+                + "Mutually exclusive with --exec."
+        )
+    )
+    var cd: Bool = false
+
     func run() throws {
         try CLIBridge.run {
+            // #32B: --cd freezes stdout to "path only". --exec hands
+            // off via execve before we'd ever print, so the two
+            // contracts are incompatible — refuse early with usage 2
+            // rather than silently dropping one.
+            if cd, exec != nil {
+                throw VibeChardError.newConflictingCdExec
+            }
+
             let task = try TaskName(name)
             let cwd = FileManager.default.currentDirectoryPath
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
@@ -57,9 +78,11 @@ struct NewCommand: ParsableCommand {
 
             // #32A: nudge first-time users toward `vch shellenv` so
             // that `vch_new <name>` auto-cds. Skipped when --exec is
-            // set (we're about to execve, banner would be lost) or
-            // when the user already sources the helpers / opted out.
-            if exec == nil {
+            // set (we're about to execve, banner would be lost),
+            // when --cd is set (machine-readable mode — wrapper is
+            // already doing the cd), or when the user already
+            // sources the helpers / opted out.
+            if exec == nil, !cd {
                 let env = ProcessInfo.processInfo.environment
                 let stdoutIsTTY = isatty(fileno(stdout)) != 0
                 if let hint = NewTaskHint.message(
