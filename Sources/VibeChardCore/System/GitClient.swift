@@ -110,6 +110,32 @@ public protocol GitClient: Sendable {
     /// dirty index, etc.). For `.squash`, runs `git merge --squash`
     /// followed by `git commit -m <message>`. (#7)
     func merge(repoCwd: String, branch: String, mode: GitMergeMode, message: String) throws
+
+    /// `git fetch <remote> <branch>`. Updates the local copy of
+    /// `<remote>/<branch>`. Used by `vch sync` before resolving the
+    /// base ref so the rebase / merge sees up-to-date upstream
+    /// commits. Throws `externalCommandFailed` on any non-zero
+    /// exit (network unreachable, unknown remote, unknown ref). (#25)
+    func fetch(repoCwd: String, remote: String, branch: String) throws
+
+    /// `git rebase <onto>` run in `worktreeCwd`. Throws
+    /// `externalCommandFailed` on conflict (caller maps to
+    /// `syncRebaseConflict`) or any other rebase failure. Stderr
+    /// is the raw git output the caller has already streamed. (#25)
+    func rebase(worktreeCwd: String, onto: String) throws
+
+    /// `git config --get branch.<branch>.remote`. Returns the
+    /// remote name (e.g. `origin`) configured to track `branch`,
+    /// or `nil` if the branch has no upstream remote (purely local).
+    /// Never throws on "unset"; only on hard git failures. (#25)
+    func upstreamRemote(repoCwd: String, branch: String) throws -> String?
+
+    /// `git rev-parse <ref>`. Returns the full 40-char commit SHA
+    /// `<ref>` resolves to. Throws `externalCommandFailed` if `<ref>`
+    /// is unknown (caller decides whether to surface the git stderr
+    /// or remap to a domain error). Used by `vch sync` to record the
+    /// resolved base SHA in `lastSync.baseSHA`. (#25)
+    func revParse(repoCwd: String, ref: String) throws -> String
 }
 
 /// Merge strategy for `GitClient.merge`. Mirrors `vch land`'s
@@ -377,6 +403,56 @@ public struct DiskGitClient: GitClient {
             )
             try requireSuccess(commitResult, label: "git commit -m '<msg>'")
         }
+    }
+
+    public func fetch(repoCwd: String, remote: String, branch: String) throws {
+        let result = try runner.run(
+            gitPath,
+            args: ["fetch", remote, branch],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git fetch \(remote) \(branch)")
+    }
+
+    public func rebase(worktreeCwd: String, onto: String) throws {
+        let result = try runner.run(
+            gitPath,
+            args: ["rebase", onto],
+            cwd: worktreeCwd
+        )
+        try requireSuccess(result, label: "git rebase \(onto)")
+    }
+
+    public func upstreamRemote(repoCwd: String, branch: String) throws -> String? {
+        let result = try runner.run(
+            gitPath,
+            args: ["config", "--get", "branch.\(branch).remote"],
+            cwd: repoCwd
+        )
+        // git config --get returns 0 when the key is set, 1 when unset.
+        switch result.exitCode {
+        case 0:
+            let name = result.stdoutTrimmed
+            return name.isEmpty ? nil : name
+        case 1:
+            return nil
+        default:
+            throw VibeChardError.externalCommandFailed(
+                cmd: "git config --get branch.\(branch).remote",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+    }
+
+    public func revParse(repoCwd: String, ref: String) throws -> String {
+        let result = try runner.run(
+            gitPath,
+            args: ["rev-parse", ref],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git rev-parse \(ref)")
+        return result.stdoutTrimmed
     }
 
     private func requireSuccess(_ result: ProcessResult, label: String) throws {

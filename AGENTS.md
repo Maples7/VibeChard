@@ -46,7 +46,11 @@ tree wins.**
    `vch test` run (#9, post-v0.1.2). `land` merges a task branch back
    into its recorded base and removes the worktree (#7, post-v0.1.2).
    `run` builds, installs, and launches the task's app on its bound
-   simulator clone (#18, post-v0.1.2).
+   simulator clone (#18, post-v0.1.2). `sync` rebases (or merges) a
+   task branch onto its recorded base after fetching the upstream
+   (#25, post-v0.3.0). The source-of-truth list lives in
+   `Sources/VibeChardCore/Domain/TaskName.swift`; this prose is
+   chronological context, not the authoritative list.
 9. **Don't touch the user's `~/Library/Developer/`.** Every byte vch writes
    must land inside the worktree's `.vch/` or `.agent-build/`. Do not
    regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`

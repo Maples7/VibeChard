@@ -40,9 +40,12 @@ public extension VibeChardError {
              .landBranchMissing,
              .runBundleIDNotFound,
              .runAppBundleNotFound,
-             .cleanBlockedByHolders:
+             .cleanBlockedByHolders,
+             .syncBaseUnresolved,
+             .syncDirtyWorktree:
             return ExitCode.business
-        case .externalCommandFailed:
+        case .externalCommandFailed,
+             .syncRebaseConflict:
             return ExitCode.external
         }
     }

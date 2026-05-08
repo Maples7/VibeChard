@@ -11,14 +11,15 @@ final class TaskStateFieldTests: XCTestCase {
         sim: TaskState.SimulatorRecord? = nil,
         lastBuild: TaskState.BuildRecord? = nil,
         lastTest: TaskState.TestRecord? = nil,
-        lastExec: TaskState.ExecRecord? = nil
+        lastExec: TaskState.ExecRecord? = nil,
+        lastSync: TaskState.SyncRecord? = nil
     ) -> TaskState {
         TaskState(
             name: name, branch: "agent/\(name)",
             createdAt: createdAt, baseRef: "deadbee",
             scheme: scheme, simulator: sim,
             lastBuild: lastBuild, lastTest: lastTest,
-            lastExec: lastExec
+            lastExec: lastExec, lastSync: lastSync
         )
     }
 
@@ -123,6 +124,38 @@ final class TaskStateFieldTests: XCTestCase {
                        .value("$SHELL"))
     }
 
+    func testLastSyncFieldsAreScalars() {
+        let finished = Date(timeIntervalSince1970: 1_700_000_500)
+        let s = state(
+            lastSync: .init(
+                finishedAt: finished,
+                baseSHA: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                baseLabel: "origin/main",
+                strategy: "rebase",
+                appliedCommits: 4,
+                durationSeconds: 1.234
+            )
+        )
+        XCTAssertEqual(TaskStateField.lookup("lastSync.baseSHA", in: s, worktreePath: "/x"),
+                       .value("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"))
+        XCTAssertEqual(TaskStateField.lookup("lastSync.baseLabel", in: s, worktreePath: "/x"),
+                       .value("origin/main"))
+        XCTAssertEqual(TaskStateField.lookup("lastSync.strategy", in: s, worktreePath: "/x"),
+                       .value("rebase"))
+        XCTAssertEqual(TaskStateField.lookup("lastSync.appliedCommits", in: s, worktreePath: "/x"),
+                       .value("4"))
+        XCTAssertEqual(TaskStateField.lookup("lastSync.durationSeconds", in: s, worktreePath: "/x"),
+                       .value("1.234"))
+    }
+
+    func testLastSyncUnsetWhenAbsent() {
+        let s = state()
+        XCTAssertEqual(TaskStateField.lookup("lastSync.baseSHA", in: s, worktreePath: "/x"),
+                       .unset)
+        XCTAssertEqual(TaskStateField.lookup("lastSync.appliedCommits", in: s, worktreePath: "/x"),
+                       .unset)
+    }
+
     // MARK: - knownset registration
 
     func testKnownContainsEveryFieldThisFileTests() {
@@ -132,6 +165,9 @@ final class TaskStateFieldTests: XCTestCase {
             "name", "branch", "path", "base", "schema", "scheme", "createdAt",
             "simulator.udid", "simulator.cloneUDID", "simulator.runtime",
             "lastBuild.success", "lastTest.resultBundlePath", "lastExec.exitCode",
+            "lastSync.baseSHA", "lastSync.baseLabel", "lastSync.strategy",
+            "lastSync.appliedCommits", "lastSync.durationSeconds",
+            "lastSync.finishedAt",
         ] {
             XCTAssertTrue(TaskStateField.known.contains(f),
                           "field '\(f)' must be in TaskStateField.known")

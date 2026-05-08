@@ -505,6 +505,17 @@ struct StateCommand: ParsableCommand {
                 lines.append(("last exec", "\(e.command) (started \(f.string(from: e.startedAt)))"))
             }
         }
+        if let sync = s.lastSync {
+            let verb = sync.strategy == "rebase" ? "rebased" : "merged"
+            let commitsLabel: String
+            if sync.appliedCommits == 0 {
+                commitsLabel = "up-to-date"
+            } else {
+                commitsLabel = "\(verb) \(sync.appliedCommits) commit\(sync.appliedCommits == 1 ? "" : "s")"
+            }
+            let shortSHA = sync.baseSHA.prefix(7)
+            lines.append(("last sync", "\(commitsLabel) onto \(sync.baseLabel) (\(shortSHA)) at \(f.string(from: sync.finishedAt))"))
+        }
         let width = lines.map { $0.0.count }.max() ?? 0
         for (k, v) in lines {
             let padded = k.padding(toLength: width, withPad: " ", startingAt: 0)

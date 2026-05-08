@@ -100,6 +100,7 @@ enum TaskShortcutDispatcher {
         // Reserved for future milestones (so we don't accidentally
         // treat them as task names today and break later).
         "build", "test", "run", "logs", "sim", "doctor", "land",
+        "sync",
         "help",
     ]
 

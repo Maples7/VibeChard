@@ -246,4 +246,50 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
         }
         mergeCalls.append((repoCwd, branch, mode, message))
     }
+
+    // MARK: - Sync (#25) protocol surface
+
+    /// Recorded `fetch` calls.
+    var fetchCalls: [(repoCwd: String, remote: String, branch: String)] = []
+    /// If non-nil, `fetch` throws this error.
+    var fetchError: VibeChardError?
+    /// Recorded `rebase` calls.
+    var rebaseCalls: [(worktreeCwd: String, onto: String)] = []
+    /// If non-nil, `rebase` throws this error.
+    var rebaseError: VibeChardError?
+    /// Configured upstream remote per `branch`. Default = nil (unset).
+    var upstreamRemoteByBranch: [String: String] = [:]
+    /// Configured rev-parse mappings; ref → resolved SHA.
+    var revParseByRef: [String: String] = [:]
+    /// If a ref isn't in `revParseByRef`, default to this synthetic SHA
+    /// derived from the ref name. Tests that need exact control should
+    /// preload `revParseByRef`.
+    var revParseFallback: ((String) -> String)? = nil
+
+    func fetch(repoCwd: String, remote: String, branch: String) throws {
+        if let error = fetchError {
+            throw error
+        }
+        fetchCalls.append((repoCwd, remote, branch))
+    }
+
+    func rebase(worktreeCwd: String, onto: String) throws {
+        if let error = rebaseError {
+            throw error
+        }
+        rebaseCalls.append((worktreeCwd, onto))
+    }
+
+    func upstreamRemote(repoCwd: String, branch: String) throws -> String? {
+        upstreamRemoteByBranch[branch]
+    }
+
+    func revParse(repoCwd: String, ref: String) throws -> String {
+        if let sha = revParseByRef[ref] { return sha }
+        if let fallback = revParseFallback { return fallback(ref) }
+        // Default: synthesise a deterministic 40-char SHA from the ref so
+        // tests that don't care about the exact value still get a stable,
+        // distinguishable answer.
+        return String(repeating: "a", count: 40 - ref.count) + ref
+    }
 }

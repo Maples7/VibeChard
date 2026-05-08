@@ -209,6 +209,26 @@ git stash pop                # foo 還原為原本狀態
 [#27](https://github.com/Maples7/VibeChard/issues/27)。上面這套手動
 腳本足夠穩，不值得加內建指令。
 
+### 讓長期任務保持最新
+
+若 `agent/<name>` 活得夠久、base 分支已往前推進，`vch sync <name>`
+會抓取 base 分支的 upstream，並把任務分支 rebase 上去 —— 全程不動
+你的主 worktree：
+
+```sh
+vch sync foo                          # fetch + rebase
+vch sync foo --dry-run                # 預覽 ahead/behind 與計畫
+vch sync foo --merge                  # 改用 git merge --no-ff
+                                      # （僅當 agent/foo 已被推到協作者會讀到的地方）
+vch sync foo --onto origin/release-2  # 一次性換基準
+vch sync foo --no-fetch               # 離線，只用已 fetch 過的 ref
+```
+
+預設策略是「rebase、不強推、不 autostash」 —— vch 永遠不會改寫或
+藏起你的工作。若 git 拒絕（未提交變更、衝突），動作會乾淨中止，
+你可以進到任務 worktree 手動收尾。成功的 `vch sync` 會把 `lastSync`
+寫進 `state.json`（`vch state <name>` 可見）。
+
 ## 指令一覽
 
 | 指令 | 作用 |
@@ -226,6 +246,7 @@ git stash pop                # foo 還原為原本狀態
 | `vch logs <name> [--test]` | 印出任務最近一次 `vch test` 的完整 xcodebuild log。當精簡摘要指向某個失敗時，可用它檢視前後脈絡。目前只支援 `--test`；log 每次測試會覆寫。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 顯式管理任務的模擬器副本。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | 將 `agent/<name>` 合併回基準分支（在 `vch new` 時記錄於 `state.json` 的主 worktree 分支）並刪除 worktree。預設 `--no-ff`；預設提交訊息 `Merge agent/<name>: <最近一個非合併提交的標題>`。下列狀況下拒絕合併：空合併、主 worktree 不在目標分支上、主 worktree 中與任務分支 diff 重疊的路徑未提交（可用 `--allow-dirty` 跳過）。`--keep` 跳過自動 rm；`--dry-run` 只列出計畫不動任何東西。 |
+| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 抓取記錄的基準分支 upstream，並將 `agent/<name>` rebase 到其上。`--merge` 改用 `git merge --no-ff`（僅當任務分支已被推到協作者會讀取的地方時再用）。`--onto <ref>` 覆蓋基準；`--no-fetch` 跳過網路；`--allow-dirty` 把髒 worktree 檢查交給 git 自行判斷；`--dry-run` 只列出 ahead/behind 與計畫策略，不寫任何東西。所有 git 操作都在任務 worktree 內執行，絕不動主 worktree。成功後寫入 `lastSync`。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 刪除 worktree、分支以及（預設會刪的）模擬器副本。`--allow-dirty` 允許未提交改動；`--allow-unmerged` 強刪未合併的分支。 |
 | `vch repair` | 用 `git worktree list` 的實際狀態重新對齊 `.vch/state.json`。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 清理任務的 `DerivedData` + `ModuleCache`（預設）。`--swiftpm` 連 SwiftPM clone 目錄一起刪，`--logs` 刪 `.vch/last-test.log`，`--all` 為全刪。若有進程還開著 `.agent-build/` 或 `.vch/` 裡的檔案（如正在 indexing 的 Xcode）會拒絕；`--dry-run` 只列要刪的項目不真刪。 |

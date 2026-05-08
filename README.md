@@ -232,6 +232,28 @@ git primitive — see [#27](https://github.com/Maples7/VibeChard/issues/27)
 for the full discussion. The recipe above is the stable manual
 fallback.
 
+### Keeping a long-running task current
+
+If `agent/<name>` lives long enough that its base branch has moved
+on, `vch sync <name>` fetches the recorded base's upstream and
+rebases the task branch onto it — without touching your main
+worktree:
+
+```sh
+vch sync foo                          # fetch + rebase
+vch sync foo --dry-run                # preview ahead/behind + plan
+vch sync foo --merge                  # use git merge --no-ff instead
+                                      # (only if you've pushed agent/foo)
+vch sync foo --onto origin/release-2  # one-off retarget
+vch sync foo --no-fetch               # offline, against already-fetched refs
+```
+
+The default policy is "rebase, no force, no autostash" — vch never
+rewrites or hides your work. If git refuses (uncommitted changes,
+conflicts), the operation aborts cleanly and you finish the rebase
+inside the task worktree by hand. Successful runs record a `lastSync`
+block in `state.json` (visible via `vch state <name>`).
+
 ## Commands
 
 | Command | What it does |
@@ -249,6 +271,7 @@ fallback.
 | `vch logs <name> [--test]` | Print the full xcodebuild log from the task's most recent run. Useful when the concise `vch test` summary points at a failure and you want the surrounding context. Currently `--test` is the only flavor; the `vch test` log is overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. |
+| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | Fetch the recorded base branch's upstream and rebase `agent/<name>` onto it. `--merge` switches to `git merge --no-ff` (use only when the task branch has been pushed somewhere a coworker reads from). `--onto <ref>` overrides the base; `--no-fetch` skips the network call; `--allow-dirty` defers the dirty-worktree check to git itself; `--dry-run` prints ahead/behind counts and the planned strategy without writing. All git work runs inside the task worktree, so the main worktree is never touched. Records `lastSync` on success. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--allow-unmerged` force-deletes a branch that isn't fully merged. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | Delete the task's `DerivedData` + `ModuleCache` (default). Add `--swiftpm` to also drop the SwiftPM clone dir, `--logs` to drop `.vch/last-test.log`, `--all` for everything. Refuses if any process still has a file open inside `.agent-build/` or `.vch/` (e.g. an Xcode that's actively indexing); `--dry-run` lists what would be removed. |

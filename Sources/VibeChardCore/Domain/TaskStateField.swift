@@ -37,6 +37,12 @@ public enum TaskStateField {
         "lastExec.startedAt",
         "lastExec.exitedAt",
         "lastExec.exitCode",
+        "lastSync.finishedAt",
+        "lastSync.baseSHA",
+        "lastSync.baseLabel",
+        "lastSync.strategy",
+        "lastSync.appliedCommits",
+        "lastSync.durationSeconds",
     ]
 
     /// Three-state result so the caller can distinguish "this field
@@ -110,6 +116,19 @@ public enum TaskStateField {
             return optional(state.lastExec?.exitedAt.map(iso8601))
         case "lastExec.exitCode":
             return optional(state.lastExec?.exitCode.map { String($0) })
+
+        case "lastSync.finishedAt":
+            return optional(state.lastSync.map { iso8601($0.finishedAt) })
+        case "lastSync.baseSHA":
+            return optional(state.lastSync?.baseSHA)
+        case "lastSync.baseLabel":
+            return optional(state.lastSync?.baseLabel)
+        case "lastSync.strategy":
+            return optional(state.lastSync?.strategy)
+        case "lastSync.appliedCommits":
+            return optional(state.lastSync.map { String($0.appliedCommits) })
+        case "lastSync.durationSeconds":
+            return optional(state.lastSync.map { String(format: "%.3f", $0.durationSeconds) })
 
         default:
             return .unknown
