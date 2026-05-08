@@ -201,7 +201,7 @@ vch exec task-a -- xcodebuild test \
 | `vch logs <name> [--test]` | 태스크의 가장 최근 `vch test` 의 전체 xcodebuild 로그를 출력. 간결 요약이 어떤 실패를 가리킬 때 주변 컨텍스트 확인에 유용. 현재는 `--test` 만 지원하며, 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. |
-| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경 허용, `--allow-unmerged` 는 디재이소한 녹은 병합되지 않은 브랜치 강제 삭제. `-f / --force` 는 두 플래그의 대체 제공(디프리케이티드) 이별칭으로 stderr에 경고를 출력하며 1.0 에서 제거됩니다. |
+| `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. `-f / --force` 는 두 플래그의 디프리케이티드 이별칭으로, stderr에 경고를 출력하며 0.4.0 에서 제거될 예정입니다. |
 | `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 작업의 `DerivedData` + `ModuleCache` 삭제（기본）. `--swiftpm` 는 SwiftPM 클론 디렉터리도, `--logs` 는 `.vch/last-test.log` 도, `--all` 은 전부 삭제. `.agent-build/` 또는 `.vch/` 내 파일을 여는 프로세스（인덱싱 중인 Xcode 등）가 있으면 거부. `--dry-run` 은 삭제 예정 항목만 나열하고 아무것도 건들지 않음. |
 | `vch doctor [--clean] [--json]` | 고아 시뮬레이터 클론, 오래된 상태 바인딩, 손상된 `state.json` 탐지. 발견 시 비정상 종료. |
@@ -289,7 +289,7 @@ shim 은 투명한 passthrough 로 `swift` 를 감싸지만 argv 는 수정하�
 <br/>
 
 날아가지 않습니다 — 거부합니다. `vch remove` 는 dirty 한 worktree 에서명확한 메시지와 함께 중단합니다. `--allow-dirty` 를 넘기면 강제 삭제 (미커밋변경 손실), `--allow-unmerged` 를 넘기면 (또는 둘을 함께 사용) 미머지 커밋이 있는 브랜치 삭제까지 허용합니다.
-조용히 파괴적인 경로는 없습니다. 과거의 `--force` (한 번) / `--force --force` (두 번)도 동작하지만 디프리케이티드 되었으며, 명명된 플래그를 사용하도록 권고하는 경고를 출력하고 1.0 에서 제거됩니다. v0.3.0 에서는 작업별 시뮬레이터 클론 이름도 `<original> · vch[<task>]` 에서 `<original>-vch-<task>` 로 변경되었습니다. 기존 클론은 계속 작동합니다 — `vch doctor` 는 고아 스캔 시 두 스키마를 모두 인식하며, 표시 이름이 아닌 UDID 가 진실의 원천입니다.
+조용히 파괴적인 경로는 없습니다. 과거의 `--force` (한 번) / `--force --force` (두 번)도 동작하지만 디프리케이티드 되었으며, 명명된 플래그를 사용하도록 권고하는 경고를 출력하고 0.4.0 에서 제거될 예정입니다 (pre-1.0 minor 에서는 파괴적 변경이 허용됩니다 — CONTRIBUTING.md 참조). v0.3.0 에서는 작업별 시뮬레이터 클론 이름도 `<original> · vch[<task>]` 에서 `<original>-vch-<task>` 로 변경되었습니다. 기존 클론은 계속 작동합니다 — `vch doctor` 는 고아 스캔 시 두 스키마를 모두 인식하며, 표시 이름이 아닌 UDID 가 진실의 원천입니다.
 
 </details>
 

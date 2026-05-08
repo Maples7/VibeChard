@@ -519,7 +519,7 @@ struct RemoveCommand: ParsableCommand {
     @Flag(
         name: .shortAndLong,
         help: ArgumentHelp(
-            "Deprecated alias: pass once for `--allow-dirty`, twice for `--allow-dirty --allow-unmerged`. Removed in 1.0."
+            "Deprecated alias: pass once for `--allow-dirty`, twice for `--allow-dirty --allow-unmerged`. Scheduled for removal in 0.4.0."
         )
     )
     var force: Int
@@ -540,7 +540,7 @@ struct RemoveCommand: ParsableCommand {
             if force >= 1 {
                 CLIBridge.eprintln("warning: --force is deprecated; use --allow-dirty"
                                    + (force >= 2 ? " --allow-unmerged" : "")
-                                   + ". Removed in 1.0.")
+                                   + ". Scheduled for removal in 0.4.0.")
             }
             let dirtyAllowed = allowDirty || force >= 1
             let unmergedAllowed = allowUnmerged || force >= 2

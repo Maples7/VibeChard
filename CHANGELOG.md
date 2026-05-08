@@ -61,9 +61,11 @@ The English README is the source of truth; localized READMEs may lag.
 - `vch remove --force` (once) and `--force --force` (twice) are now
   deprecated aliases for `--allow-dirty` and `--allow-dirty
   --allow-unmerged` respectively. Both still work and now emit a
-  one-line stderr warning suggesting the named flags. Removed in
-  1.0. Error messages for dirty worktrees and unmerged branches
-  point at the named flags instead of the old `--force` recipe.
+  one-line stderr warning suggesting the named flags. Scheduled for
+  removal in 0.4.0 (pre-1.0 minors are allowed to break per
+  CONTRIBUTING.md). Error messages for dirty worktrees and unmerged
+  branches point at the named flags instead of the old `--force`
+  recipe.
   Closes #30.
 
 ## [0.2.0] - 2026-05-07
