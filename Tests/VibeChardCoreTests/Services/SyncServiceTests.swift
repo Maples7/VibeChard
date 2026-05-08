@@ -230,6 +230,46 @@ final class SyncServiceTests: XCTestCase {
         XCTAssertEqual(git.fetchCalls[0].branch, "main")
     }
 
+    func testOntoRescuesTaskWithoutRecordedBaseBranch() throws {
+        // state.baseBranch is nil (e.g. task created off detached HEAD)
+        // — without --onto we'd throw syncBaseUnresolved. With --onto,
+        // we skip fetch entirely (no recorded branch to refresh) and
+        // proceed to rev-parse + rebase the explicit ref.
+        let (service, fs, git, _, task) = makeService(
+            seedingTask: "alpha",
+            seedingState: baseState(name: "alpha", baseBranch: nil)
+        )
+        let baseSHA = "11111111111111111111111111111111ffffffff"
+        git.revParseByRef["v1.2.3"] = baseSHA
+        git.revListCountByRange["\(baseSHA)..agent/alpha"] = 2
+        git.revListCountByRange["agent/alpha..\(baseSHA)"] = 1
+
+        var events: [SyncService.Event] = []
+        let outcome = try service.sync(
+            task,
+            options: .init(onto: "v1.2.3")
+        ) { events.append($0) }
+
+        // Fetch was skipped with the .noBaseBranch reason (not
+        // .userOptOut — --no-fetch wasn't passed).
+        XCTAssertFalse(outcome.fetched)
+        XCTAssertNil(outcome.fetchedRemote)
+        XCTAssertEqual(git.fetchCalls.count, 0)
+        XCTAssertTrue(events.contains {
+            if case .fetchSkipped(.noBaseBranch) = $0 { return true } else { return false }
+        })
+        // The rebase happened against --onto's value.
+        XCTAssertEqual(git.rebaseCalls.count, 1)
+        XCTAssertEqual(git.rebaseCalls[0].onto, "v1.2.3")
+        XCTAssertEqual(outcome.baseLabel, "v1.2.3")
+        XCTAssertEqual(outcome.baseSHA, baseSHA)
+        // lastSync records --onto's label, not the missing state.baseBranch.
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let recorded = try loadState(fs, workspace, task).lastSync
+        XCTAssertEqual(recorded?.baseLabel, "v1.2.3")
+        XCTAssertEqual(recorded?.baseSHA, baseSHA)
+    }
+
     // MARK: - upstream fallback
 
     func testFallsBackToOriginWhenBaseBranchHasNoUpstream() throws {
