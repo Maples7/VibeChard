@@ -35,48 +35,30 @@ tree wins.**
 7. **No config files in v1.** All state goes into per-worktree
    `.vch/state.json`. No `~/.vchrc`, no `.vch.toml`, no env-var-based config
    knobs beyond the documented `VCH_*` set.
-8. **Reserved subcommand names:** `new list ls path exec open build test
-   run logs sim remove rm repair doctor shellenv version help`. `vch new <name>` rejects
-   names that match these or start with `-`. `ls` and `rm` are aliases
-   for `list` / `remove` respectively (Q-amend post-v0.1.0). `open` opens
-   a worktree in an IDE (Xcode / VS Code / Cursor / any `open -a` app);
-   added Q-amend post-v0.1.1. `state` shows a task's persisted state and
-   `completions` installs shell completions; both added Q-amend post-v0.1.1.
-   `logs` prints the firehose log captured during the most recent
-   `vch test` run (#9, post-v0.1.2). `land` merges a task branch back
-   into its recorded base and removes the worktree (#7, post-v0.1.2).
-   `run` builds, installs, and launches the task's app on its bound
-   simulator clone (#18, post-v0.1.2). `sync` rebases (or merges) a
-   task branch onto its recorded base after fetching the upstream
-   (#25, post-v0.3.0). The source-of-truth list lives in
-   `Sources/VibeChardCore/Domain/TaskName.swift`; this prose is
-   chronological context, not the authoritative list.
+8. **Reserved subcommand names.** `vch new <name>` rejects names that
+   collide with an existing subcommand or alias, or that start with `-`.
+   The authoritative list lives in
+   `Sources/VibeChardCore/Domain/TaskName.swift` — read the code, not
+   this file, when you need the current set.
 9. **Don't touch the user's `~/Library/Developer/` outside the
    simulator-clone exception.** Every byte vch writes directly must
-   land inside the worktree's `.vch/` or `.agent-build/`. The one
-   place vch leaves footprints under `~/Library/Developer/` is the
-   `~/Library/Developer/CoreSimulator/Devices/<UDID>/` subtree,
-   because `xcrun simctl` does not accept an alternate storage root —
-   there is no `--data-dir` or equivalent flag, so the OS owns the
-   directory layout. Two narrowly-scoped sub-exceptions live here
-   today:
-   - **Per-task simulator clones**, named `<device>-vch-<task>`.
-     Lifetime is bound to the task — `vch remove` and
-     `vch doctor --clean` reap them. In place since v0.1.0.
-   - **Shared warm templates**, named `vch-warm[<device>:<runtime>]`.
-     Lifetime is decoupled from any task: created only by
-     `vch sim warm-template create`, destroyed only by
-     `vch sim warm-template remove`. `vch doctor` lists them but
-     **never** auto-cleans them; the user owns their lifecycle.
-     Added in v0.4.0 (#47).
+   land inside the worktree's `.vch/` or `.agent-build/`. The single
+   permitted footprint under `~/Library/Developer/` is
+   `~/Library/Developer/CoreSimulator/Devices/<UDID>/`, because
+   `xcrun simctl` does not accept an alternate storage root — there
+   is no `--data-dir` or equivalent flag, so the OS owns the layout.
 
-   Any future feature that wants to write under `~/Library/Developer/`,
-   or relax the user-owns-the-lifecycle stance for a future kind of
-   shared resource, must come with its own Q-amend that proposes the
-   trade-off and gets approved before code lands. `ci.yml` smoke-checks
-   the shim's `xcrun -f xcodebuild` exec path on every push to ensure
-   no other directories under `~/Library/Developer/` ever get written
-   to by vch.
+   Within that exception, the *kinds* of vch-managed devices and
+   their lifecycle rules (per-task vs. shared, who creates / destroys
+   them) are defined in code — see `SimulatorService` and the
+   `WarmTemplate*` types under `Domain/`. The load-bearing principle
+   is that **the user owns the lifecycle of any shared resource**:
+   vch may auto-create and auto-reap state that belongs to a single
+   task, but never state that is shared across tasks. New device
+   kinds are fine when the trade-off is justified in the PR
+   description. `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`
+   exec path on every push to ensure no other directories under
+   `~/Library/Developer/` ever get written to by vch.
 10. **Multi-language README sync.** Substantive changes to `README.md`
     (features, commands, install steps, rules) must be mirrored to
     `README.ja.md`, `README.ko.md`, `README.zh-CN.md`, `README.zh-TW.md`
@@ -148,20 +130,6 @@ and exit-code mapping. Every behavior must be unit-testable from
 | Unit | `Tests/VibeChardCoreTests/` | yes | No IO; protocol fakes only |
 | Integration | (later) `Tests/VibeChardCoreTests/Integration/` | yes | Temp git repo + real `/usr/bin/git`; may invoke `xcrun` lazily |
 | E2E | manual dogfood against a real Apple project | no | Touches real Xcode + simulators |
-
-## When you change Q-decisions
-
-The grill-me session that produced this design is captured in
-`/memories/repo/vibechard-plan.md`. If you find yourself wanting to violate
-one of the **Hard rules 1–10** above, do **not** silently revise it. Surface
-the trade-off in the PR description and propose a Q-amendment first.
-
-This ceremony does **not** apply to ordinary command-surface evolution
-(new subcommands, new flags, new output fields) during 0.x. Those just
-ship behind a CHANGELOG entry. Q-amendment is for the load-bearing rules
-— Apple-only, BYO Agent, no telemetry, two deps, three targets, the shim
-staying minimal, no config files, the reserved subcommand list,
-`~/Library/Developer/` immunity, and the multi-language README sync rule.
 
 ## Useful local commands
 
