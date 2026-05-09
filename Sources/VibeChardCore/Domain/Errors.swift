@@ -108,6 +108,15 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// because the source task was never built. The user should run
     /// `vch build <source>` once before re-trying. (#55)
     case seedSourceHasNoSwiftPMCache(name: String, expectedPath: String)
+    /// `vch sim warm-template create` was asked to create a template
+    /// whose `vch-warm[<device>:<runtime>]` name is already taken in
+    /// `simctl list devices`. The CLI never silently replaces — the
+    /// user must `vch sim warm-template remove` first. (#47)
+    case warmTemplateAlreadyExists(name: String, udid: String)
+    /// User supplied a runtime label that didn't parse as any of
+    /// the accepted forms (`iOS 26.4` / `iOS-26-4` / verbose
+    /// CoreSimulator ID). (#47)
+    case invalidRuntime(String)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -203,6 +212,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "--seed-spm-from: source task '\(name)' not found (no managed worktree at <repo>-\(name)/)"
         case let .seedSourceHasNoSwiftPMCache(name, expectedPath):
             return "--seed-spm-from: source task '\(name)' has no SwiftPM cache yet at \(expectedPath) — run `vch build \(name)` once first"
+        case let .warmTemplateAlreadyExists(name, udid):
+            return "warm template '\(name)' already exists (\(udid.prefix(8))…) — run `vch sim warm-template remove` first if you want to recreate it"
+        case let .invalidRuntime(label):
+            return "could not parse runtime '\(label)' — accepted forms are 'iOS 26.4', 'iOS-26-4', or 'com.apple.CoreSimulator.SimRuntime.iOS-26-4'"
         }
     }
 }

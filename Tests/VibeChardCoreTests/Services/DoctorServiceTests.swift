@@ -246,4 +246,54 @@ final class DoctorServiceTests: XCTestCase {
         XCTAssertEqual(clean.failedDeletes.count, 1)
         XCTAssertEqual(clean.failedDeletes.first?.name, "iPhone 16 · vch[gone]")
     }
+
+    // MARK: - warm templates (#47)
+
+    /// Warm-template devices must NEVER be classified as orphan clones
+    /// — the user owns their lifecycle. Orphan-clone scanning is what
+    /// triggers `vch doctor --clean` deletes; misclassification would
+    /// destroy 30+ s of priming work without consent.
+    func testDiagnoseExcludesWarmTemplatesFromOrphanClones() throws {
+        let (svc, _, _, _) = makeService(
+            seed: [
+                ("alpha", .init(cloneUDID: "C-1", sourceUDID: "S-1",
+                                 name: "iPhone 16-vch-alpha")),
+            ],
+            simctlDevices: [
+                dev("C-1", "iPhone 16-vch-alpha"),
+                dev("WARM", "vch-warm[iPhone 16:iOS 26.4]"),
+            ]
+        )
+        let report = try svc.diagnose()
+        XCTAssertTrue(report.orphanClones.isEmpty)
+    }
+
+    /// Healthy warm templates surface in the report but do NOT trigger
+    /// `hasFindings` (so `--exit-code` stays 0 in CI).
+    func testDiagnoseListsHealthyWarmTemplatesWithoutFindings() throws {
+        let (svc, _, _, _) = makeService(
+            simctlDevices: [
+                dev("WARM", "vch-warm[iPhone 16:iOS 26.4]"),
+            ]
+        )
+        let report = try svc.diagnose()
+        XCTAssertEqual(report.warmTemplates.map(\.udid), ["WARM"])
+        XCTAssertEqual(report.warmTemplates.first?.health, .ok)
+        XCTAssertFalse(report.hasFindings)
+    }
+
+    /// An unhealthy warm template (booted, stale, malformed) should
+    /// flip `hasFindings` so users notice on their next `vch doctor`
+    /// run.
+    func testDiagnoseFlagsUnhealthyWarmTemplate() throws {
+        let (svc, _, _, _) = makeService(
+            simctlDevices: [
+                dev("BOOTED-WARM", "vch-warm[iPhone 16:iOS 26.4]",
+                    state: "Booted"),
+            ]
+        )
+        let report = try svc.diagnose()
+        XCTAssertEqual(report.warmTemplates.first?.health, .booted)
+        XCTAssertTrue(report.hasFindings)
+    }
 }

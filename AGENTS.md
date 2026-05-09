@@ -51,10 +51,32 @@ tree wins.**
    (#25, post-v0.3.0). The source-of-truth list lives in
    `Sources/VibeChardCore/Domain/TaskName.swift`; this prose is
    chronological context, not the authoritative list.
-9. **Don't touch the user's `~/Library/Developer/`.** Every byte vch writes
-   must land inside the worktree's `.vch/` or `.agent-build/`. Do not
-   regress this — `ci.yml` smoke-checks the shim's `xcrun -f xcodebuild`
-   exec path on every push.
+9. **Don't touch the user's `~/Library/Developer/` outside the
+   simulator-clone exception.** Every byte vch writes directly must
+   land inside the worktree's `.vch/` or `.agent-build/`. The one
+   place vch leaves footprints under `~/Library/Developer/` is the
+   `~/Library/Developer/CoreSimulator/Devices/<UDID>/` subtree,
+   because `xcrun simctl` does not accept an alternate storage root —
+   there is no `--data-dir` or equivalent flag, so the OS owns the
+   directory layout. Two narrowly-scoped sub-exceptions live here
+   today:
+   - **Per-task simulator clones**, named `<device>-vch-<task>`.
+     Lifetime is bound to the task — `vch remove` and
+     `vch doctor --clean` reap them. In place since v0.1.0.
+   - **Shared warm templates**, named `vch-warm[<device>:<runtime>]`.
+     Lifetime is decoupled from any task: created only by
+     `vch sim warm-template create`, destroyed only by
+     `vch sim warm-template remove`. `vch doctor` lists them but
+     **never** auto-cleans them; the user owns their lifecycle.
+     Added in v0.4.0 (#47).
+
+   Any future feature that wants to write under `~/Library/Developer/`,
+   or relax the user-owns-the-lifecycle stance for a future kind of
+   shared resource, must come with its own Q-amend that proposes the
+   trade-off and gets approved before code lands. `ci.yml` smoke-checks
+   the shim's `xcrun -f xcodebuild` exec path on every push to ensure
+   no other directories under `~/Library/Developer/` ever get written
+   to by vch.
 10. **Multi-language README sync.** Substantive changes to `README.md`
     (features, commands, install steps, rules) must be mirrored to
     `README.ja.md`, `README.ko.md`, `README.zh-CN.md`, `README.zh-TW.md`

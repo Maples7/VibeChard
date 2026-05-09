@@ -488,16 +488,21 @@ final class FakeSimctl: SimctlClient, @unchecked Sendable {
     /// differ (e.g. simulating an unavailable runtime).
     var allDevicesOverride: [SimDevice]?
     var cloneReturnsUDID: String = ""
+    /// Returned by `create()`. Tests that exercise warm-template
+    /// creation (#47) set this to the synthetic UDID they want.
+    var createReturnsUDID: String = ""
     var bootCalls: [String] = []
     var deleteCalls: [String] = []
     var shutdownCalls: [String] = []
     var eraseCalls: [String] = []
     var cloneCalls: [(source: String, newName: String)] = []
+    var createCalls: [(name: String, deviceTypeID: String, runtimeID: String)] = []
     var installCalls: [(udid: String, appPath: String)] = []
     var launchCalls: [(udid: String, bundleID: String, args: [String])] = []
     var availableThrows: VibeChardError?
     var allThrows: VibeChardError?
     var cloneThrows: VibeChardError?
+    var createThrows: VibeChardError?
     var bootThrows: VibeChardError?
     var shutdownThrows: VibeChardError?
     var eraseThrows: VibeChardError?
@@ -519,6 +524,12 @@ final class FakeSimctl: SimctlClient, @unchecked Sendable {
         if let err = cloneThrows { throw err }
         cloneCalls.append((sourceUDID, newName))
         return cloneReturnsUDID
+    }
+
+    func create(name: String, deviceTypeID: String, runtimeID: String) throws -> String {
+        if let err = createThrows { throw err }
+        createCalls.append((name, deviceTypeID, runtimeID))
+        return createReturnsUDID
     }
 
     func bootstatusBoot(udid: String) throws {

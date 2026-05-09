@@ -9,6 +9,35 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch sim warm-template {create,list,remove}` — shared warm
+  simulator templates (#47). A warm template is a simulator device
+  that vch keeps in shutdown state with first-boot caches already
+  primed (created → booted via `simctl bootstatus -b` → shutdown).
+  Subsequent per-task `simctl clone` operations inherit those
+  caches, so the cloned device boots in seconds instead of tens of
+  seconds. SPIKE measured the cold path (`simctl create` from an
+  Apple template + first boot, iPhone 16 + iOS 26.4, N=5 median)
+  at 30.75 s vs. the warm path (clone + boot, same conditions) at
+  9.41 s — savings of 21.35 s absolute (69.4 %) per task on the
+  first sim spin-up. `vch test --device "iPhone 16" --runtime "iOS 26.4"`
+  automatically picks the matching warm template when one exists,
+  falling back to the unfiltered Apple-template scan otherwise.
+  Lifetime is **decoupled** from any task: warm templates are
+  created only by `warm-template create` and destroyed only by
+  `warm-template remove`. `vch doctor` lists them but never
+  auto-cleans them — the user owns their lifecycle. Storage uses
+  zero on-disk metadata; the simctl device name pattern
+  `vch-warm[<device>:<runtime>]` is the single source of truth
+  (matches AGENTS.md rule #7 — no `~/.vch*`, no global config
+  files). New `sourceKind` field on `state.simulator` records
+  whether a clone came off a warm template (`warm-template`) or
+  an Apple template (`apple-template`); legacy state.json files
+  still decode (the field is optional). Queryable via
+  `vch state <task> --field simulator.sourceKind`. New error variants:
+  `warmTemplateAlreadyExists` (business exit code) and
+  `invalidRuntime` (usage exit code). New `vch doctor` output
+  section + `warmTemplates[]` JSON field. `warm-templates.json`
+  added to the `vch doctor --bug-report` tarball.
 - `vch new --seed-spm-from <task>` COW-clones a sibling vch task's
   SwiftPM bare-mirror cache into the new task at create time so
   the first build can skip the dependency network fetch (#55).

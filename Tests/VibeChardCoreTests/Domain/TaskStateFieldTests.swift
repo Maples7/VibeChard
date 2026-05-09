@@ -75,6 +75,45 @@ final class TaskStateFieldTests: XCTestCase {
                        .value("com.apple.CoreSimulator.SimRuntime.iOS-26-4"))
     }
 
+    // #47 follow-up: scripts and agents need to be able to tell
+    // apart a warm-template-cloned task from an Apple-template one
+    // (e.g. to skip warming logic on already-warm tasks). The lookup
+    // emits the rawValue so dotted-path output stays stable.
+    func testSimulatorSourceKindLookup() {
+        let warmSim = TaskState.SimulatorRecord(
+            cloneUDID: "C", sourceUDID: "S", name: "n",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+            sourceKind: .warmTemplate
+        )
+        XCTAssertEqual(
+            TaskStateField.lookup("simulator.sourceKind",
+                                  in: state(sim: warmSim), worktreePath: "/x"),
+            .value("warm-template"))
+
+        let appleSim = TaskState.SimulatorRecord(
+            cloneUDID: "C", sourceUDID: "S", name: "n",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+            sourceKind: .appleTemplate
+        )
+        XCTAssertEqual(
+            TaskStateField.lookup("simulator.sourceKind",
+                                  in: state(sim: appleSim), worktreePath: "/x"),
+            .value("apple-template"))
+
+        // Legacy state.json (sourceKind nil) → unset, not unknown.
+        let legacySim = TaskState.SimulatorRecord(
+            cloneUDID: "C", sourceUDID: "S", name: "n",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+        )
+        XCTAssertEqual(
+            TaskStateField.lookup("simulator.sourceKind",
+                                  in: state(sim: legacySim), worktreePath: "/x"),
+            .unset)
+    }
+
     // MARK: - unset vs unknown distinction
 
     func testReturnsUnsetForKnownFieldsThatAreNil() {
@@ -164,6 +203,7 @@ final class TaskStateFieldTests: XCTestCase {
         for f in [
             "name", "branch", "path", "base", "schema", "scheme", "createdAt",
             "simulator.udid", "simulator.cloneUDID", "simulator.runtime",
+            "simulator.sourceKind",
             "lastBuild.success", "lastTest.resultBundlePath", "lastExec.exitCode",
             "lastSync.baseSHA", "lastSync.baseLabel", "lastSync.strategy",
             "lastSync.appliedCommits", "lastSync.durationSeconds",

@@ -270,6 +270,44 @@ vch rm foo                                       # 終わってから片付け�
 プロジェクトが何を、なぜ ignore しているかに完全に依存するから
 です。
 
+### warm シミュレーターテンプレートで初回起動の待ち時間を省く
+
+新しくクローンしたシミュレーターに対して `vch test` を最初に走ら
+せたとき、ウォールクロックの約 30 秒は `simctl create` と初回起動
+のキャッシュ準備に費やされます。**ビルド本体ではありません**。同
+じマシン上で同じ `(device, runtime)` の組に対して複数の agent を
+並列で立ち上げると、タスクごとにこの代金を毎回払うことになりま
+す。「warm テンプレート」はその代金を一度だけ前払いして、マシン
+全体で共有するものです。
+
+```sh
+# 一度だけ準備（実際に使う device / runtime のペアごとに一回）：
+vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
+
+# 以降、同じ runtime を pin しているタスクは初回 `vch test` の度に
+# 約 21 秒節約できます — タスク用クローンが暖まったキャッシュを
+# 引き継ぐためです。
+vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
+vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
+
+# 現在キャッシュ中のテンプレートを確認：
+vch sim warm-template list
+
+# 不要になったらディスクを解放：
+vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
+```
+
+warm テンプレートのライフタイムは**どのタスクとも切り離されて**
+います。`vch remove` も `vch doctor --clean` も warm テンプレート
+には触れません — 作るのもあなた、消すのもあなたです。`vch doctor`
+は stale や booted の異常状態を見つけられるよう一覧表示はします
+が、自動クリーンは絶対にしません（自動クリーンは 30 秒分の準備
+作業を黙って消す行為になるからです）。`--runtime` は必須です。
+同じ device でも runtime が違えば別の warm テンプレートになるた
+め、pin がないと vch には一意に特定できません。SPIKE 実測値
+（iPhone 16 + iOS 26.4、N=5 中央値）：cold 30.75 秒、warm 9.41 秒、
+節約 21.35 秒（69.4 %）。
+
 ## コマンド一覧
 
 | コマンド | 役割 |
@@ -286,6 +324,7 @@ vch rm foo                                       # 終わってから片付け�
 | `vch run   <name> [flags] [-- launch-args]` | タスクに紐づいたシミュレータークローン上でアプリをビルド・インストール・起動。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じで、`PRODUCT_BUNDLE_IDENTIFIER` は `xcodebuild -showBuildSettings -json` から自動解決。`--` 以降の引数はそのまま `simctl launch` に転送されます（例：`vch run alpha -- -UsePreviewSampleData`）。必要に応じてクローンをブートし `Simulator.app` を開きます。 |
 | `vch logs <name> [--test\|--build]` | タスク直近の `vch test` または `vch build` の xcodebuild フルログを表示。デフォルトは `--test`、`--build` でビルドのフルログ。ログは毎回上書きされる。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
+| `vch sim warm-template {create,list,remove}` | 共有の *warm* シミュレーターテンプレートを管理（#47）。warm テンプレートとは「booted-once-then-shutdown」で初回起動キャッシュを暖めたシミュレーターで、その後の `vch test` 用タスククローンがそのキャッシュを継承し、初回シミュレーター起動を約 30 秒から約 9 秒に短縮します。`create <device> --runtime "iOS 26.4"` で作成、`list [--json]` で確認、`remove <device> --runtime "iOS 26.4"` で削除。**ライフタイムはどのタスクとも切り離されています** — `vch remove` も `vch doctor --clean` も warm テンプレートには触れず、自分で管理します。`vch test --device "<device>" --runtime "iOS X.Y"` は一致する warm テンプレートが存在すれば自動的に選びます。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。`--push` は解決済みの `--into` ブランチを追跡している remote（`branch.<into>.remote`、未設定なら `origin` にフォールバック）に push する。`--push-to <remote>` は明示的に remote を指定する上書き。どちらのフラグもなければ `vch land` はネットワークに一切触れない。push が失敗してもマージは**ロールバックされない** — 失敗内容は stderr に warning として出る。**コミット済み**の内容しか持ち越されません — 未コミット変更、untracked ファイル、`.gitignore` で除外された成果物は worktree と一緒に削除されます（`--keep` + 手動コピー；cookbook の「`vch land` 時に生成された成果物を残す」を参照）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 記録されたベースブランチの upstream を fetch し、`agent/<name>` を rebase で取り込む。`--merge` で `git merge --no-ff` に切り替え（タスクブランチが共同作業者から見える場所に push 済みのときのみ推奨）。`--onto <ref>` でベースを上書き、`--no-fetch` で fetch をスキップ、`--allow-dirty` で dirty worktree チェックを git 側に委ねる、`--dry-run` は ahead/behind と計画戦略を表示するだけで何も書かない。git 操作はすべてタスク worktree 内で行い、メイン worktree には触れない。成功時に `lastSync` を記録する。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--allow-unmerged` で未マージのブランチを強制削除。 |

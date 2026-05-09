@@ -285,6 +285,40 @@ migrate`, etc. vch deliberately doesn't take a side on which artifacts
 "should" be copied or how, because the answer depends on what your
 project ignores and why.
 
+### Skipping the first-boot delay with warm simulator templates
+
+The first time you run `vch test` against a freshly-cloned simulator,
+~30 s of that wallclock is `simctl create` + first-boot cache
+priming, *not* your build. If you spin up multiple agents in parallel
+on the same `(device, runtime)` pair, you pay that cost once per
+task. A "warm template" pre-pays it once for the whole machine.
+
+```sh
+# One-time setup (per device/runtime pair you actually use):
+vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
+
+# Now every task that pins that runtime saves ~21 s on its first
+# `vch test` — the per-task clone inherits the primed caches.
+vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
+vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
+
+# Inspect what's currently cached:
+vch sim warm-template list
+
+# Free the disk back when you don't need it any more:
+vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
+```
+
+Lifetime is **decoupled** from any task. `vch remove` and
+`vch doctor --clean` never touch warm templates — you create them,
+you delete them. `vch doctor` lists them so you can spot stale or
+booted ones, but never auto-cleans (a clean would silently destroy
+the priming work). The `--runtime` argument is mandatory because
+different runtimes for the same device produce different warm
+templates; without a pin, vch would have nothing unambiguous to look
+up. SPIKE numbers (iPhone 16 + iOS 26.4, N=5 median): cold path
+30.75 s, warm path 9.41 s, savings 21.35 s absolute (69.4 %).
+
 ## Commands
 
 | Command | What it does |
@@ -301,6 +335,7 @@ project ignores and why.
 | `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
 | `vch logs <name> [--test\|--build]` | Print the full xcodebuild log from the task's most recent run. Defaults to `--test`; pass `--build` for the build firehose. Logs are overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
+| `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (#47). A warm template is a primed-then-shutdown simulator that subsequent per-task `vch test` clones inherit caches from, cutting first-sim-spin-up from ~30 s to ~9 s per task. `create <device> --runtime "iOS 26.4"` creates one; `list [--json]` shows what exists; `remove <device> --runtime "iOS 26.4"` deletes one. **Lifetime is decoupled from any task** — `vch remove` and `vch doctor --clean` never touch warm templates; you create and delete them yourself. `vch test --device "<device>" --runtime "iOS X.Y"` automatically picks the matching warm template when one exists. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. `--push` pushes the resolved `--into` branch to its tracked remote (`branch.<into>.remote`, falling back to `origin`); `--push-to <remote>` overrides with an explicit remote. Without either flag `vch land` never contacts a remote. If the post-merge push fails the merge is **not** rolled back — the failure is surfaced as a stderr warning. Only **committed** content is carried over — uncommitted changes, untracked files, and `.gitignore`d artifacts in the worktree are lost when the worktree is removed (use `--keep` + manual copy; see the "Preserving generated artifacts" cookbook recipe). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | Fetch the recorded base branch's upstream and rebase `agent/<name>` onto it. `--merge` switches to `git merge --no-ff` (use only when the task branch has been pushed somewhere a coworker reads from). `--onto <ref>` overrides the base; `--no-fetch` skips the network call; `--allow-dirty` defers the dirty-worktree check to git itself; `--dry-run` prints ahead/behind counts and the planned strategy without writing. All git work runs inside the task worktree, so the main worktree is never touched. Records `lastSync` on success. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--allow-unmerged` force-deletes a branch that isn't fully merged. |

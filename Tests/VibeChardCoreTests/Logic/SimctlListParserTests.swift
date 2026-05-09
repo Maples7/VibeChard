@@ -72,6 +72,20 @@ final class SimctlListParserTests: XCTestCase {
                              SimRuntimeVersion(major: 18, minor: 1))
     }
 
+    /// `iOSRuntimeIdentifier` and `parse(runtimeIdentifier:)` must
+    /// round-trip so the canonical CoreSimulator ID we hand to
+    /// `simctl create` (warm-template path, #47) is byte-identical
+    /// with what `simctl list devices --json` reports back. Likewise
+    /// `dottedLabel` is the source of truth for the human form used
+    /// in warm-template names and `vch test --runtime` accepts.
+    func testRuntimeVersionAccessorsRoundTrip() {
+        let v = SimRuntimeVersion(major: 26, minor: 4)
+        XCTAssertEqual(v.dottedLabel, "iOS 26.4")
+        XCTAssertEqual(v.iOSRuntimeIdentifier,
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-4")
+        XCTAssertEqual(SimRuntimeVersion.parse(runtimeIdentifier: v.iOSRuntimeIdentifier), v)
+    }
+
     func testRejectsTopLevelGarbage() {
         XCTAssertThrowsError(try SimctlListParser.parse("not json"))
         XCTAssertThrowsError(try SimctlListParser.parse(#"{"foo":1}"#))

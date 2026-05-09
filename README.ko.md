@@ -271,6 +271,43 @@ vch rm foo                                       # 그 뒤에 정리
 — 그 답은 당신 프로젝트가 무엇을, 왜 ignore 하고 있는지에 전적
 으로 달려 있기 때문입니다.
 
+### warm 시뮬레이터 템플릿으로 첫 부팅 대기 시간 줄이기
+
+새로 클론된 시뮬레이터에 `vch test` 를 처음 돌릴 때, 그 약 30 초
+의 대기 중 상당 부분은 `simctl create` + 첫 부팅 캐시 워밍이지
+**빌드 자체가 아닙니다**. 같은 머신에서 동일한 `(device, runtime)`
+조합으로 여러 agent 를 동시에 띄우면, 태스크마다 이 비용을 다시
+지불하게 됩니다. "warm 템플릿" 은 그 비용을 한 번만 미리 지불
+해서 머신 전체가 공유하도록 만드는 도구입니다.
+
+```sh
+# 1 회 준비 (실제로 사용하는 device / runtime 쌍마다 한 번씩):
+vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
+
+# 이후 같은 runtime 을 pin 한 태스크는 첫 `vch test` 마다 약 21 초
+# 를 절약합니다 — 태스크용 클론이 워밍된 캐시를 그대로 상속하기
+# 때문입니다.
+vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
+vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
+
+# 현재 캐시된 템플릿 확인:
+vch sim warm-template list
+
+# 더 이상 필요 없으면 디스크 회수:
+vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
+```
+
+warm 템플릿의 라이프사이클은 **어떤 태스크와도 분리**되어 있습니
+다. `vch remove` 도 `vch doctor --clean` 도 warm 템플릿을 건드리
+지 않습니다 — 만드는 것도 당신, 지우는 것도 당신입니다. `vch
+doctor` 는 stale / booted 같은 비정상 상태를 발견할 수 있도록
+나열만 하지, 절대 자동 정리하지 않습니다 (자동 정리는 30 초어치
+워밍 작업을 조용히 날리는 행위가 되니까요). `--runtime` 은 필수
+입니다. 같은 device 라도 runtime 이 다르면 서로 다른 warm 템플릿
+이기 때문에, pin 이 없으면 vch 가 명확히 찾을 수 없습니다. SPIKE
+실측치 (iPhone 16 + iOS 26.4, N=5 중앙값): cold 30.75 초, warm
+9.41 초, 절약 21.35 초 (69.4 %).
+
 ## 명령어
 
 | 명령어 | 동작 |
@@ -287,6 +324,7 @@ vch rm foo                                       # 그 뒤에 정리
 | `vch run   <name> [flags] [-- launch-args]` | 작업에 묶인 시뮬레이터 클론 위에서 앱을 빌드/설치/실행. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일하며, `PRODUCT_BUNDLE_IDENTIFIER` 는 `xcodebuild -showBuildSettings -json` 에서 자동 해석됨. `--` 이후의 인자는 그대로 `simctl launch` 로 전달됨(예: `vch run alpha -- -UsePreviewSampleData`). 필요하면 클론을 부팅하고 `Simulator.app` 을 엽니다. |
 | `vch logs <name> [--test\|--build]` | 태스크의 가장 최근 `vch test` 또는 `vch build` 의 전체 xcodebuild 로그를 출력. 기본값은 `--test`; `--build` 를 넘기면 빌드 firehose 를 출력. 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
+| `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿을 관리 (#47). warm 템플릿은 "booted-once-then-shutdown" 으로 첫 부팅 캐시를 워밍해 둔 시뮬레이터로, 이후의 `vch test` 태스크 클론들이 그 캐시를 상속해 첫 시뮬레이터 부팅을 약 30 초에서 약 9 초로 줄여줍니다. `create <device> --runtime "iOS 26.4"` 로 생성, `list [--json]` 으로 확인, `remove <device> --runtime "iOS 26.4"` 로 삭제. **라이프사이클은 어떤 태스크와도 분리되어 있어** — `vch remove` 와 `vch doctor --clean` 모두 warm 템플릿을 건드리지 않으며 본인이 관리합니다. `vch test --device "<device>" --runtime "iOS X.Y"` 는 일치하는 warm 템플릿이 있으면 자동으로 선택합니다. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. `--push` 는 머지가 끝난 후 해석된 `--into` 브랜치를 추적 remote (`branch.<into>.remote`, 없으면 `origin`) 로 푸시한다. `--push-to <remote>` 는 명시적으로 remote 를 지정하는 우회. 둘 다 없으면 `vch land` 는 네트워크를 절대 건드리지 않는다. 푸시가 실패해도 머지는 **롤백되지 않는다** — 실패 메시지는 stderr warning 으로 표시된다. **커밋된** 내용만 옮겨갑니다 — 커밋되지 않은 변경, untracked 파일, `.gitignore` 로 제외된 산출물은 worktree 와 함께 삭제됩니다 (`--keep` + 수동 복사; cookbook 의 「`vch land` 시 생성된 산출물 보존하기」 참고). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 기록된 기본 브랜치의 upstream 을 fetch 하고 `agent/<name>` 을 그 위에 rebase. `--merge` 는 `git merge --no-ff` 사용 (태스크 브랜치가 동료가 읽는 곳에 push 된 경우에만 권장). `--onto <ref>` 로 기본 변경, `--no-fetch` 로 네트워크 스킵, `--allow-dirty` 는 더티 worktree 검사를 git 에 위임, `--dry-run` 은 ahead/behind 와 계획 전략만 출력하고 아무 것도 쓰지 않음. 모든 git 작업은 태스크 worktree 안에서 실행되어 메인 worktree 는 절대 건드리지 않음. 성공 시 `lastSync` 를 기록. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. |

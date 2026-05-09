@@ -38,6 +38,12 @@ public struct BugReportService: Sendable {
     public let fs: FileSystem
     public let git: GitClient
     public let runner: ProcessRunner
+    /// Source for the warm-templates.json entry (#47). Optional only
+    /// because the existing tests construct `BugReportService` without
+    /// caring about simulator state — production callers always pass
+    /// `DiskSimctlClient()`. When `nil`, the warm-templates entry is
+    /// silently skipped.
+    public let simctl: SimctlClient?
     /// Injected so tests can pin generated timestamps.
     public let now: @Sendable () -> Date
     /// Injected so tests can pretend to run as a different user
@@ -54,6 +60,7 @@ public struct BugReportService: Sendable {
         git: GitClient,
         fs: FileSystem = DiskFileSystem(),
         runner: ProcessRunner = DiskProcessRunner(),
+        simctl: SimctlClient? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         homeDir: @escaping @Sendable () -> String = { NSHomeDirectory() },
         lastTestLogTailBytes: Int = 256 * 1024
@@ -62,6 +69,7 @@ public struct BugReportService: Sendable {
         self.fs = fs
         self.git = git
         self.runner = runner
+        self.simctl = simctl
         self.now = now
         self.homeDir = homeDir
         self.lastTestLogTailBytes = lastTestLogTailBytes
@@ -168,6 +176,26 @@ public struct BugReportService: Sendable {
             scrub: homeMap
         ))
 
+        // -- warm-templates inventory (#47) --
+        // Listed as a JSON file so an offline reviewer can see whether
+        // any warm templates exist and what state they're in. Does
+        // NOT include the underlying simctl device data dirs (those
+        // live under ~/Library/Developer/CoreSimulator/Devices/<UDID>/
+        // and may contain provisioning profiles or other PII).
+        if let simctl = self.simctl {
+            let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
+            do {
+                let rows = try sim.listWarmTemplates()
+                let json = try renderWarmTemplatesJSON(rows: rows)
+                entries.append(BugReportEntry(
+                    path: "warm-templates.json",
+                    data: scrub(json, map: homeMap)
+                ))
+            } catch {
+                perTaskNotes.append("warm-templates listing failed: \(error)")
+            }
+        }
+
         // -- MANIFEST.txt at top of archive --
         let manifest = manifestText(entries: entries, notes: perTaskNotes)
         entries.insert(
@@ -242,6 +270,18 @@ public struct BugReportService: Sendable {
             body += "error: \(error)\n"
         }
         return BugReportEntry(path: path, data: scrub(body, map: map))
+    }
+
+    /// Render `warm-templates.json` body for the bug-report tarball
+    /// (#47). The JSON shape is owned by `WarmTemplateRecord`'s
+    /// Encodable conformance, so this output stays byte-identical
+    /// with `vch sim warm-template list --json` and `vch doctor
+    /// --json`'s `warmTemplates[]` field.
+    private func renderWarmTemplatesJSON(rows: [WarmTemplateRecord]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(rows)
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 
     private func manifestText(

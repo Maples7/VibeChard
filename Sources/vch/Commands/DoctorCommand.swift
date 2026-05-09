@@ -111,6 +111,13 @@ struct DoctorCommand: ParsableCommand {
             CLIBridge.eprintln("  (run `vch sim clone <task> --device …` or `vch repair`)")
         }
 
+        if !report.warmTemplates.isEmpty {
+            print("warm templates (#47, lifetime is user-managed — doctor never auto-cleans):")
+            for t in report.warmTemplates {
+                print("  - \(t.deviceName) / \(t.runtimeLabel)  [\(t.humanHealthLabel)]  (\(t.udid.prefix(8))…)")
+            }
+        }
+
         if let clean {
             for name in clean.deletedClones {
                 CLIBridge.eprintln("→ deleted '\(name)'")
@@ -146,6 +153,10 @@ struct DoctorCommand: ParsableCommand {
             let stateProblems: [String]
             let orphanClones: [OrphanJSON]
             let staleBindings: [StaleJSON]
+            // Encoded directly via WarmTemplateRecord's Encodable
+            // conformance — sharing the schema with `vch sim
+            // warm-template list --json` and the bug-report tarball.
+            let warmTemplates: [WarmTemplateRecord]
             let cleaned: CleanJSON?
         }
         let out = Out(
@@ -160,6 +171,7 @@ struct DoctorCommand: ParsableCommand {
                 StaleJSON(taskName: $0.taskName, cloneUDID: $0.cloneUDID,
                           cloneName: $0.cloneName)
             },
+            warmTemplates: report.warmTemplates,
             cleaned: clean.map { c in
                 CleanJSON(
                     deletedClones: c.deletedClones,
@@ -194,7 +206,8 @@ struct DoctorCommand: ParsableCommand {
     private func runBugReport(workspace: Workspace, cwd: String) throws {
         let service = BugReportService(
             workspace: workspace,
-            git: DiskGitClient()
+            git: DiskGitClient(),
+            simctl: DiskSimctlClient()
         )
         let entries = try service.collect()
 

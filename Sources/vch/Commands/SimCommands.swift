@@ -5,9 +5,12 @@ import VibeChardCore
 // MARK: - vch sim (parent)
 
 /// `vch sim` is a parent command grouping the four explicit simulator
-/// verbs from Q9. None of them are needed for the day-to-day "build
-/// + test" flow (M5's lazy clone covers that); these exist for setup
-/// scripts and recovery.
+/// verbs from Q9, plus the warm-template management subgroup added
+/// for #47. None of the per-task verbs are needed for the day-to-day
+/// "build + test" flow (M5's lazy clone covers that); they exist for
+/// setup scripts and recovery. The `warm-template` subgroup manages
+/// shared, lifetime-decoupled simulator templates whose first-boot
+/// caches are pre-primed.
 struct SimCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "sim",
@@ -17,6 +20,7 @@ struct SimCommand: ParsableCommand {
             SimEraseCommand.self,
             SimShutdownCommand.self,
             SimInfoCommand.self,
+            SimWarmTemplateCommand.self,
         ]
     )
 }
