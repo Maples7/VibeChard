@@ -8,6 +8,24 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Fixed
+- `vch test` now reports the real passed/failed count for
+  swift-testing targets (#45). The previous summary line printed
+  `✓ 0 passed in ?` for any target that uses `@Suite` / `@Test` /
+  `#expect` because the streaming xcodebuild parser only
+  recognized the XCTest stdout protocol. We now read the
+  `.xcresult` bundle vch already writes via `-resultBundlePath`
+  through `xcrun xcresulttool get test-results summary` and
+  prefer that count when the streaming parser came back empty.
+  Streaming parser stays in place as a fallback for the case
+  where xcodebuild aborted before producing a bundle (e.g. a
+  compile failure). Failure detail (suite, test name, message,
+  and `testIdentifierString`) is also surfaced from xcresult so
+  the `✗ Suite/testCase` block renders for swift-testing
+  failures too. Pure XCTest output is unchanged — the streaming
+  parser still owns the per-suite rollup lines and the `file:line`
+  failure references it can extract from XCTest stdout.
+
 ### Added
 - `vch sync <name>` brings a task branch back up to date with its
   recorded base after fetching the upstream. Default strategy is
