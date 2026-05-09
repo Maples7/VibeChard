@@ -22,6 +22,7 @@ public struct BugReportEntry: Equatable, Sendable {
 /// Inclusions per Plan Q10:
 ///   • Per-task `.vch/state.json`             (ground truth)
 ///   • Per-task `.vch/last-test.log`           (capped at 256 KiB)
+///   • Per-task `.vch/last-build.log`          (capped at 256 KiB)
 ///   • `git worktree list --porcelain`         (vch's view of the world)
 ///   • `sw_vers`, `xcode-select -p`,           (host toolchain)
 ///     `xcrun -f xcodebuild`, `swift --version`
@@ -105,6 +106,22 @@ public struct BugReportService: Sendable {
                 }
                 entries.append(BugReportEntry(
                     path: "tasks/\(raw)/last-test.log",
+                    data: scrub(capped, map: homeMap)
+                ))
+            }
+
+            // #48: include last-build.log on the same terms as
+            // last-test.log — same cap, same scrub, best-effort.
+            let buildLogPath = PathOps.join(entry.path, Workspace.lastBuildLogRelativePath)
+            if fs.fileExists(at: buildLogPath), let data = try? fs.readFile(at: buildLogPath) {
+                let capped: Data
+                if data.count > lastTestLogTailBytes {
+                    capped = data.suffix(lastTestLogTailBytes)
+                } else {
+                    capped = data
+                }
+                entries.append(BugReportEntry(
+                    path: "tasks/\(raw)/last-build.log",
                     data: scrub(capped, map: homeMap)
                 ))
             }
