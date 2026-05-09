@@ -8,24 +8,7 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
-### Fixed
-- `vch land` now deletes the per-task simulator clone after a
-  successful merge + auto-`rm`, matching `vch rm`'s long-standing
-  behaviour (#61). Previously the simulator-cleanup logic lived
-  only in the `vch rm` CLI handler, so every successful `vch land`
-  silently left an orphan device behind in `simctl list` (≈ 3 GB
-  per task) that only `vch doctor --clean` could reap. The new
-  cleanup runs in `LandService` so both code paths share the same
-  contract:
-  - skipped under `--keep` (task is still alive),
-  - skipped under the new `--keep-sim` flag (symmetric with
-    `vch rm --keep-sim`),
-  - skipped on `--dry-run`,
-  - skipped if auto-`rm` itself failed (worktree still on disk →
-    user may retry),
-  - non-fatal if `simctl delete` itself fails: the merge is never
-    rolled back; `vch land` prints a warning and points the user
-    at `vch doctor --clean`.
+## [0.4.0] - 2026-05-09
 
 ### Added
 - `vch land --keep-sim` — keep the per-task simulator clone even
@@ -59,30 +42,6 @@ The English README is the source of truth; localized READMEs may lag.
     tvOS and visionOS are likely in the same ballpark; the SPIKE
     methodology lives in PR #58 and can be re-run by users with
     those runtimes installed.
-
-### Changed
-- `SimRuntimeVersion` carries a `platform: Platform` discriminator
-  (`iOS` / `watchOS` / `tvOS` / `visionOS`) instead of being iOS-only
-  (#58). Existing call-sites using the positional
-  `SimRuntimeVersion(major: 26, minor: 4)` constructor keep
-  compiling — the platform parameter defaults to `.iOS` to preserve
-  source compatibility. `iOSRuntimeIdentifier` is renamed to
-  `runtimeIdentifier` to stop lying when called on non-iOS values.
-  `dottedLabel` now emits the platform name (e.g. `watchOS 11.5`)
-  instead of the hardcoded `iOS X.Y` prefix. The `--runtime` parser
-  is now case-insensitive on the platform prefix (`ios 26.4` and
-  `iOS 26.4` resolve identically).
-- `vch test --runtime` / `vch run --runtime` / `vch build --runtime`
-  / `vch sim warm-template create --runtime` / `vch sim warm-template
-  remove --runtime` help text now lists watchOS / tvOS / visionOS
-  examples alongside the iOS ones.
-- The `simulatorTemplateNotFound` "available: …" hint emitted by
-  `pickNewestTemplate` now uses the platform-aware
-  `dottedLabel` so non-iOS pickers see correctly-prefixed runtime
-  labels in the diagnostic. Was previously hardcoded to `iOS X.Y`
-  even when the available runtimes were watchOS or tvOS.
-
-### Added
 - `vch sim warm-template {create,list,remove}` — shared warm
   simulator templates (#47). A warm template is a simulator device
   that vch keeps in shutdown state with first-boot caches already
@@ -158,43 +117,6 @@ The English README is the source of truth; localized READMEs may lag.
   args passed to the most recent `vch test` invocation. `nil`
   on legacy state.json files written before this field existed;
   `[]` when the run had no extras (#46).
-
-### Changed
-- `vch build` now mirrors `vch test`'s concise-summary path
-  instead of streaming the full xcodebuild firehose to stdout
-  (#48). The default output is a single trailing line
-  (`✓ build succeeded in 12.4s   (3 warnings)   ** BUILD SUCCEEDED **`
-  on success, an error list followed by
-  `✗ build failed in 8.1s   (2 errors, 5 warnings)   ** BUILD FAILED **`
-  on failure). The full firehose is always tee'd to
-  `<wt>/.vch/last-build.log` and recoverable via the new
-  `vch logs <name> --build`. Pass `--verbose` to mirror
-  xcodebuild's full output to stdout the way `vch build` used
-  to. The build log is bundled into `vch doctor --bug-report`
-  on the same terms as `last-test.log` (256 KiB cap, `$HOME`
-  scrubbed).
-- `vch logs <name>` accepts `--build` alongside `--test` (mutually
-  exclusive). Default remains `--test` when neither is passed (#48).
-
-### Fixed
-- `vch test` now reports the real passed/failed count for
-  swift-testing targets (#45). The previous summary line printed
-  `✓ 0 passed in ?` for any target that uses `@Suite` / `@Test` /
-  `#expect` because the streaming xcodebuild parser only
-  recognized the XCTest stdout protocol. We now read the
-  `.xcresult` bundle vch already writes via `-resultBundlePath`
-  through `xcrun xcresulttool get test-results summary` and
-  prefer that count when the streaming parser came back empty.
-  Streaming parser stays in place as a fallback for the case
-  where xcodebuild aborted before producing a bundle (e.g. a
-  compile failure). Failure detail (suite, test name, message,
-  and `testIdentifierString`) is also surfaced from xcresult so
-  the `✗ Suite/testCase` block renders for swift-testing
-  failures too. Pure XCTest output is unchanged — the streaming
-  parser still owns the per-suite rollup lines and the `file:line`
-  failure references it can extract from XCTest stdout.
-
-### Added
 - `vch sync <name>` brings a task branch back up to date with its
   recorded base after fetching the upstream. Default strategy is
   `git rebase`; pass `--merge` for `git merge --no-ff` (use when
@@ -215,6 +137,41 @@ The English README is the source of truth; localized READMEs may lag.
   `--all` deferred to a follow-up.
 
 ### Changed
+- `SimRuntimeVersion` carries a `platform: Platform` discriminator
+  (`iOS` / `watchOS` / `tvOS` / `visionOS`) instead of being iOS-only
+  (#58). Existing call-sites using the positional
+  `SimRuntimeVersion(major: 26, minor: 4)` constructor keep
+  compiling — the platform parameter defaults to `.iOS` to preserve
+  source compatibility. `iOSRuntimeIdentifier` is renamed to
+  `runtimeIdentifier` to stop lying when called on non-iOS values.
+  `dottedLabel` now emits the platform name (e.g. `watchOS 11.5`)
+  instead of the hardcoded `iOS X.Y` prefix. The `--runtime` parser
+  is now case-insensitive on the platform prefix (`ios 26.4` and
+  `iOS 26.4` resolve identically).
+- `vch test --runtime` / `vch run --runtime` / `vch build --runtime`
+  / `vch sim warm-template create --runtime` / `vch sim warm-template
+  remove --runtime` help text now lists watchOS / tvOS / visionOS
+  examples alongside the iOS ones.
+- The `simulatorTemplateNotFound` "available: …" hint emitted by
+  `pickNewestTemplate` now uses the platform-aware
+  `dottedLabel` so non-iOS pickers see correctly-prefixed runtime
+  labels in the diagnostic. Was previously hardcoded to `iOS X.Y`
+  even when the available runtimes were watchOS or tvOS.
+- `vch build` now mirrors `vch test`'s concise-summary path
+  instead of streaming the full xcodebuild firehose to stdout
+  (#48). The default output is a single trailing line
+  (`✓ build succeeded in 12.4s   (3 warnings)   ** BUILD SUCCEEDED **`
+  on success, an error list followed by
+  `✗ build failed in 8.1s   (2 errors, 5 warnings)   ** BUILD FAILED **`
+  on failure). The full firehose is always tee'd to
+  `<wt>/.vch/last-build.log` and recoverable via the new
+  `vch logs <name> --build`. Pass `--verbose` to mirror
+  xcodebuild's full output to stdout the way `vch build` used
+  to. The build log is bundled into `vch doctor --bug-report`
+  on the same terms as `last-test.log` (256 KiB cap, `$HOME`
+  scrubbed).
+- `vch logs <name>` accepts `--build` alongside `--test` (mutually
+  exclusive). Default remains `--test` when neither is passed (#48).
 - `state.json` gains an optional `lastSync` record (no schema
   bump; additive optional field, follows the `lastBuild` /
   `lastTest` / `lastExec` precedent). `vch state` and
@@ -228,6 +185,41 @@ The English README is the source of truth; localized READMEs may lag.
   0.3.0). Use `--allow-dirty` for a dirty worktree and
   `--allow-unmerged` for an unmerged branch (or both together).
   Pre-1.0 minors are allowed to break per CONTRIBUTING.md.
+
+### Fixed
+- `vch land` now deletes the per-task simulator clone after a
+  successful merge + auto-`rm`, matching `vch rm`'s long-standing
+  behaviour (#61). Previously the simulator-cleanup logic lived
+  only in the `vch rm` CLI handler, so every successful `vch land`
+  silently left an orphan device behind in `simctl list` (≈ 3 GB
+  per task) that only `vch doctor --clean` could reap. The new
+  cleanup runs in `LandService` so both code paths share the same
+  contract:
+  - skipped under `--keep` (task is still alive),
+  - skipped under the new `--keep-sim` flag (symmetric with
+    `vch rm --keep-sim`),
+  - skipped on `--dry-run`,
+  - skipped if auto-`rm` itself failed (worktree still on disk →
+    user may retry),
+  - non-fatal if `simctl delete` itself fails: the merge is never
+    rolled back; `vch land` prints a warning and points the user
+    at `vch doctor --clean`.
+- `vch test` now reports the real passed/failed count for
+  swift-testing targets (#45). The previous summary line printed
+  `✓ 0 passed in ?` for any target that uses `@Suite` / `@Test` /
+  `#expect` because the streaming xcodebuild parser only
+  recognized the XCTest stdout protocol. We now read the
+  `.xcresult` bundle vch already writes via `-resultBundlePath`
+  through `xcrun xcresulttool get test-results summary` and
+  prefer that count when the streaming parser came back empty.
+  Streaming parser stays in place as a fallback for the case
+  where xcodebuild aborted before producing a bundle (e.g. a
+  compile failure). Failure detail (suite, test name, message,
+  and `testIdentifierString`) is also surfaced from xcresult so
+  the `✗ Suite/testCase` block renders for swift-testing
+  failures too. Pure XCTest output is unchanged — the streaming
+  parser still owns the per-suite rollup lines and the `file:line`
+  failure references it can extract from XCTest stdout.
 
 ### Documentation
 - `vch land --help` and the README now spell out that `vch land`
@@ -735,7 +727,8 @@ Initial public release. Scope is the v1 plan locked in
 - Three fixed targets: `VibeChardCore`, `vch`, `vch-xcodebuild-shim`.
 - No config files in v1; per-worktree state lives in `.vch/state.json`.
 
-[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Maples7/VibeChard/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Maples7/VibeChard/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Maples7/VibeChard/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/Maples7/VibeChard/compare/v0.1.2...v0.1.3
