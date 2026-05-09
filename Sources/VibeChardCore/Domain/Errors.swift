@@ -83,6 +83,23 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// whether the hint mentions `git rebase --continue` or
     /// `git merge --continue`. (#25)
     case syncRebaseConflict(taskName: String, worktreePath: String, mode: SyncPlan.Strategy)
+    /// `vch test --rerun` / `--rerun-failed` was invoked but the
+    /// task has no recorded `lastTest` — i.e. the user never ran
+    /// `vch test <name>` once. (#46)
+    case testNoPriorRun(taskName: String)
+    /// `vch test --rerun-failed` was invoked but the most recent run
+    /// has no recorded failures (either the run was clean or the
+    /// xcresult bundle is missing). (#46)
+    case testNoPriorFailures(taskName: String)
+    /// `vch test` saw both `--rerun` and `--rerun-failed`. They are
+    /// mutually exclusive. (#46)
+    case testConflictingRerunFlags
+    /// `vch test` saw `--rerun` or `--rerun-failed` together with
+    /// positional `extraArgs` (i.e. anything after `--`). The two
+    /// contracts are incompatible: `--rerun*` reuses the recorded
+    /// extra args verbatim, so passing fresh ones would be ignored
+    /// or overridden. (#46)
+    case testRerunWithExtraArgs
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -166,6 +183,14 @@ public enum VibeChardError: Error, CustomStringConvertible {
             let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let suffix = trimmed.isEmpty ? "" : ": \(trimmed)"
             return "command failed (\(cmd), exit \(code))\(suffix)"
+        case let .testNoPriorRun(taskName):
+            return "refusing to rerun: task '\(taskName)' has no recorded test run yet — run `vch test \(taskName)` once first"
+        case let .testNoPriorFailures(taskName):
+            return "refusing --rerun-failed: task '\(taskName)' has no failed tests in the most recent run (run `vch test \(taskName) --rerun` to repeat the whole invocation)"
+        case .testConflictingRerunFlags:
+            return "--rerun and --rerun-failed are mutually exclusive"
+        case .testRerunWithExtraArgs:
+            return "--rerun / --rerun-failed cannot be combined with positional xcodebuild args after `--`: rerun reuses the recorded args verbatim"
         }
     }
 }

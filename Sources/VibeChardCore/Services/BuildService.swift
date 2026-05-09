@@ -212,14 +212,15 @@ public struct BuildService: Sendable {
     }
 
     public func recordTest(task: TaskName, outcome: BuildOutcome,
-                           scheme: String?) throws {
+                           scheme: String?, extraArgs: [String]? = nil) throws {
         try mutateState(task: task) { state in
             if let scheme { state.scheme = scheme }
             state.lastTest = TaskState.TestRecord(
                 finishedAt: outcome.finishedAt,
                 durationSeconds: outcome.durationSeconds,
                 success: outcome.success,
-                resultBundlePath: workspace.resultBundlePath(for: task)
+                resultBundlePath: workspace.resultBundlePath(for: task),
+                extraArgs: extraArgs
             )
         }
     }

@@ -128,12 +128,20 @@ public struct TaskState: Codable, Equatable, Sendable {
         public let durationSeconds: Double
         public let success: Bool
         public let resultBundlePath: String?
+        /// xcodebuild extra args after `--` from the most recent
+        /// invocation, captured so `vch test --rerun` can replay the
+        /// exact same call. `nil` when this record was written by a
+        /// vch ≤ v0.3.0 that didn't persist the field; `[]` when the
+        /// run had no extra args. (#46)
+        public let extraArgs: [String]?
 
-        public init(finishedAt: Date, durationSeconds: Double, success: Bool, resultBundlePath: String?) {
+        public init(finishedAt: Date, durationSeconds: Double, success: Bool,
+                    resultBundlePath: String?, extraArgs: [String]? = nil) {
             self.finishedAt = finishedAt
             self.durationSeconds = durationSeconds
             self.success = success
             self.resultBundlePath = resultBundlePath
+            self.extraArgs = extraArgs
         }
     }
 
