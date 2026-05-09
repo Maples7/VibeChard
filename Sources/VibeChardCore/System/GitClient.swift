@@ -136,6 +136,14 @@ public protocol GitClient: Sendable {
     /// or remap to a domain error). Used by `vch sync` to record the
     /// resolved base SHA in `lastSync.baseSHA`. (#25)
     func revParse(repoCwd: String, ref: String) throws -> String
+
+    /// `git push <remote> <branch>` run in `repoCwd`. Throws
+    /// `externalCommandFailed` on any non-zero exit (network down,
+    /// non-fast-forward, unknown remote, missing upstream perms).
+    /// Used by `vch land --push` after a successful merge — the
+    /// caller decides whether to surface the failure as a warning
+    /// (the merge already landed locally) or escalate. (#49)
+    func push(repoCwd: String, remote: String, branch: String) throws
 }
 
 /// Merge strategy for `GitClient.merge`. Mirrors `vch land`'s
@@ -453,6 +461,15 @@ public struct DiskGitClient: GitClient {
         )
         try requireSuccess(result, label: "git rev-parse \(ref)")
         return result.stdoutTrimmed
+    }
+
+    public func push(repoCwd: String, remote: String, branch: String) throws {
+        let result = try runner.run(
+            gitPath,
+            args: ["push", remote, branch],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git push \(remote) \(branch)")
     }
 
     private func requireSuccess(_ result: ProcessResult, label: String) throws {

@@ -58,6 +58,14 @@ struct LandCommand: ParsableCommand {
           help: "Print the planned merge but don't modify any branches.")
     var dryRun: Bool = false
 
+    @Flag(name: .long,
+          help: "After a successful merge, push the resolved --into branch to its tracked remote (`branch.<into>.remote`, falling back to 'origin'). Never publishes anything unless asked.")
+    var push: Bool = false
+
+    @Option(name: .long,
+            help: "After a successful merge, push the resolved --into branch to <remote>. Implies --push; takes precedence over --push when both are passed.")
+    var pushTo: String?
+
     func run() throws {
         try CLIBridge.run {
             let task = try TaskName(name)
@@ -72,6 +80,15 @@ struct LandCommand: ParsableCommand {
                 : squash ? .squash
                 : .noFF
 
+            let pushSpec: LandService.Push?
+            if let remote = pushTo {
+                pushSpec = .explicit(remote)
+            } else if push {
+                pushSpec = .defaultRemote
+            } else {
+                pushSpec = nil
+            }
+
             let service = LandService(workspace: workspace, git: DiskGitClient())
             let outcome = try service.land(task, options: .init(
                 into: into,
@@ -79,7 +96,8 @@ struct LandCommand: ParsableCommand {
                 message: message,
                 allowDirty: allowDirty,
                 dryRun: dryRun,
-                keep: keep
+                keep: keep,
+                push: pushSpec
             ))
 
             printOutcome(outcome, taskName: task.raw)
@@ -121,6 +139,12 @@ struct LandCommand: ParsableCommand {
             CLIBridge.eprintln("        run `vch rm \(taskName)` after fixing the issue")
         } else {
             print("  worktree kept (--keep)")
+        }
+        if outcome.pushed, let remote = outcome.pushRemote {
+            print("✓ pushed '\(outcome.into)' to '\(remote)'")
+        } else if let err = outcome.pushError, let remote = outcome.pushRemote {
+            CLIBridge.eprintln("warning: merge succeeded but push to '\(remote)' failed: \(err)")
+            CLIBridge.eprintln("        the merge already landed locally; rerun `git push \(remote) \(outcome.into)` after fixing the issue")
         }
     }
 }

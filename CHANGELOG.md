@@ -9,6 +9,16 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch land --push` and `vch land --push-to <remote>` push the
+  resolved `--into` branch to a remote after the merge succeeds
+  (#49). `--push` resolves the remote via `branch.<into>.remote`
+  config, falling back to `origin` when no upstream is configured.
+  `--push-to=<remote>` overrides and takes precedence over `--push`.
+  Without either flag `vch land` never contacts a remote — the
+  merge stays purely local. If the post-merge push fails (network,
+  non-fast-forward, missing perms), the merge is **not** rolled
+  back; the failure is surfaced as a stderr warning that includes
+  the exact `git push <remote> <branch>` command to retry.
 - `vch test --rerun` replays the last `vch test <name>` invocation
   verbatim — the prior `xcodebuild` extra args (anything passed
   after `--`) are now persisted into `.vch/state.json` on every

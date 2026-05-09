@@ -292,4 +292,18 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
         // distinguishable answer.
         return String(repeating: "a", count: 40 - ref.count) + ref
     }
+
+    // MARK: - Land --push (#49) protocol surface
+
+    /// Recorded `push` calls.
+    var pushCalls: [(repoCwd: String, remote: String, branch: String)] = []
+    /// If non-nil, `push` throws this error.
+    var pushError: VibeChardError?
+
+    func push(repoCwd: String, remote: String, branch: String) throws {
+        if let error = pushError {
+            throw error
+        }
+        pushCalls.append((repoCwd, remote, branch))
+    }
 }
