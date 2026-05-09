@@ -297,6 +297,15 @@ vch sim warm-template list
 vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
 ```
 
+같은 레시피가 **watchOS / tvOS / visionOS** 에서도 동작합니다
+(#58). device 이름과 runtime 라벨만 바꾸면 됩니다:
+
+```sh
+vch sim warm-template create "Apple Watch Series 10 (46mm)" --runtime "watchOS 11.5"
+vch sim warm-template create "Apple TV 4K (3rd generation)" --runtime "tvOS 18.0"
+vch sim warm-template create "Apple Vision Pro"             --runtime "visionOS 2.5"
+```
+
 warm 템플릿의 라이프사이클은 **어떤 태스크와도 분리**되어 있습니
 다. `vch remove` 도 `vch doctor --clean` 도 warm 템플릿을 건드리
 지 않습니다 — 만드는 것도 당신, 지우는 것도 당신입니다. `vch
@@ -304,9 +313,20 @@ doctor` 는 stale / booted 같은 비정상 상태를 발견할 수 있도록
 나열만 하지, 절대 자동 정리하지 않습니다 (자동 정리는 30 초어치
 워밍 작업을 조용히 날리는 행위가 되니까요). `--runtime` 은 필수
 입니다. 같은 device 라도 runtime 이 다르면 서로 다른 warm 템플릿
-이기 때문에, pin 이 없으면 vch 가 명확히 찾을 수 없습니다. SPIKE
-실측치 (iPhone 16 + iOS 26.4, N=5 중앙값): cold 30.75 초, warm
-9.41 초, 절약 21.35 초 (69.4 %).
+이기 때문에, pin 이 없으면 vch 가 명확히 찾을 수 없습니다.
+
+플랫폼별 실측 절감 (중앙값):
+
+| 플랫폼 | cold path | warm path | 절약 |
+|---|---|---|---|
+| iOS (iPhone 16 + iOS 26.4, N=5) | 30.75 초 | 9.41 초 | 21.35 초 (69.4 %) |
+| watchOS (Apple Watch Series 10 (46mm) + watchOS 11.5, N=3) | 31.0 초 | 23.3 초 | 7.7 초 (24.9 %) |
+
+watchOS 의 첫 부팅은 iOS 보다 캐시 워밍 작업이 적기 때문에 절대
+값 절감이 더 작습니다 — 그래도 2 초 노이즈 플로어보다는 충분히
+크니 의미는 있습니다. tvOS 와 visionOS 도 비슷한 자릿수가 될 것
+으로 보입니다 (SPIKE 방법은 PR #58 에 있으니, 해당 runtime 이
+설치되어 있다면 직접 재현 가능합니다).
 
 ## 명령어
 
@@ -319,12 +339,12 @@ doctor` 는 stale / booted 같은 비정상 상태를 발견할 수 있도록
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
 | `vch <name>` | `vch exec <name> -- $SHELL` 의 단축형 — 격리 환경 변수 + `.vch/bin` PATH shim 이 활성화된 셸 진입. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` 는 동일 디바이스 템플릿이 여러 iOS 런타임과 공존할 때 런타임을 고정. 기본값은 간결한 요약(`✓ build succeeded in 12.4s   (3 warnings)`)만 출력하고, `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-build.log` 로 tee 됨. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` (또는 `'watchOS 11.5'` / `'tvOS 18.0'` / `'visionOS 2.5'`) 는 동일 디바이스 템플릿이 여러 런타임과 공존할 때 런타임을 고정. 기본값은 간결한 요약(`✓ build succeeded in 12.4s   (3 warnings)`)만 출력하고, `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-build.log` 로 tee 됨. |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. 기본값은 간결한 요약(스위트당 한 줄, 실패 테스트는 file:line과 단언 메시지를 함께 인라인 표시)만 출력하고 `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-test.log` 로 tee 됨. 카운트는 xcresult 번들에서 읽으므로 swift-testing(`@Suite`/`@Test`/`#expect`) 타깃도 정확하게 집계됨. `--rerun` 은 직전 호출을 그대로 재실행하고, `--rerun-failed` 는 기록된 xcresult 에서 실패한 테스트 ID 만 `-only-testing:` 으로 재실행. |
 | `vch run   <name> [flags] [-- launch-args]` | 작업에 묶인 시뮬레이터 클론 위에서 앱을 빌드/설치/실행. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일하며, `PRODUCT_BUNDLE_IDENTIFIER` 는 `xcodebuild -showBuildSettings -json` 에서 자동 해석됨. `--` 이후의 인자는 그대로 `simctl launch` 로 전달됨(예: `vch run alpha -- -UsePreviewSampleData`). 필요하면 클론을 부팅하고 `Simulator.app` 을 엽니다. |
 | `vch logs <name> [--test\|--build]` | 태스크의 가장 최근 `vch test` 또는 `vch build` 의 전체 xcodebuild 로그를 출력. 기본값은 `--test`; `--build` 를 넘기면 빌드 firehose 를 출력. 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
-| `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿을 관리 (#47). warm 템플릿은 "booted-once-then-shutdown" 으로 첫 부팅 캐시를 워밍해 둔 시뮬레이터로, 이후의 `vch test` 태스크 클론들이 그 캐시를 상속해 첫 시뮬레이터 부팅을 약 30 초에서 약 9 초로 줄여줍니다. `create <device> --runtime "iOS 26.4"` 로 생성, `list [--json]` 으로 확인, `remove <device> --runtime "iOS 26.4"` 로 삭제. **라이프사이클은 어떤 태스크와도 분리되어 있어** — `vch remove` 와 `vch doctor --clean` 모두 warm 템플릿을 건드리지 않으며 본인이 관리합니다. `vch test --device "<device>" --runtime "iOS X.Y"` 는 일치하는 warm 템플릿이 있으면 자동으로 선택합니다. |
+| `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿을 관리 (#47, #58). warm 템플릿은 "booted-once-then-shutdown" 으로 첫 부팅 캐시를 워밍해 둔 시뮬레이터로, 이후의 `vch test` 태스크 클론들이 그 캐시를 상속합니다 (iOS 실측: 약 30 초 → 약 9 초; watchOS: 약 31 초 → 약 23 초). iOS / watchOS / tvOS / visionOS 지원. `create <device> --runtime "iOS 26.4"` (또는 `"watchOS 11.5"` / `"tvOS 18.0"` / `"visionOS 2.5"`) 으로 생성, `list [--json]` 으로 확인, `remove <device> --runtime "..."` 로 삭제. **라이프사이클은 어떤 태스크와도 분리되어 있어** — `vch remove` 와 `vch doctor --clean` 모두 warm 템플릿을 건드리지 않으며 본인이 관리합니다. `vch test --device "<device>" --runtime "..."` 는 일치하는 warm 템플릿이 있으면 자동으로 선택합니다. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. `--push` 는 머지가 끝난 후 해석된 `--into` 브랜치를 추적 remote (`branch.<into>.remote`, 없으면 `origin`) 로 푸시한다. `--push-to <remote>` 는 명시적으로 remote 를 지정하는 우회. 둘 다 없으면 `vch land` 는 네트워크를 절대 건드리지 않는다. 푸시가 실패해도 머지는 **롤백되지 않는다** — 실패 메시지는 stderr warning 으로 표시된다. **커밋된** 내용만 옮겨갑니다 — 커밋되지 않은 변경, untracked 파일, `.gitignore` 로 제외된 산출물은 worktree 와 함께 삭제됩니다 (`--keep` + 수동 복사; cookbook 의 「`vch land` 시 생성된 산출물 보존하기」 참고). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 기록된 기본 브랜치의 upstream 을 fetch 하고 `agent/<name>` 을 그 위에 rebase. `--merge` 는 `git merge --no-ff` 사용 (태스크 브랜치가 동료가 읽는 곳에 push 된 경우에만 권장). `--onto <ref>` 로 기본 변경, `--no-fetch` 로 네트워크 스킵, `--allow-dirty` 는 더티 worktree 검사를 git 에 위임, `--dry-run` 은 ahead/behind 와 계획 전략만 출력하고 아무 것도 쓰지 않음. 모든 git 작업은 태스크 worktree 안에서 실행되어 메인 worktree 는 절대 건드리지 않음. 성공 시 `lastSync` 를 기록. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. |

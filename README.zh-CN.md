@@ -283,14 +283,33 @@ vch sim warm-template list
 vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
 ```
 
+同样的写法在 **watchOS、tvOS、visionOS** 上也能用（#58），把
+device 名字和 runtime label 换掉就行：
+
+```sh
+vch sim warm-template create "Apple Watch Series 10 (46mm)" --runtime "watchOS 11.5"
+vch sim warm-template create "Apple TV 4K (3rd generation)" --runtime "tvOS 18.0"
+vch sim warm-template create "Apple Vision Pro"             --runtime "visionOS 2.5"
+```
+
 warm 模板的生命周期**和任何任务都解耦**。`vch remove` 和
 `vch doctor --clean` 永远不会动 warm 模板 —— 你创建，你删除。
 `vch doctor` 会列出它们方便你发现 stale 或被启动的异常状态，
 但绝不会自动清理（自动清理会悄悄抹掉 30 多秒的预热成果）。
 `--runtime` 是必填的，因为同一个 device 不同 runtime 是不同的
-warm 模板；不 pin 的话 vch 没办法精确查找。SPIKE 实测数据
-（iPhone 16 + iOS 26.4，N=5 取中位数）：cold 30.75 s，warm 9.41 s，
-节省 21.35 s，约 69.4%。
+warm 模板；不 pin 的话 vch 没办法精确查找。
+
+各平台实测节省（中位数）：
+
+| 平台 | cold path | warm path | 节省 |
+|---|---|---|---|
+| iOS（iPhone 16 + iOS 26.4，N=5） | 30.75 s | 9.41 s  | 21.35 s（69.4%）|
+| watchOS（Apple Watch Series 10 (46mm) + watchOS 11.5，N=3） | 31.0 s | 23.3 s | 7.7 s（24.9%）|
+
+watchOS 首次启动的缓存预热工作比 iOS 少，所以绝对收益小一些 ——
+但仍然远高于 2 秒的噪声底线，不是白干。tvOS 和 visionOS 收益
+量级估计也差不多（SPIKE 方法在 PR #58 里，你装了对应 runtime
+就能自己跑一遍）。
 
 ## 命令一览
 
@@ -303,12 +322,12 @@ warm 模板；不 pin 的话 vch 没办法精确查找。SPIKE 实测数据
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中打开 worktree。自动识别 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（项目文件用 Xcode，否则用 VS Code）。`--with` 支持 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名（透传给 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆盖默认值。不传 `<name>` 时使用 `$PWD` 所在的 worktree。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` 的语法糖——开一个 shell，隔离环境变量 + `.vch/bin` PATH shim 已就绪。 |
 | `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 对任务的 worktree 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。当项目只有一个共享 scheme 时，`--scheme` 可省（通过 `xcodebuild -list -json` 自动识别）；记录后会在后续调用里复用。`--runtime 'iOS 26.4'` 用来在多个同名设备模板（不同 iOS runtime）共存时锁定要用的 runtime。默认只输出精简摘要（`✓ build succeeded in 12.4s   (3 warnings)`）；`--verbose` 把 xcodebuild 完整输出直通到终端。完整 firehose 始终 tee 到 `<wt>/.vch/last-build.log`。 |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | 对任务的 worktree 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。当项目只有一个共享 scheme 时，`--scheme` 可省（通过 `xcodebuild -list -json` 自动识别）；记录后会在后续调用里复用。`--runtime 'iOS 26.4'`（或 `'watchOS 11.5'`、`'tvOS 18.0'`、`'visionOS 2.5'`）用来在多个同名设备模板（不同 runtime）共存时锁定要用的 runtime。默认只输出精简摘要（`✓ build succeeded in 12.4s   (3 warnings)`）；`--verbose` 把 xcodebuild 完整输出直通到终端。完整 firehose 始终 tee 到 `<wt>/.vch/last-build.log`。 |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 时懒克隆模拟器，后续复用。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`。默认输出只显示精简摘要（每个 suite 一行，失败测试连同 file:line 与断言消息内联展开）；`--verbose` 把 xcodebuild 完整输出直通到终端。完整 firehose 始终 tee 到 `<wt>/.vch/last-test.log`。计数从 xcresult bundle 读取，因此 swift-testing（`@Suite`/`@Test`/`#expect`）目标也会被正确统计。`--rerun` 原样重放上一次调用；`--rerun-failed` 从记录的 xcresult 提取失败的测试 ID，用 `-only-testing:` 仅重跑那些失败用例。 |
 | `vch run   <name> [flags] [-- launch-args]` | 在任务的模拟器克隆上构建、安装并启动 App。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 通过 `xcodebuild -showBuildSettings -json` 自动解析。`--` 之后的参数原样转发给 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要会自动启动模拟器并打开 `Simulator.app`。 |
 | `vch logs <name> [--test\|--build]` | 打印任务最近一次 `vch test` 或 `vch build` 的完整 xcodebuild 日志。默认 `--test`；传 `--build` 看构建 firehose。日志每次运行时覆盖。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆。 |
-| `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模拟器模板（#47）。warm 模板是一个被「booted-once-then-shutdown」预热好的模拟器，后续 `vch test` 单任务克隆会继承它的缓存，把首次模拟器启动从约 30 秒降到约 9 秒。`create <device> --runtime "iOS 26.4"` 创建；`list [--json]` 查看；`remove <device> --runtime "iOS 26.4"` 删除。**生命周期与任何任务都解耦** —— `vch remove` 和 `vch doctor --clean` 都不会动 warm 模板，需要你自己管。`vch test --device "<device>" --runtime "iOS X.Y"` 在匹配的 warm 模板存在时会自动选用。 |
+| `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模拟器模板（#47、#58）。warm 模板是一个被「booted-once-then-shutdown」预热好的模拟器，后续 `vch test` 单任务克隆会继承它的缓存（iOS 实测：约 30 s → 约 9 s；watchOS：约 31 s → 约 23 s）。支持 iOS、watchOS、tvOS、visionOS。`create <device> --runtime "iOS 26.4"`（或 `"watchOS 11.5"`、`"tvOS 18.0"`、`"visionOS 2.5"`）创建；`list [--json]` 查看；`remove <device> --runtime "..."` 删除。**生命周期与任何任务都解耦** —— `vch remove` 和 `vch doctor --clean` 都不会动 warm 模板，需要你自己管。`vch test --device "<device>" --runtime "..."` 在匹配的 warm 模板存在时会自动选用。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。`--push` 把解析后的 `--into` 分支推到其追踪的 remote（`branch.<into>.remote`，没有时回落到 `origin`）；`--push-to <remote>` 显式覆盖 remote。两个标志都没传时 `vch land` 绝不联网。push 失败不会回滚 merge —— 失败信息以 stderr warning 输出。只有**已 commit** 的内容会被搬过去 —— 未提交改动、untracked 文件、被 `.gitignore` 排除的产物会随 worktree 一起被删（用 `--keep` + 手动拷贝；详见 cookbook 「`vch land` 时保留生成的产物」）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 拉取记录的基准分支的 upstream，并把 `agent/<name>` rebase 到其上。`--merge` 改用 `git merge --no-ff`（仅当任务分支已经被推到协作者会读的地方时再用）。`--onto <ref>` 覆盖基准；`--no-fetch` 跳过网络；`--allow-dirty` 把脏 worktree 检查交给 git 自己决定；`--dry-run` 只打印 ahead/behind 与计划策略，不写任何东西。所有 git 操作都在任务 worktree 内执行，绝不动主 worktree。成功后写入 `lastSync`。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。`--allow-dirty` 允许未提交改动；`--allow-unmerged` 强删未合并的分支。 |

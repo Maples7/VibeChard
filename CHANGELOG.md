@@ -9,6 +9,57 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch sim warm-template` now supports **watchOS, tvOS, and visionOS**
+  in addition to iOS (#58). The `--runtime` argument accepts the
+  full set of forms — `iOS 26.4` / `watchOS 11.5` / `tvOS 18.0` /
+  `visionOS 2.5` (dotted), `iOS-26-4` / `watchOS-11-5` / `xrOS-2-5`
+  (dashed), or the raw CoreSimulator identifier
+  (`com.apple.CoreSimulator.SimRuntime.iOS-26-4`,
+  `…SimRuntime.xrOS-2-5`, etc.). Warm templates and per-task clones
+  for non-iOS devices are dropped into the same simctl pool with
+  the same `vch-warm[<device>:<runtime>]` name pattern, so they
+  show up alongside iOS templates in `vch sim warm-template list`
+  and `vch doctor`. Existing iOS warm templates created on
+  v0.3.x continue to work after upgrading — both the on-disk simctl
+  names and `state.json`'s `runtimeIdentifier` parse identically.
+  visionOS uses Apple's internal `xrOS` slug in CoreSimulator runtime
+  identifiers but the human-facing name is `visionOS`; the parser
+  accepts both prefixes (`xrOS-2-5` and `visionOS-2-5` both resolve
+  to the same runtime), and the warm-template name always emits the
+  human form (`vch-warm[Apple Vision Pro:visionOS 2.5]`).
+  - **Empirical savings, watchOS** (Apple Watch Series 10 (46mm) +
+    watchOS 11.5, N=3 median): cold path **31.0 s** → warm path
+    **23.3 s**, savings **7.7 s (24.9 %)**. Lower than the iOS
+    win (21.4 s / 69.4 %, see #47) — watchOS first-boot does less
+    cache priming work — but well above the 2 s noise floor, so
+    the optimisation ships across all four supported platforms.
+    tvOS and visionOS are likely in the same ballpark; the SPIKE
+    methodology lives in PR #58 and can be re-run by users with
+    those runtimes installed.
+
+### Changed
+- `SimRuntimeVersion` carries a `platform: Platform` discriminator
+  (`iOS` / `watchOS` / `tvOS` / `visionOS`) instead of being iOS-only
+  (#58). Existing call-sites using the positional
+  `SimRuntimeVersion(major: 26, minor: 4)` constructor keep
+  compiling — the platform parameter defaults to `.iOS` to preserve
+  source compatibility. `iOSRuntimeIdentifier` is renamed to
+  `runtimeIdentifier` to stop lying when called on non-iOS values.
+  `dottedLabel` now emits the platform name (e.g. `watchOS 11.5`)
+  instead of the hardcoded `iOS X.Y` prefix. The `--runtime` parser
+  is now case-insensitive on the platform prefix (`ios 26.4` and
+  `iOS 26.4` resolve identically).
+- `vch test --runtime` / `vch run --runtime` / `vch build --runtime`
+  / `vch sim warm-template create --runtime` / `vch sim warm-template
+  remove --runtime` help text now lists watchOS / tvOS / visionOS
+  examples alongside the iOS ones.
+- The `simulatorTemplateNotFound` "available: …" hint emitted by
+  `pickNewestTemplate` now uses the platform-aware
+  `dottedLabel` so non-iOS pickers see correctly-prefixed runtime
+  labels in the diagnostic. Was previously hardcoded to `iOS X.Y`
+  even when the available runtimes were watchOS or tvOS.
+
+### Added
 - `vch sim warm-template {create,list,remove}` — shared warm
   simulator templates (#47). A warm template is a simulator device
   that vch keeps in shutdown state with first-boot caches already

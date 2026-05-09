@@ -35,11 +35,11 @@ struct SimWarmTemplateCreateCommand: ParsableCommand {
         abstract: "Create a warm template for <device> + --runtime."
     )
 
-    @Argument(help: "Simulator device template (e.g. \"iPhone 16\").")
+    @Argument(help: "Simulator device template (e.g. \"iPhone 16\", \"Apple Watch Series 10 (46mm)\", \"Apple TV 4K (3rd generation)\", \"Apple Vision Pro\").")
     var device: String
 
     @Option(name: .long,
-            help: "Runtime label (e.g. \"iOS 26.4\"). Required.")
+            help: "Runtime label (e.g. \"iOS 26.4\", \"watchOS 11.5\", \"tvOS 18.0\", \"visionOS 2.5\"). Required.")
     var runtime: String
 
     @Flag(name: .long, help: "Suppress the progress notes on stderr.")
@@ -143,11 +143,11 @@ struct SimWarmTemplateRemoveCommand: ParsableCommand {
         abstract: "Shut down and delete a warm template."
     )
 
-    @Argument(help: "Simulator device template name (e.g. \"iPhone 16\").")
+    @Argument(help: "Simulator device template name (e.g. \"iPhone 16\", \"Apple Watch Series 10 (46mm)\").")
     var device: String
 
     @Option(name: .long,
-            help: "Runtime label (e.g. \"iOS 26.4\"). Required.")
+            help: "Runtime label (e.g. \"iOS 26.4\", \"watchOS 11.5\", \"visionOS 2.5\"). Required.")
     var runtime: String
 
     func run() throws {

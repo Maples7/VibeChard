@@ -112,6 +112,95 @@ final class SimulatorServiceWarmTemplateTests: XCTestCase {
                        "com.apple.CoreSimulator.SimRuntime.iOS-18-6")
     }
 
+    /// #58: warm-template support extends beyond iOS to watchOS,
+    /// tvOS, and visionOS. Exercises the platform-aware code path
+    /// from end to end on a non-iOS pair and asserts the canonical
+    /// name + CoreSimulator slug. visionOS is also covered to lock
+    /// the `xrOS`-vs-`visionOS` translation: name says "visionOS",
+    /// runtime ID says "xrOS".
+    func testCreateWarmTemplateSupportsAllFourPlatforms() throws {
+        // watchOS happy path.
+        let (svcW, _, simctlW) = makeService(
+            allDevicesOverride: [], createReturnsUDID: "WARM-W"
+        )
+        let recW = try svcW.createWarmTemplate(
+            deviceName: "Apple Watch Series 10 (46mm)",
+            runtimeLabel: "watchOS 11.5"
+        )
+        XCTAssertEqual(recW.name,
+                       "vch-warm[Apple Watch Series 10 (46mm):watchOS 11.5]")
+        XCTAssertEqual(recW.deviceName, "Apple Watch Series 10 (46mm)")
+        XCTAssertEqual(recW.runtimeLabel, "watchOS 11.5")
+        XCTAssertEqual(simctlW.createCalls.first?.runtimeID,
+                       "com.apple.CoreSimulator.SimRuntime.watchOS-11-5")
+
+        // tvOS happy path.
+        let (svcT, _, simctlT) = makeService(
+            allDevicesOverride: [], createReturnsUDID: "WARM-T"
+        )
+        let recT = try svcT.createWarmTemplate(
+            deviceName: "Apple TV 4K (3rd generation)",
+            runtimeLabel: "tvOS 18.0"
+        )
+        XCTAssertEqual(recT.name,
+                       "vch-warm[Apple TV 4K (3rd generation):tvOS 18.0]")
+        XCTAssertEqual(simctlT.createCalls.first?.runtimeID,
+                       "com.apple.CoreSimulator.SimRuntime.tvOS-18-0")
+
+        // visionOS — user-facing name uses "visionOS"; the
+        // CoreSimulator runtime slug is `xrOS`.
+        let (svcV, _, simctlV) = makeService(
+            allDevicesOverride: [], createReturnsUDID: "WARM-V"
+        )
+        let recV = try svcV.createWarmTemplate(
+            deviceName: "Apple Vision Pro",
+            runtimeLabel: "visionOS 2.5"
+        )
+        XCTAssertEqual(recV.name, "vch-warm[Apple Vision Pro:visionOS 2.5]")
+        XCTAssertEqual(recV.runtimeLabel, "visionOS 2.5")
+        XCTAssertEqual(simctlV.createCalls.first?.runtimeID,
+                       "com.apple.CoreSimulator.SimRuntime.xrOS-2-5")
+
+        // visionOS via the xrOS prefix (CoreSimulator's identifier
+        // surface): canonical name still says "visionOS".
+        let (svcV2, _, simctlV2) = makeService(
+            allDevicesOverride: [], createReturnsUDID: "WARM-V2"
+        )
+        let recV2 = try svcV2.createWarmTemplate(
+            deviceName: "Apple Vision Pro", runtimeLabel: "xrOS-2-5"
+        )
+        XCTAssertEqual(recV2.name, "vch-warm[Apple Vision Pro:visionOS 2.5]")
+        XCTAssertEqual(simctlV2.createCalls.first?.runtimeID,
+                       "com.apple.CoreSimulator.SimRuntime.xrOS-2-5")
+    }
+
+    /// Acceptance criterion #7: existing iOS warm-template names
+    /// written by vch ≤ v0.3.0 must keep working post-#58. This test
+    /// asserts the parser/lookup chain still recognizes the legacy
+    /// `vch-warm[iPhone 16:iOS 26.4]` byte sequence and routes it
+    /// through `pickWarmTemplate`, with no rename or migration step.
+    func testEnsureClonePicksLegacyIOSWarmTemplate() throws {
+        let warm = device("WARM-LEGACY", "vch-warm[iPhone 16:iOS 26.4]",
+                          "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                          .init(platform: .iOS, major: 26, minor: 4))
+        let apple = device("APPLE", "iPhone 16",
+                           "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                           .init(platform: .iOS, major: 26, minor: 4))
+        let (service, _, simctl) = makeService(
+            seedingState: emptyState("alpha"),
+            devices: [warm, apple],
+            allDevicesOverride: [warm, apple],
+            cloneReturnsUDID: "CLONE-FROM-WARM"
+        )
+        _ = try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: "iPhone 16",
+            requestedRuntime: "iOS 26.4"
+        )
+        XCTAssertEqual(simctl.cloneCalls.first?.source, "WARM-LEGACY",
+                       "legacy iOS warm-template name must still be reused")
+    }
+
     func testCreateWarmTemplateRefusesToClobberExisting() throws {
         let existing = device("EXISTING", "vch-warm[iPhone 16:iOS 26.4]",
                               "com.apple.CoreSimulator.SimRuntime.iOS-26-4",

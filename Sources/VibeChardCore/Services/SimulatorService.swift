@@ -209,16 +209,19 @@ public struct SimulatorService: Sendable {
     // MARK: - selection
 
     /// Pick the newest available template whose name exactly matches.
-    /// "Newest" = highest iOS runtime version (then arbitrary stable
+    /// "Newest" = highest runtime version (then arbitrary stable
     /// tiebreak by UDID). Templates with `isAvailable == false` are
     /// filtered out.
     ///
     /// `requestedRuntime` (#11) further filters by the runtime
-    /// identifier. Accepted forms:
+    /// identifier. Accepted forms (per platform — iOS / watchOS /
+    /// tvOS / visionOS):
     ///   • raw identifier:  `com.apple.CoreSimulator.SimRuntime.iOS-26-4`
-    ///   • dashed iOS form: `iOS-26-4`
-    ///   • dotted iOS form: `iOS 26.4`
-    /// All three normalize to the same SimRuntimeVersion.
+    ///   • dashed form:     `iOS-26-4` / `watchOS-11-5` / `xrOS-2-5`
+    ///   • dotted form:     `iOS 26.4` / `watchOS 11.5` / `visionOS 2.5`
+    /// All forms normalize to the same SimRuntimeVersion. The
+    /// CoreSimulator slug for visionOS is `xrOS`; the parser also
+    /// accepts the user-friendly `visionOS` prefix as an alias.
     func pickNewestTemplate(
         name: String,
         requestedRuntime: String? = nil
@@ -233,7 +236,7 @@ public struct SimulatorService: Sendable {
                 // the user can copy-paste the right `--runtime` value.
                 let available = all
                     .filter { $0.isAvailable && $0.name == name }
-                    .compactMap { $0.runtimeVersion.map { "iOS \($0.major).\($0.minor)" } }
+                    .compactMap { $0.runtimeVersion?.dottedLabel }
                 throw VibeChardError.simulatorTemplateNotFound(
                     name: "\(name) (runtime '\(req)' — available: \(available.isEmpty ? "none" : available.joined(separator: ", ")))"
                 )
@@ -262,28 +265,68 @@ public struct SimulatorService: Sendable {
 
     /// Normalize the user's `--runtime` argument into a comparable
     /// `SimRuntimeVersion`. Accepts the three forms documented on
-    /// `pickNewestTemplate`. Returns nil for unrecognized strings
-    /// rather than throwing so the caller can decide whether to
-    /// surface that as an error or fall through to the unfiltered
-    /// path.
+    /// `pickNewestTemplate` for any of the four supported platforms
+    /// (iOS / watchOS / tvOS / visionOS). Returns `nil` for
+    /// unrecognized strings rather than throwing so the caller can
+    /// decide whether to surface that as an error or fall through to
+    /// the unfiltered path.
     func parseRuntimeRequest(_ raw: String) -> SimRuntimeVersion? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Form 1: full CoreSimulator runtime identifier
+        // (`com.apple.CoreSimulator.SimRuntime.<slug>-<M>-<m>`).
         if let parsed = SimRuntimeVersion.parse(runtimeIdentifier: trimmed) {
             return parsed
         }
-        // `iOS-26-4` → fabricate a fake suffix so the existing parser handles it.
-        if trimmed.hasPrefix("iOS-") {
-            return SimRuntimeVersion.parse(
-                runtimeIdentifier: "x.\(trimmed)"
-            )
+
+        // Form 2 & 3: short forms. For each platform, try the dashed
+        // (`iOS-26-4`) and dotted (`iOS 26.4`) forms. visionOS
+        // accepts both `visionOS` and `xrOS` prefixes since simctl
+        // emits the latter in identifiers but the former in human
+        // labels.
+        for platform in SimRuntimeVersion.Platform.allCases {
+            let prefixes: [String] = (platform == .visionOS)
+                ? ["visionOS", "xrOS"]
+                : [platform.rawValue]
+            for prefix in prefixes {
+                if let v = parseShortRuntimeForm(
+                    trimmed: trimmed, platform: platform, prefix: prefix
+                ) {
+                    return v
+                }
+            }
         }
-        // `iOS 26.4` / `iOS 26`.
-        if trimmed.lowercased().hasPrefix("ios ") {
-            let body = trimmed.dropFirst("ios ".count)
+        return nil
+    }
+
+    /// Parse a single platform's short forms — `<prefix>-<M>-<m>` or
+    /// `<prefix> <M>.<m>`. Comparisons are case-insensitive on the
+    /// prefix so `ios 26.4` / `iOS 26.4` / `IOS-26-4` all resolve.
+    private func parseShortRuntimeForm(
+        trimmed: String,
+        platform: SimRuntimeVersion.Platform,
+        prefix: String
+    ) -> SimRuntimeVersion? {
+        let lower = trimmed.lowercased()
+
+        // Dashed: `<prefix>-<M>[-<m>]`.
+        let dashed = (prefix + "-").lowercased()
+        if lower.hasPrefix(dashed) {
+            let body = trimmed.dropFirst(dashed.count)
+            let parts = body.split(separator: "-")
+            guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
+            let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+            return SimRuntimeVersion(platform: platform, major: major, minor: minor)
+        }
+
+        // Dotted: `<prefix> <M>[.<m>]`.
+        let dotted = (prefix + " ").lowercased()
+        if lower.hasPrefix(dotted) {
+            let body = trimmed.dropFirst(dotted.count)
             let parts = body.split(whereSeparator: { $0 == "." || $0 == "-" })
             guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
             let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-            return SimRuntimeVersion(major: major, minor: minor)
+            return SimRuntimeVersion(platform: platform, major: major, minor: minor)
         }
         return nil
     }

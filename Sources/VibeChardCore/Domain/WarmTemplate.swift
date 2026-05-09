@@ -1,6 +1,6 @@
 import Foundation
 
-/// Domain type for `vch sim warm-template list` rows (#47).
+/// Domain type for `vch sim warm-template list` rows (#47, #58).
 ///
 /// A "warm template" is a simulator device that vch keeps in shutdown
 /// state with all first-boot caches already primed (the device was
@@ -13,8 +13,9 @@ import Foundation
 ///
 ///     vch-warm[<deviceName>:<runtimeLabel>]
 ///
-/// where `runtimeLabel` is the dotted iOS form `iOS 26.4` (matching
-/// what `vch test --runtime` accepts on the CLI). This zero-persistence
+/// where `runtimeLabel` is the dotted human form `iOS 26.4` /
+/// `watchOS 11.5` / `tvOS 18.0` / `visionOS 2.5` (matching what
+/// `vch test --runtime` accepts on the CLI). This zero-persistence
 /// design is intentional — no metadata on the user's `~/.vch*`, no
 /// global config file (AGENTS.md rule #7), and `simctl` is a single
 /// authoritative source.
@@ -29,13 +30,15 @@ import Foundation
 /// `list` text output and the JSON view.
 public struct WarmTemplateRecord: Equatable, Encodable, Sendable {
     /// The full simctl device name as stored, e.g.
-    /// `vch-warm[iPhone 16:iOS 26.4]`.
+    /// `vch-warm[iPhone 16:iOS 26.4]` /
+    /// `vch-warm[Apple Watch Series 10 (46mm):watchOS 11.5]`.
     public let name: String
     /// Device-template name parsed out of the bracketed payload.
     public let deviceName: String
     /// Runtime label parsed out of the bracketed payload, e.g.
-    /// `iOS 26.4`. This is the same string format `vch test --runtime`
-    /// accepts on the CLI, so users can copy/paste between commands.
+    /// `iOS 26.4` / `watchOS 11.5`. This is the same string format
+    /// `vch test --runtime` accepts on the CLI, so users can
+    /// copy/paste between commands.
     public let runtimeLabel: String
     /// Live UDID of the warm template device.
     public let udid: String
@@ -122,9 +125,10 @@ public enum WarmTemplateName {
     public static let prefix = "vch-warm["
     public static let suffix = "]"
 
-    /// Build the canonical name. Always emits the dotted iOS form for
-    /// the runtime so `vch test --runtime` and the warm-template name
-    /// agree byte-for-byte.
+    /// Build the canonical name. Always emits the dotted human form
+    /// for the runtime (e.g. `iOS 26.4` / `watchOS 11.5` /
+    /// `visionOS 2.5`) so `vch test --runtime` and the warm-template
+    /// name agree byte-for-byte.
     public static func format(deviceName: String, runtimeLabel: String) -> String {
         return "\(prefix)\(deviceName):\(runtimeLabel)\(suffix)"
     }
