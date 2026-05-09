@@ -8,7 +8,30 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Fixed
+- `vch land` now deletes the per-task simulator clone after a
+  successful merge + auto-`rm`, matching `vch rm`'s long-standing
+  behaviour (#61). Previously the simulator-cleanup logic lived
+  only in the `vch rm` CLI handler, so every successful `vch land`
+  silently left an orphan device behind in `simctl list` (≈ 3 GB
+  per task) that only `vch doctor --clean` could reap. The new
+  cleanup runs in `LandService` so both code paths share the same
+  contract:
+  - skipped under `--keep` (task is still alive),
+  - skipped under the new `--keep-sim` flag (symmetric with
+    `vch rm --keep-sim`),
+  - skipped on `--dry-run`,
+  - skipped if auto-`rm` itself failed (worktree still on disk →
+    user may retry),
+  - non-fatal if `simctl delete` itself fails: the merge is never
+    rolled back; `vch land` prints a warning and points the user
+    at `vch doctor --clean`.
+
 ### Added
+- `vch land --keep-sim` — keep the per-task simulator clone even
+  when auto-`rm` succeeded (#61). Symmetric with
+  `vch rm --keep-sim`; useful for inspecting simulator state
+  immediately after a merge.
 - `vch sim warm-template` now supports **watchOS, tvOS, and visionOS**
   in addition to iOS (#58). The `--runtime` argument accepts the
   full set of forms — `iOS 26.4` / `watchOS 11.5` / `tvOS 18.0` /

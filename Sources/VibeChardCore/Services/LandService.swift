@@ -8,17 +8,20 @@ public struct LandService: Sendable {
     public let git: GitClient
     public let fs: FileSystem
     public let clock: Clock
+    public let simctl: SimctlClient
 
     public init(
         workspace: Workspace,
         git: GitClient,
         fs: FileSystem = DiskFileSystem(),
-        clock: Clock = SystemClock()
+        clock: Clock = SystemClock(),
+        simctl: SimctlClient = DiskSimctlClient()
     ) {
         self.workspace = workspace
         self.git = git
         self.fs = fs
         self.clock = clock
+        self.simctl = simctl
     }
 
     public struct Options: Sendable {
@@ -29,6 +32,11 @@ public struct LandService: Sendable {
         public var dryRun: Bool
         /// `--keep` — skip the auto `vch rm` after a successful merge.
         public var keep: Bool
+        /// `--keep-sim` — keep the per-task simulator clone even after
+        /// a successful auto-`rm`. Symmetric with `vch rm --keep-sim`.
+        /// Has no effect when `keep == true` (the task is still live,
+        /// so its sim is never reaped). (#61)
+        public var keepSim: Bool
         /// `--push` / `--push-to <remote>` — push the resolved
         /// `--into` branch to `<remote>` after the merge succeeds.
         /// `nil` = don't push (the default; never publish without
@@ -42,6 +50,7 @@ public struct LandService: Sendable {
             allowDirty: Bool = false,
             dryRun: Bool = false,
             keep: Bool = false,
+            keepSim: Bool = false,
             push: Push? = nil
         ) {
             self.into = into
@@ -50,6 +59,7 @@ public struct LandService: Sendable {
             self.allowDirty = allowDirty
             self.dryRun = dryRun
             self.keep = keep
+            self.keepSim = keepSim
             self.push = push
         }
     }
@@ -77,6 +87,21 @@ public struct LandService: Sendable {
         public let removeError: String?
         /// `[base..task]` paths the merge touched, surfaced for `--dry-run`.
         public let touchedPaths: [String]
+        /// `true` when the per-task simulator clone was deleted after
+        /// a successful auto-`rm`. `false` when there was no clone
+        /// recorded, when `--keep` / `--keep-sim` was passed, when
+        /// auto-`rm` failed (worktree still on disk, so we leave the
+        /// sim alone), or when `simctl.delete` itself failed. (#61)
+        public let simRemoved: Bool
+        /// Name of the simulator clone that was either deleted or
+        /// that we tried (and failed) to delete. `nil` when the task
+        /// had no recorded simulator. Surfaced even on failure so the
+        /// CLI can show which device vch tried. (#61)
+        public let simName: String?
+        /// Human-readable description when the merge succeeded, the
+        /// auto-`rm` succeeded, but `simctl delete` failed. The merge
+        /// is not rolled back. (#61)
+        public let simRemoveError: String?
         /// `true` when `--push` was requested and `git push` succeeded
         /// after the merge. `false` for every other case (push not
         /// requested, dry-run, push failed). (#49)
@@ -97,6 +122,9 @@ public struct LandService: Sendable {
             removed: Bool,
             removeError: String?,
             touchedPaths: [String],
+            simRemoved: Bool = false,
+            simName: String? = nil,
+            simRemoveError: String? = nil,
             pushed: Bool = false,
             pushRemote: String? = nil,
             pushError: String? = nil
@@ -108,6 +136,9 @@ public struct LandService: Sendable {
             self.removed = removed
             self.removeError = removeError
             self.touchedPaths = touchedPaths
+            self.simRemoved = simRemoved
+            self.simName = simName
+            self.simRemoveError = simRemoveError
             self.pushed = pushed
             self.pushRemote = pushRemote
             self.pushError = pushError
@@ -181,7 +212,10 @@ public struct LandService: Sendable {
                     message: resolved.message,
                     removed: false,
                     removeError: nil,
-                    touchedPaths: diff
+                    touchedPaths: diff,
+                    simRemoved: false,
+                    simName: state.simulator?.name,
+                    simRemoveError: nil
                 )
             }
             // Run the merge. Bubble up `externalCommandFailed` —
@@ -206,6 +240,30 @@ public struct LandService: Sendable {
                     removed = true
                 } catch {
                     removeError = String(describing: error)
+                }
+            }
+
+            // Per-task simulator clone cleanup. Symmetric with
+            // `vch rm`: if auto-`rm` succeeded and the user did not
+            // pass `--keep-sim`, delete the sim clone bound to the
+            // task. Skipped when:
+            //   * `--keep` / `--keep-sim` was passed,
+            //   * auto-`rm` failed (worktree still on disk — the
+            //     user may retry; reaping the sim now would leave
+            //     them with a half-broken task),
+            //   * the task never recorded a simulator (no `vch build sim`).
+            // Failure of `simctl.delete` is non-fatal and surfaces
+            // via `simRemoveError`; the merge is never rolled back.
+            // (#61)
+            var simRemoved = false
+            var simRemoveError: String?
+            let simRecord = state.simulator
+            if removed, !options.keepSim, let sim = simRecord {
+                do {
+                    try simctl.delete(udid: sim.cloneUDID)
+                    simRemoved = true
+                } catch {
+                    simRemoveError = String(describing: error)
                 }
             }
 
@@ -249,6 +307,9 @@ public struct LandService: Sendable {
                 removed: removed,
                 removeError: removeError,
                 touchedPaths: diff,
+                simRemoved: simRemoved,
+                simName: simRecord?.name,
+                simRemoveError: simRemoveError,
                 pushed: pushed,
                 pushRemote: pushRemote,
                 pushError: pushError
