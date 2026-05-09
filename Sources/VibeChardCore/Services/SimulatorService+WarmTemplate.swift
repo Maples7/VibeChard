@@ -33,13 +33,17 @@ extension SimulatorService {
     /// Create a new warm template for `deviceName` + `runtimeLabel`.
     ///
     /// Steps:
-    /// 1. Parse `runtimeLabel` (accepts `"iOS 26.4"` / `"iOS-26-4"` /
-    ///    raw `com.apple.CoreSimulator.SimRuntime.iOS-26-4`).
-    /// 2. Compose canonical name `vch-warm[<deviceName>:iOS X.Y]`.
+    /// 1. Parse `runtimeLabel`. Accepts any platform/format the rest
+    ///    of vch accepts: `"iOS 26.4"` / `"watchOS 11.5"` /
+    ///    `"tvOS 18.0"` / `"visionOS 2.5"`, the dashed equivalents
+    ///    (`"iOS-26-4"`, `"xrOS-2-5"`, …), or the raw CoreSimulator
+    ///    identifier (`com.apple.CoreSimulator.SimRuntime.iOS-26-4`).
+    /// 2. Compose canonical name
+    ///    `vch-warm[<deviceName>:<platform> X.Y]`.
     ///    Refuse to create if a device by that name already exists
     ///    (caller should `remove` first to recreate).
     /// 3. `simctl create` with the canonical CoreSimulator runtime ID
-    ///    derived from the parsed version.
+    ///    derived from the parsed version (uses `xrOS-…` for visionOS).
     /// 4. `simctl bootstatus -b` to prime first-boot caches.
     /// 5. `simctl shutdown` to leave the template in static state.
     ///
@@ -59,7 +63,7 @@ extension SimulatorService {
             throw VibeChardError.invalidRuntime(runtimeLabel)
         }
         let canonicalLabel = parsedVersion.dottedLabel
-        let runtimeID = parsedVersion.iOSRuntimeIdentifier
+        let runtimeID = parsedVersion.runtimeIdentifier
         let templateName = WarmTemplateName.format(
             deviceName: deviceName, runtimeLabel: canonicalLabel
         )

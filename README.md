@@ -309,6 +309,15 @@ vch sim warm-template list
 vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
 ```
 
+The same recipe works on **watchOS, tvOS, and visionOS** (#58); just
+swap the device name and runtime label:
+
+```sh
+vch sim warm-template create "Apple Watch Series 10 (46mm)" --runtime "watchOS 11.5"
+vch sim warm-template create "Apple TV 4K (3rd generation)" --runtime "tvOS 18.0"
+vch sim warm-template create "Apple Vision Pro"             --runtime "visionOS 2.5"
+```
+
 Lifetime is **decoupled** from any task. `vch remove` and
 `vch doctor --clean` never touch warm templates — you create them,
 you delete them. `vch doctor` lists them so you can spot stale or
@@ -316,8 +325,20 @@ booted ones, but never auto-cleans (a clean would silently destroy
 the priming work). The `--runtime` argument is mandatory because
 different runtimes for the same device produce different warm
 templates; without a pin, vch would have nothing unambiguous to look
-up. SPIKE numbers (iPhone 16 + iOS 26.4, N=5 median): cold path
-30.75 s, warm path 9.41 s, savings 21.35 s absolute (69.4 %).
+up.
+
+Empirical savings vary by platform — measured medians:
+
+| Platform | Cold path | Warm path | Savings |
+|---|---|---|---|
+| iOS (iPhone 16 + iOS 26.4, N=5)              | 30.75 s | 9.41 s  | 21.35 s (69.4 %) |
+| watchOS (Apple Watch Series 10 (46mm) + watchOS 11.5, N=3) | 31.0 s  | 23.3 s  | 7.7 s (24.9 %)   |
+
+watchOS first-boot does less cache priming work than iOS, so the
+absolute win is smaller — but still well above the 2 s noise floor
+that would have made the optimisation pointless. tvOS and visionOS
+should be in the same ballpark (the SPIKE methodology is in PR #58
+and runnable with whatever runtimes you have installed).
 
 ## Commands
 
@@ -330,12 +351,12 @@ up. SPIKE numbers (iPhone 16 + iOS 26.4, N=5 median): cold path
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
 | `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` pins the simulator runtime. By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`); `--verbose` mirrors xcodebuild's full output. The full firehose is always tee'd to `<wt>/.vch/last-build.log`. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`, `'visionOS 2.5'`) pins the simulator runtime. By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`); `--verbose` mirrors xcodebuild's full output. The full firehose is always tee'd to `<wt>/.vch/last-build.log`. |
 | `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. Same scheme auto-pick + `--runtime` rules as `vch build`. By default prints only a concise summary (one line per suite, failing tests expanded with file:line and assertion message); `--verbose` mirrors xcodebuild's full output to the terminal. The full firehose is always tee'd to `<wt>/.vch/last-test.log`. Counts come from the xcresult bundle so swift-testing (`@Suite`/`@Test`/`#expect`) targets are reported correctly. `--rerun` replays the prior invocation verbatim; `--rerun-failed` re-runs only the tests that failed last time (uses the recorded xcresult). |
 | `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
 | `vch logs <name> [--test\|--build]` | Print the full xcodebuild log from the task's most recent run. Defaults to `--test`; pass `--build` for the build firehose. Logs are overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
-| `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (#47). A warm template is a primed-then-shutdown simulator that subsequent per-task `vch test` clones inherit caches from, cutting first-sim-spin-up from ~30 s to ~9 s per task. `create <device> --runtime "iOS 26.4"` creates one; `list [--json]` shows what exists; `remove <device> --runtime "iOS 26.4"` deletes one. **Lifetime is decoupled from any task** — `vch remove` and `vch doctor --clean` never touch warm templates; you create and delete them yourself. `vch test --device "<device>" --runtime "iOS X.Y"` automatically picks the matching warm template when one exists. |
+| `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (#47, #58). A warm template is a primed-then-shutdown simulator that subsequent per-task `vch test` clones inherit caches from, cutting first-sim-spin-up (iOS measured: ~30 s → ~9 s; watchOS: ~31 s → ~23 s). Works for iOS, watchOS, tvOS, and visionOS. `create <device> --runtime "iOS 26.4"` (or `"watchOS 11.5"`, `"tvOS 18.0"`, `"visionOS 2.5"`) creates one; `list [--json]` shows what exists; `remove <device> --runtime "..."` deletes one. **Lifetime is decoupled from any task** — `vch remove` and `vch doctor --clean` never touch warm templates; you create and delete them yourself. `vch test --device "<device>" --runtime "..."` automatically picks the matching warm template when one exists. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. `--push` pushes the resolved `--into` branch to its tracked remote (`branch.<into>.remote`, falling back to `origin`); `--push-to <remote>` overrides with an explicit remote. Without either flag `vch land` never contacts a remote. If the post-merge push fails the merge is **not** rolled back — the failure is surfaced as a stderr warning. Only **committed** content is carried over — uncommitted changes, untracked files, and `.gitignore`d artifacts in the worktree are lost when the worktree is removed (use `--keep` + manual copy; see the "Preserving generated artifacts" cookbook recipe). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | Fetch the recorded base branch's upstream and rebase `agent/<name>` onto it. `--merge` switches to `git merge --no-ff` (use only when the task branch has been pushed somewhere a coworker reads from). `--onto <ref>` overrides the base; `--no-fetch` skips the network call; `--allow-dirty` defers the dirty-worktree check to git itself; `--dry-run` prints ahead/behind counts and the planned strategy without writing. All git work runs inside the task worktree, so the main worktree is never touched. Records `lastSync` on success. |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--allow-unmerged` force-deletes a branch that isn't fully merged. |

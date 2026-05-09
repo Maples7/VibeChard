@@ -417,6 +417,50 @@ final class SimulatorServiceTests: XCTestCase {
         XCTAssertNil(service.parseRuntimeRequest("garbage"))
     }
 
+    /// #58: `--runtime` accepts the same three forms for any of the
+    /// four supported platforms (iOS / watchOS / tvOS / visionOS).
+    /// visionOS additionally accepts both `visionOS` (user-friendly)
+    /// and `xrOS` (CoreSimulator slug) prefixes — simctl emits the
+    /// latter in `runtime` identifiers but the former in human labels,
+    /// and users copy-paste from both surfaces.
+    func testParseRuntimeRequestAcceptsAllFourPlatforms() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha", seedingState: emptyState("alpha"))
+
+        // iOS — covered by the previous test, kept here for parity.
+        XCTAssertEqual(service.parseRuntimeRequest("iOS 26.4"),
+                       SimRuntimeVersion(platform: .iOS, major: 26, minor: 4))
+
+        // watchOS
+        let watchTarget = SimRuntimeVersion(platform: .watchOS, major: 11, minor: 5)
+        XCTAssertEqual(service.parseRuntimeRequest("com.apple.CoreSimulator.SimRuntime.watchOS-11-5"), watchTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("watchOS-11-5"), watchTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("watchOS 11.5"), watchTarget)
+
+        // tvOS
+        let tvTarget = SimRuntimeVersion(platform: .tvOS, major: 18, minor: 0)
+        XCTAssertEqual(service.parseRuntimeRequest("com.apple.CoreSimulator.SimRuntime.tvOS-18-0"), tvTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("tvOS-18-0"), tvTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("tvOS 18.0"), tvTarget)
+
+        // visionOS — both `xrOS` and `visionOS` prefixes accepted.
+        let visionTarget = SimRuntimeVersion(platform: .visionOS, major: 2, minor: 5)
+        XCTAssertEqual(service.parseRuntimeRequest("com.apple.CoreSimulator.SimRuntime.xrOS-2-5"), visionTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("xrOS-2-5"), visionTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("visionOS-2-5"), visionTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("visionOS 2.5"), visionTarget)
+        XCTAssertEqual(service.parseRuntimeRequest("xrOS 2.5"), visionTarget)
+
+        // Case-insensitive prefix matching for usability.
+        XCTAssertEqual(service.parseRuntimeRequest("ios 26.4"),
+                       SimRuntimeVersion(platform: .iOS, major: 26, minor: 4))
+        XCTAssertEqual(service.parseRuntimeRequest("WATCHOS-11-5"), watchTarget)
+
+        // macOS / unknown platforms still reject.
+        XCTAssertNil(service.parseRuntimeRequest("macOS 14.0"))
+        XCTAssertNil(service.parseRuntimeRequest("garbage"))
+    }
+
     func testPickNewestTemplateFiltersByRuntime() throws {
         let (service, _, _) = makeService(
             seedingTask: "alpha", seedingState: emptyState("alpha"),
@@ -452,6 +496,38 @@ final class SimulatorServiceTests: XCTestCase {
             }
             XCTAssertTrue(name.contains("iOS 26.4"),
                           "should list installed runtimes; got: \(name)")
+        }
+    }
+
+    /// #58: when `pickNewestTemplate` reports the available runtimes
+    /// to the user, visionOS devices must be surfaced with the
+    /// human-friendly "visionOS X.Y" label, **not** the internal
+    /// CoreSimulator "xrOS X.Y" slug. The two strings denote the same
+    /// runtime but only one is what the user typed and what
+    /// `--runtime` accepts on subsequent invocations — getting this
+    /// wrong would tell the user to copy-paste a value that the CLI
+    /// then rejects. This locks the dottedLabel formatting on the
+    /// error path for the visionOS-vs-xrOS asymmetry specifically.
+    func testPickNewestTemplateRuntimeMissShowsHumanLabelsForVisionOS() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha", seedingState: emptyState("alpha"),
+            devices: [
+                device("V", "Apple Vision Pro",
+                       "com.apple.CoreSimulator.SimRuntime.xrOS-2-5",
+                       .init(platform: .visionOS, major: 2, minor: 5)),
+            ]
+        )
+        XCTAssertThrowsError(
+            try service.pickNewestTemplate(name: "Apple Vision Pro",
+                                           requestedRuntime: "visionOS 1.0")
+        ) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(name.contains("visionOS 2.5"),
+                          "should surface human label, got: \(name)")
+            XCTAssertFalse(name.contains("xrOS 2.5"),
+                           "must not leak CoreSimulator slug, got: \(name)")
         }
     }
 

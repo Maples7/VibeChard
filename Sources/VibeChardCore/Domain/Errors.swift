@@ -215,7 +215,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
         case let .warmTemplateAlreadyExists(name, udid):
             return "warm template '\(name)' already exists (\(udid.prefix(8))…) — run `vch sim warm-template remove` first if you want to recreate it"
         case let .invalidRuntime(label):
-            return "could not parse runtime '\(label)' — accepted forms are 'iOS 26.4', 'iOS-26-4', or 'com.apple.CoreSimulator.SimRuntime.iOS-26-4'"
+            return "could not parse runtime '\(label)' — accepted forms are '<platform> X.Y' (e.g. 'iOS 26.4', 'watchOS 11.5', 'visionOS 2.5'), '<platform>-X-Y' (e.g. 'iOS-26-4'), or the full SimRuntime identifier (e.g. 'com.apple.CoreSimulator.SimRuntime.iOS-26-4')"
         }
     }
 }

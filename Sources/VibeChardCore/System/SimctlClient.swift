@@ -6,10 +6,14 @@ public struct SimDevice: Equatable, Sendable {
     public let udid: String
     public let name: String
     /// Raw runtime identifier, e.g.
-    /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4`.
+    /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4` /
+    /// `com.apple.CoreSimulator.SimRuntime.watchOS-11-5` /
+    /// `com.apple.CoreSimulator.SimRuntime.xrOS-2-5`.
     public let runtime: String
-    /// Parsed (major, minor) of the iOS runtime, used for "newest
-    /// first" sorting. `nil` for non-iOS or unparseable runtimes.
+    /// Parsed `(platform, major, minor)` of the runtime, used for
+    /// "newest first" sorting and warm-template name composition.
+    /// `nil` for unparseable runtimes (an unknown future Apple
+    /// platform family, malformed identifiers, etc.).
     public let runtimeVersion: SimRuntimeVersion?
     public let isAvailable: Bool
     /// Live state from `simctl list` — `"Booted"`, `"Shutdown"`,
@@ -34,52 +38,123 @@ public struct SimDevice: Equatable, Sendable {
     }
 }
 
-/// Comparable iOS runtime version pulled out of the runtime
+/// Comparable simulator runtime version pulled out of the runtime
 /// identifier. Stored as a tuple-like struct so tests and the picker
 /// can use plain `<` / `>` comparisons.
+///
+/// Carries the simulator platform (iOS / watchOS / tvOS / visionOS)
+/// alongside `major.minor`. The platform tag matters because:
+///   * Warm-template names embed the human label
+///     (`vch-warm[Apple Watch Series 10 (46mm):watchOS 11.5]`)
+///     and round-tripping requires we know which family `11.5` belongs
+///     to — `iOS 11.5` and `watchOS 11.5` are different runtimes.
+///   * The CoreSimulator identifier slug for visionOS is `xrOS`, not
+///     `visionOS` — `Platform` carries both forms so `runtimeIdentifier`
+///     emits the slug Apple's tooling expects while `dottedLabel` shows
+///     the user-facing name.
 public struct SimRuntimeVersion: Equatable, Comparable, Sendable {
+    /// Apple simulator platform family. The four values match the
+    /// platforms that vibe-chard's warm-template feature supports;
+    /// any new platform family Apple ships in the future will fail
+    /// `parse(runtimeIdentifier:)` (returns `nil`) until added here.
+    public enum Platform: String, Equatable, Sendable, CaseIterable, Codable {
+        case iOS
+        case watchOS
+        case tvOS
+        case visionOS
+
+        /// CoreSimulator runtime-identifier slug. visionOS is
+        /// `xrOS` in `com.apple.CoreSimulator.SimRuntime.xrOS-2-5`
+        /// even though the human-facing name is "visionOS"; the rest
+        /// match their human label one-to-one.
+        public var coreSimulatorSlug: String {
+            switch self {
+            case .iOS:      return "iOS"
+            case .watchOS:  return "watchOS"
+            case .tvOS:     return "tvOS"
+            case .visionOS: return "xrOS"
+            }
+        }
+
+        /// Map a CoreSimulator slug back to the platform. Accepts
+        /// `xrOS` (canonical) and `visionOS` (user-typed alias) for
+        /// the visionOS case so `--runtime "visionOS-2-5"` works.
+        static func fromSlug(_ slug: String) -> Platform? {
+            switch slug.lowercased() {
+            case "ios":               return .iOS
+            case "watchos":           return .watchOS
+            case "tvos":              return .tvOS
+            case "xros", "visionos":  return .visionOS
+            default:                  return nil
+            }
+        }
+    }
+
+    public let platform: Platform
     public let major: Int
     public let minor: Int
 
-    public init(major: Int, minor: Int) {
+    /// Default-iOS initializer kept so existing call-sites
+    /// (`SimRuntimeVersion(major: 26, minor: 4)`) compile unchanged.
+    /// New non-iOS sites should pass `platform:` explicitly.
+    public init(platform: Platform = .iOS, major: Int, minor: Int) {
+        self.platform = platform
         self.major = major
         self.minor = minor
     }
 
+    /// Ordering: same-platform comparisons go by `(major, minor)` —
+    /// the only ones that matter in practice (the picker only ever
+    /// compares devices with identical names, which by definition
+    /// share a platform). Cross-platform comparisons fall back to
+    /// `Platform.allCases` index for determinism.
     public static func < (lhs: SimRuntimeVersion, rhs: SimRuntimeVersion) -> Bool {
+        if lhs.platform != rhs.platform {
+            // Stable but arbitrary cross-platform tiebreak; not
+            // surfaced anywhere user-visible in v0.4.
+            let order = Platform.allCases
+            let li = order.firstIndex(of: lhs.platform) ?? 0
+            let ri = order.firstIndex(of: rhs.platform) ?? 0
+            return li < ri
+        }
         if lhs.major != rhs.major { return lhs.major < rhs.major }
         return lhs.minor < rhs.minor
     }
 
-    /// Human-readable iOS form, e.g. `iOS 26.4`. Matches what
-    /// `vch test --runtime` accepts on the CLI and what
-    /// `vch sim warm-template list` emits in its name column, so
-    /// users can copy-paste between commands.
-    public var dottedLabel: String { "iOS \(major).\(minor)" }
+    /// Human-readable form, e.g. `iOS 26.4` / `watchOS 11.5` /
+    /// `tvOS 18.0` / `visionOS 2.5`. Matches what `vch test --runtime`
+    /// accepts on the CLI and what `vch sim warm-template list` emits
+    /// in its name column, so users can copy-paste between commands.
+    public var dottedLabel: String { "\(platform.rawValue) \(major).\(minor)" }
 
     /// Canonical CoreSimulator runtime identifier round-trippable
     /// with `parse(runtimeIdentifier:)`. Used wherever vch needs to
     /// hand a runtime to `xcrun simctl create` / `simctl list -j`.
-    public var iOSRuntimeIdentifier: String {
-        "com.apple.CoreSimulator.SimRuntime.iOS-\(major)-\(minor)"
+    /// Emits `xrOS-X-Y` for visionOS (CoreSimulator's internal slug),
+    /// not the human-facing `visionOS-X-Y`.
+    public var runtimeIdentifier: String {
+        "com.apple.CoreSimulator.SimRuntime.\(platform.coreSimulatorSlug)-\(major)-\(minor)"
     }
 
     /// Parse from a runtime identifier like
-    /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4` →
-    /// `SimRuntimeVersion(major: 26, minor: 4)`. Returns `nil` for
-    /// non-iOS runtimes (watchOS / tvOS / xrOS) — vch v1 only manages
-    /// iOS sims.
+    /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4` or
+    /// `com.apple.CoreSimulator.SimRuntime.xrOS-2-5`. Returns `nil`
+    /// for unrecognized platform families — vch's warm-template
+    /// feature covers iOS / watchOS / tvOS / visionOS.
     public static func parse(runtimeIdentifier: String) -> SimRuntimeVersion? {
-        // Take the trailing `iOS-<M>-<m>` segment.
+        // Take the trailing `<slug>-<M>-<m>` segment.
         guard let dotRange = runtimeIdentifier.range(of: ".", options: .backwards) else {
             return nil
         }
         let suffix = runtimeIdentifier[dotRange.upperBound...]
-        guard suffix.hasPrefix("iOS-") else { return nil }
-        let parts = suffix.dropFirst("iOS-".count).split(separator: "-")
+        guard let dashIdx = suffix.firstIndex(of: "-") else { return nil }
+        let slug = String(suffix[..<dashIdx])
+        guard let platform = Platform.fromSlug(slug) else { return nil }
+        let rest = suffix[suffix.index(after: dashIdx)...]
+        let parts = rest.split(separator: "-")
         guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
         let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-        return SimRuntimeVersion(major: major, minor: minor)
+        return SimRuntimeVersion(platform: platform, major: major, minor: minor)
     }
 }
 

@@ -43,7 +43,7 @@ struct RunCommand: ParsableCommand {
     @Option(name: .long, help: "Simulator device template (lazy-cloned per task on first use).")
     var device: String?
 
-    @Option(name: .long, help: "Pin the simulator runtime (e.g. 'iOS 26.4' or the full SimRuntime identifier). Useful when multiple iOS runtimes share the same device name.")
+    @Option(name: .long, help: "Pin the simulator runtime (e.g. 'iOS 26.4', 'watchOS 11.5', 'visionOS 2.5', or the full SimRuntime identifier). Useful when multiple runtimes share the same device name.")
     var runtime: String?
 
     @Argument(parsing: .postTerminator,
