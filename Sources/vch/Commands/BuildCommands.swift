@@ -168,7 +168,9 @@ private enum BuildOrTest {
         do {
             switch action {
             case .build: try service.recordBuild(task: task, outcome: outcome, scheme: opts.scheme)
-            case .test:  try service.recordTest(task: task, outcome: outcome, scheme: opts.scheme)
+            case .test:  try service.recordTest(task: task, outcome: outcome,
+                                                scheme: opts.scheme,
+                                                extraArgs: extraArgs)
             }
         } catch {
             CLIBridge.eprintln("warning: could not update state.json: \(error)")
@@ -266,12 +268,63 @@ struct TestCommand: ParsableCommand {
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-test.log (see `vch logs <name>`).")
     var verbose: Bool = false
 
+    @Flag(name: .long, help: "Replay the last `vch test <name>` invocation verbatim, reusing the recorded extra args.")
+    var rerun: Bool = false
+
+    @Flag(name: .long, help: "Re-run only the tests that failed in the most recent `vch test <name>` (uses the recorded xcresult bundle).")
+    var rerunFailed: Bool = false
+
     @Argument(parsing: .postTerminator,
               help: "Extra args appended to xcodebuild after `--`.")
     var extraArgs: [String] = []
 
     func run() throws {
         try CLIBridge.run {
+            // #46: --rerun / --rerun-failed are mutually exclusive
+            // with each other and with positional extra args.
+            if rerun && rerunFailed {
+                throw VibeChardError.testConflictingRerunFlags
+            }
+            if (rerun || rerunFailed) && !extraArgs.isEmpty {
+                throw VibeChardError.testRerunWithExtraArgs
+            }
+
+            // Default path: extra args come straight from the CLI.
+            // Rerun paths: load `state.json` + (for --rerun-failed)
+            // the xcresult bundle to derive the effective args.
+            let effectiveExtraArgs: [String]
+            if rerun || rerunFailed {
+                let task = try TaskName(name)
+                let cwd = FileManager.default.currentDirectoryPath
+                let workspace = try WorkspaceLocator.locate(cwd: cwd)
+                let statePath = workspace.statePath(for: task)
+                guard FileManager.default.fileExists(atPath: statePath),
+                      let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+                      let state = try? TaskState.parse(data),
+                      let last = state.lastTest else {
+                    throw VibeChardError.testNoPriorRun(taskName: task.raw)
+                }
+                let priorArgs = last.extraArgs ?? []
+                if rerunFailed {
+                    let bundlePath = workspace.resultBundlePath(for: task)
+                    let summary = (try? DiskXcresultReader().summary(at: bundlePath))
+                    let ids = (summary?.failures ?? []).compactMap { $0.testIdentifier }
+                    if ids.isEmpty {
+                        throw VibeChardError.testNoPriorFailures(taskName: task.raw)
+                    }
+                    effectiveExtraArgs = RerunPlanner.extraArgsForRerunFailed(
+                        prior: priorArgs,
+                        failureIdentifiers: ids
+                    )
+                    CLIBridge.eprintln("→ rerunning \(ids.count) failed test\(ids.count == 1 ? "" : "s") from last run")
+                } else {
+                    effectiveExtraArgs = priorArgs
+                    CLIBridge.eprintln("→ rerunning last `vch test \(task.raw)` invocation\(priorArgs.isEmpty ? "" : " (with recorded args)")")
+                }
+            } else {
+                effectiveExtraArgs = extraArgs
+            }
+
             try BuildOrTest.execute(
                 action: .test,
                 taskName: name,
@@ -281,7 +334,7 @@ struct TestCommand: ParsableCommand {
                 runtime: runtime,
                 noSim: noSim,
                 verbose: verbose,
-                extraArgs: extraArgs
+                extraArgs: effectiveExtraArgs
             )
         }
     }

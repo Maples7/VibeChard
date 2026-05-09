@@ -152,4 +152,70 @@ final class TaskStateTests: XCTestCase {
         let state = try TaskState.parse(Data(json.utf8))
         XCTAssertNil(state.lastSync)
     }
+
+    // MARK: - lastTest.extraArgs (#46)
+
+    func testParsesLegacyTestRecordWithoutExtraArgs() throws {
+        // state.json files written by vch ≤ v0.3.0 lack
+        // `lastTest.extraArgs`. They must still decode cleanly so
+        // `vch test --rerun` can detect the legacy state and surface
+        // a clean error rather than crashing on a missing key.
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "foo",
+          "branch": "agent/foo",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "abc1234",
+          "lastTest": {
+            "finishedAt": "2024-01-01T00:00:00Z",
+            "durationSeconds": 12,
+            "success": true,
+            "resultBundlePath": "/tmp/Result.xcresult"
+          }
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNotNil(state.lastTest)
+        XCTAssertNil(state.lastTest?.extraArgs)
+    }
+
+    func testRoundtripsTestRecordExtraArgs() throws {
+        // The whole point of the field is that it survives a write
+        // → read cycle untouched, including the empty-array case
+        // (which is semantically distinct from `nil`).
+        let now = Date(timeIntervalSince1970: 1_700_000_300)
+        let original = TaskState(
+            name: "foo",
+            branch: "agent/foo",
+            createdAt: now,
+            baseRef: "abc1234",
+            lastTest: .init(
+                finishedAt: now,
+                durationSeconds: 12,
+                success: false,
+                resultBundlePath: "/tmp/R.xcresult",
+                extraArgs: ["-only-testing:Tests/A/testFoo", "-quiet"]
+            )
+        )
+        let restored = try TaskState.parse(try original.jsonData())
+        XCTAssertEqual(restored.lastTest?.extraArgs,
+                       ["-only-testing:Tests/A/testFoo", "-quiet"])
+
+        let originalEmpty = TaskState(
+            name: "foo",
+            branch: "agent/foo",
+            createdAt: now,
+            baseRef: "abc1234",
+            lastTest: .init(
+                finishedAt: now,
+                durationSeconds: 12,
+                success: true,
+                resultBundlePath: nil,
+                extraArgs: []
+            )
+        )
+        let restoredEmpty = try TaskState.parse(try originalEmpty.jsonData())
+        XCTAssertEqual(restoredEmpty.lastTest?.extraArgs, [])
+    }
 }

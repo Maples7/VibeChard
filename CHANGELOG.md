@@ -8,6 +8,27 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Added
+- `vch test --rerun` replays the last `vch test <name>` invocation
+  verbatim — the prior `xcodebuild` extra args (anything passed
+  after `--`) are now persisted into `.vch/state.json` on every
+  test run and read back on `--rerun` (#46). Errors out with
+  `testNoPriorRun` if the task has never run `vch test`.
+- `vch test --rerun-failed` re-runs only the tests that failed in
+  the most recent run by walking the recorded xcresult bundle for
+  failed test identifiers and translating each one into
+  `-only-testing:<id>`. Works for both XCTest and swift-testing
+  (the identifiers come from xcresult, which is unified). Other
+  prior args (`-parallel-testing-enabled NO`, `-test-iterations 3`,
+  …) are preserved; only `-only-testing:` / `-skip-testing:`
+  selectors are stripped before the failure-derived ones are
+  appended. Errors out with `testNoPriorFailures` if the last run
+  was clean (#46).
+- `TaskState.TestRecord.extraArgs: [String]?` records the extra
+  args passed to the most recent `vch test` invocation. `nil`
+  on legacy state.json files written before this field existed;
+  `[]` when the run had no extras (#46).
+
 ### Changed
 - `vch build` now mirrors `vch test`'s concise-summary path
   instead of streaming the full xcodebuild firehose to stdout

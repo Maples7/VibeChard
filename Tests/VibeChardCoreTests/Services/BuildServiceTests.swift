@@ -201,6 +201,46 @@ final class BuildServiceTests: XCTestCase {
         XCTAssertNil(state.scheme)
     }
 
+    func testRecordTestPersistsExtraArgs() throws {
+        // #46: --rerun replays the recorded args, so recordTest must
+        // round-trip them through .vch/state.json verbatim — including
+        // empty arrays, which mean "ran with no extra args" (distinct
+        // from `nil`, which means "legacy state.json that predates
+        // this field").
+        let (service, fs) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        let outcome = BuildOutcome(success: false, durationSeconds: 4.0,
+                                   finishedAt: Date(timeIntervalSince1970: 1_700_000_200))
+        let args = ["-only-testing:Tests/SuiteA/testFoo", "-parallel-testing-enabled", "NO"]
+        try service.recordTest(task: try TaskName("alpha"),
+                               outcome: outcome, scheme: nil, extraArgs: args)
+        let state = try TaskState.parse(
+            fs.readFile(forTesting: "/repos/Demo-alpha/.vch/state.json")
+        )
+        XCTAssertEqual(state.lastTest?.extraArgs, args)
+    }
+
+    func testRecordTestPersistsEmptyExtraArgsDistinctFromNil() throws {
+        // When the user invokes `vch test foo` with no `-- ...`
+        // tail, recordTest should write `extraArgs: []` so a later
+        // `--rerun` knows the prior run had no extras (vs. it being
+        // a legacy state.json with no field at all).
+        let (service, fs) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha")
+        )
+        let outcome = BuildOutcome(success: true, durationSeconds: 1.0,
+                                   finishedAt: Date(timeIntervalSince1970: 1_700_000_200))
+        try service.recordTest(task: try TaskName("alpha"),
+                               outcome: outcome, scheme: nil, extraArgs: [])
+        let state = try TaskState.parse(
+            fs.readFile(forTesting: "/repos/Demo-alpha/.vch/state.json")
+        )
+        XCTAssertEqual(state.lastTest?.extraArgs, [])
+    }
+
     func testRecordThrowsWhenStateFileMissing() throws {
         let (service, _) = makeService(seedingTask: "alpha")
         let outcome = BuildOutcome(success: true, durationSeconds: 1,
