@@ -122,8 +122,24 @@ private enum BuildOrTest {
             // recap even in verbose mode (a 100-test firehose makes
             // the final ✓/✗ line easy to lose). Stdout (not stderr)
             // so `vch test foo | grep '✓'` works.
+            //
+            // #45: the streaming parser only recognizes XCTest
+            // output. swift-testing targets emit a different
+            // emoji-prefixed protocol that the parser ignores, which
+            // would otherwise produce `✓ 0 passed in ?`. When the
+            // streaming parser came back empty, fall through to
+            // xcresult — the unified test-result format that covers
+            // both frameworks.
             let colorize = ANSI.defaultEnabledForStdout()
-            print(s.render(colorize: colorize))
+            let bundlePath = workspace.resultBundlePath(for: task)
+            let xcresult = try? DiskXcresultReader().summary(at: bundlePath)
+            if (s.totalPassed + s.totalFailed) == 0,
+               let x = xcresult,
+               (x.totalPassed + x.totalFailed) > 0 {
+                print(XcresultRenderer.render(x, colorize: colorize))
+            } else {
+                print(s.render(colorize: colorize))
+            }
         }
 
         // Always write the outcome — the user wants to know about
