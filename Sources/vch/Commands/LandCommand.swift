@@ -51,6 +51,10 @@ struct LandCommand: ParsableCommand {
     var keep: Bool = false
 
     @Flag(name: .long,
+          help: "Keep the per-task simulator clone (default: delete it after auto-`rm`).")
+    var keepSim: Bool = false
+
+    @Flag(name: .long,
           help: "Allow merging even if the main worktree has dirty paths that overlap with the task branch's diff.")
     var allowDirty: Bool = false
 
@@ -97,6 +101,7 @@ struct LandCommand: ParsableCommand {
                 allowDirty: allowDirty,
                 dryRun: dryRun,
                 keep: keep,
+                keepSim: keepSim,
                 push: pushSpec
             ))
 
@@ -139,6 +144,12 @@ struct LandCommand: ParsableCommand {
             CLIBridge.eprintln("        run `vch rm \(taskName)` after fixing the issue")
         } else {
             print("  worktree kept (--keep)")
+        }
+        if outcome.simRemoved, let simName = outcome.simName {
+            print("✓ deleted simulator clone '\(simName)'")
+        } else if let err = outcome.simRemoveError, let simName = outcome.simName {
+            CLIBridge.eprintln("warning: merge succeeded but simulator clone '\(simName)' could not be deleted: \(err)")
+            CLIBridge.eprintln("        run `vch doctor --clean` to sweep up the orphan")
         }
         if outcome.pushed, let remote = outcome.pushRemote {
             print("✓ pushed '\(outcome.into)' to '\(remote)'")

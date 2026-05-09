@@ -303,4 +303,255 @@ final class LandServiceTests: XCTestCase {
         XCTAssertEqual(world.git.pushCalls.count, 0)
         XCTAssertEqual(world.git.mergeCalls.count, 0)
     }
+
+    // MARK: - simulator-clone cleanup (#61)
+
+    /// Helper: same as `makeHappyPathWorld`, but the seeded
+    /// `state.json` includes a `simulator` record so the sim-cleanup
+    /// branch in `LandService.land()` has something to delete.
+    private func makeWorldWithSimulator(
+        cloneUDID: String = "CLONE-UDID",
+        cloneName: String = "iPhone 16-vch-alpha"
+    ) throws -> (workspace: Workspace, task: TaskName, fs: InMemoryFileSystem, git: FakeGitClient) {
+        let mainRepo = "/repo"
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let task = try TaskName("alpha")
+        let wtPath = workspace.worktreePath(for: task)
+
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(wtPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        let state = TaskState(
+            name: "alpha",
+            branch: "agent/alpha",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbee",
+            baseBranch: "main",
+            simulator: TaskState.SimulatorRecord(
+                cloneUDID: cloneUDID,
+                sourceUDID: "SOURCE-UDID",
+                name: cloneName,
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+            )
+        )
+        fs.seedFile(workspace.statePath(for: task), data: try state.jsonData())
+
+        let git = FakeGitClient()
+        git.branches = ["main", "agent/alpha"]
+        git.entries = [
+            WorktreeEntry(path: mainRepo, branch: "main"),
+            WorktreeEntry(path: wtPath, branch: "agent/alpha"),
+        ]
+        git.currentBranchByCwd = [mainRepo: "main"]
+        git.revListCountByRange["main..agent/alpha"] = 1
+        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
+        return (workspace, task, fs, git)
+    }
+
+    func testLandDeletesSimulatorCloneByDefault() throws {
+        // The bug this issue fixes: `vch land` (no flags) used to
+        // remove the worktree but leave the per-task simulator clone
+        // behind, which then surfaced as an orphan only when the user
+        // remembered to run `vch doctor --clean`. This test pins the
+        // contract that default `vch land` reaps the clone.
+        let world = try makeWorldWithSimulator()
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertTrue(outcome.removed, "auto-rm must succeed before sim cleanup")
+        XCTAssertTrue(outcome.simRemoved,
+                      "default `vch land` must delete the per-task simulator clone")
+        XCTAssertEqual(outcome.simName, "iPhone 16-vch-alpha")
+        XCTAssertNil(outcome.simRemoveError)
+        XCTAssertEqual(simctl.deleteCalls, ["CLONE-UDID"],
+                       "simctl.delete must be called with exactly the recorded cloneUDID")
+    }
+
+    func testLandKeepSimSkipsSimulatorDeletion() throws {
+        // `--keep-sim` is symmetric with `vch rm --keep-sim` and lets
+        // the user inspect the simulator state after a merge.
+        let world = try makeWorldWithSimulator()
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init(keepSim: true))
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertTrue(outcome.removed)
+        XCTAssertFalse(outcome.simRemoved, "--keep-sim must skip the delete")
+        XCTAssertEqual(outcome.simName, "iPhone 16-vch-alpha",
+                       "simName surfaces even when we skip the delete, so the CLI can mention what we kept")
+        XCTAssertNil(outcome.simRemoveError)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty,
+                      "simctl.delete must not be called under --keep-sim")
+    }
+
+    func testLandKeepFlagAlsoSkipsSimulatorDeletion() throws {
+        // `--keep` keeps the entire worktree (and therefore the task
+        // is still alive), so the bound simulator is NOT an orphan
+        // and must not be deleted out from under the live task.
+        let world = try makeWorldWithSimulator()
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init(keep: true))
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertFalse(outcome.removed,
+                       "--keep means the task is still live; sim must stay bound")
+        XCTAssertFalse(outcome.simRemoved)
+        XCTAssertNil(outcome.simRemoveError)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty,
+                      "simctl.delete must not run when the task itself is preserved")
+    }
+
+    func testLandDryRunNeverTouchesSimctl() throws {
+        // Belt-and-suspenders: `--dry-run` reports what *would* happen
+        // and must not mutate any external state, simctl included.
+        let world = try makeWorldWithSimulator()
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init(dryRun: true))
+
+        XCTAssertFalse(outcome.merged, "dry-run never merges")
+        XCTAssertFalse(outcome.removed)
+        XCTAssertFalse(outcome.simRemoved)
+        XCTAssertNil(outcome.simRemoveError)
+        XCTAssertEqual(outcome.simName, "iPhone 16-vch-alpha",
+                       "simName surfaces in dry-run so the CLI can preview what would be reaped")
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+        XCTAssertEqual(world.git.mergeCalls.count, 0)
+    }
+
+    func testLandWithNoSimulatorRecordIsNoOp() throws {
+        // Tasks that never ran `vch build sim` have no simulator
+        // record. Land must be a no-op on the simctl side and emit
+        // no error.
+        // Use the existing helper that does NOT seed a simulator.
+        let world = try makeHappyPathWorld()
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertTrue(outcome.removed)
+        XCTAssertFalse(outcome.simRemoved)
+        XCTAssertNil(outcome.simName,
+                     "no recorded simulator → simName is nil")
+        XCTAssertNil(outcome.simRemoveError)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+    }
+
+    func testLandSimDeleteFailureDoesNotRollBackMerge() throws {
+        // Mirror of `testPushFailureDoesNotRollBackMerge`: a failing
+        // `simctl delete` must surface via `simRemoveError`, leave
+        // `merged=true`, and not try to undo the merge or the
+        // worktree removal.
+        let world = try makeWorldWithSimulator()
+        let simctl = FakeSimctl()
+        simctl.deleteThrows = .externalCommandFailed(
+            cmd: "xcrun simctl delete CLONE-UDID",
+            exitCode: 1,
+            stderr: "Unable to delete device: device is booted"
+        )
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.merged,
+                      "merge must still report success — only the sim cleanup failed")
+        XCTAssertTrue(outcome.removed,
+                      "auto-rm ran before the sim cleanup, so the worktree is still gone")
+        XCTAssertFalse(outcome.simRemoved)
+        XCTAssertEqual(outcome.simName, "iPhone 16-vch-alpha",
+                       "simName must surface on failure so the CLI shows which device vch tried")
+        XCTAssertNotNil(outcome.simRemoveError)
+        XCTAssertTrue(
+            outcome.simRemoveError?.contains("booted") ?? false ||
+            outcome.simRemoveError?.contains("simctl delete") ?? false,
+            "simRemoveError should embed the underlying failure; got '\(outcome.simRemoveError ?? "nil")'"
+        )
+        // FakeSimctl throws before appending to deleteCalls, so we
+        // can't directly assert which UDID was passed; the populated
+        // simRemoveError above is the proof that simctl.delete was
+        // attempted.
+        XCTAssertEqual(world.git.mergeCalls.count, 1)
+    }
+
+    func testLandDoesNotDeleteSimWhenAutoRemoveFailed() throws {
+        // If auto-`rm` failed (e.g. dirty task worktree), the
+        // worktree is still on disk and the user may retry. Reaping
+        // the simulator now would leave them with a half-broken task.
+        // Sim cleanup must be gated on a SUCCESSFUL auto-`rm`.
+        let world = try makeWorldWithSimulator()
+        // Trigger auto-rm failure: removeTask consults statusIsDirty
+        // on the task worktree.
+        world.git.dirtyWorktrees = [world.workspace.worktreePath(for: world.task)]
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock(),
+            simctl: simctl
+        )
+
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.merged, "merge succeeded before auto-rm even ran")
+        XCTAssertFalse(outcome.removed)
+        XCTAssertNotNil(outcome.removeError)
+        XCTAssertFalse(outcome.simRemoved,
+                       "auto-rm failed; sim must stay bound to the still-alive task")
+        XCTAssertNil(outcome.simRemoveError,
+                     "we never *attempted* simctl.delete, so there is no error to surface")
+        XCTAssertTrue(
+            simctl.deleteCalls.isEmpty,
+            "simctl.delete must not run when auto-rm failed — leave the sim with the live task"
+        )
+    }
 }
