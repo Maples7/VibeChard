@@ -106,6 +106,45 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
         files[destination] = data
     }
 
+    /// Recorded `cloneItem(from:to:)` calls so tests can assert
+    /// seeding wiring without simulating clonefile semantics.
+    var cloneItemCalls: [(source: String, destination: String)] = []
+    /// If non-nil, `cloneItem` throws this error.
+    var cloneItemError: VibeChardError?
+
+    func cloneItem(from source: String, to destination: String) throws {
+        if let err = cloneItemError { throw err }
+        if files[destination] != nil || directories.contains(destination) || symlinks[destination] != nil {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "clonefile",
+                exitCode: Int32(17),
+                stderr: "destination already exists at \(destination)"
+            )
+        }
+        cloneItemCalls.append((source, destination))
+        // Approximate the recursive-COW effect: copy any seeded files
+        // and directories whose path begins with `source` into the
+        // matching path under `destination`. Symlinks under `source`
+        // are duplicated too.
+        let prefix = source.hasSuffix("/") ? source : source + "/"
+        directories.insert(destination)
+        for (path, data) in files where path == source || path.hasPrefix(prefix) {
+            let suffix = path == source ? "" : String(path.dropFirst(prefix.count))
+            let dst = suffix.isEmpty ? destination : destination + "/" + suffix
+            files[dst] = data
+        }
+        for dir in Array(directories) where dir == source || dir.hasPrefix(prefix) {
+            let suffix = dir == source ? "" : String(dir.dropFirst(prefix.count))
+            let dst = suffix.isEmpty ? destination : destination + "/" + suffix
+            directories.insert(dst)
+        }
+        for (path, target) in symlinks where path == source || path.hasPrefix(prefix) {
+            let suffix = path == source ? "" : String(path.dropFirst(prefix.count))
+            let dst = suffix.isEmpty ? destination : destination + "/" + suffix
+            symlinks[dst] = target
+        }
+    }
+
     // Test helpers
     func seedDirectory(_ path: String) { directories.insert(path) }
     func seedFile(_ path: String, data: Data) {

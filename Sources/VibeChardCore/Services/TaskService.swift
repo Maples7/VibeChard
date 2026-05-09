@@ -125,11 +125,20 @@ public struct TaskService: Sendable {
     /// non-ignored file from the main worktree into the new worktree.
     /// Useful for files like `.env` and `.vscode/settings.json` that
     /// agents need but that aren't in git.
+    ///
+    /// When `seedSpmFrom` is non-nil, COW-clones the source task's
+    /// SwiftPM bare-mirror cache (`<src>/.agent-build/SwiftPM/
+    /// repositories/`) into the new worktree so the first build skips
+    /// the network fetch of dependency objects (#55). Only the
+    /// `repositories/` subdir is seeded — `checkouts/` is rebuilt
+    /// locally on first build because its `.git` config has stale
+    /// absolute back-pointers that aren't safe to share.
     @discardableResult
     public func newTask(
         _ task: TaskName,
         baseRef: String? = nil,
-        copyUntracked: Bool = false
+        copyUntracked: Bool = false,
+        seedSpmFrom: TaskName? = nil
     ) throws -> String {
         let wtPath = workspace.worktreePath(for: task)
 
@@ -139,6 +148,22 @@ public struct TaskService: Sendable {
 
         if try git.branchExists(repoCwd: workspace.mainWorktreePath, name: task.branchName) {
             throw VibeChardError.worktreeAlreadyExists(path: wtPath)
+        }
+
+        // Validate `--seed-spm-from` *before* creating the worktree so
+        // a user typo doesn't leave a half-initialised task behind.
+        if let src = seedSpmFrom {
+            let srcWt = workspace.worktreePath(for: src)
+            if !fs.directoryExists(at: srcWt) {
+                throw VibeChardError.seedSourceTaskNotFound(name: src.raw)
+            }
+            let srcRepos = workspace.swiftpmRepositoriesDir(for: src)
+            if !fs.directoryExists(at: srcRepos) {
+                throw VibeChardError.seedSourceHasNoSwiftPMCache(
+                    name: src.raw,
+                    expectedPath: srcRepos
+                )
+            }
         }
 
         // Create the worktree + branch in one shot. Default base = HEAD of main worktree.
@@ -183,6 +208,18 @@ public struct TaskService: Sendable {
                 from: workspace.mainWorktreePath,
                 to: wtPath
             )
+        }
+
+        if let src = seedSpmFrom {
+            // Both checks already passed up-front; re-resolving paths
+            // here keeps the seeding step self-contained.
+            let srcRepos = workspace.swiftpmRepositoriesDir(for: src)
+            let dstRepos = workspace.swiftpmRepositoriesDir(for: task)
+            // Ensure the parent (`<wt>/.agent-build/SwiftPM/`) exists;
+            // clonefile(2) requires the parent to be present and the
+            // destination itself to NOT be.
+            try fs.createDirectory(at: workspace.swiftpmCacheDir(for: task))
+            try fs.cloneItem(from: srcRepos, to: dstRepos)
         }
 
         return wtPath

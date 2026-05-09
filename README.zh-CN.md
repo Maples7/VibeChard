@@ -263,7 +263,7 @@ vch rm foo                                       # 然后再清理
 
 | 命令 | 作用 |
 |---|---|
-| `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。`--cd` 启用机器可读契约：stdout 只输出 worktree 绝对路径，状态和提示一律走 stderr —— 给 fish / nushell 这类用不了 `vch shellenv` 的 shell 写 `cd "$(vch new --cd foo)"` 这种 wrapper。跟 `--exec` 互斥。 |
+| `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。`--seed-spm-from <task>` 用 APFS COW 把同 repo 下另一个 vch task 的 SwiftPM bare-mirror 缓存克隆过来，让这个 task 第一次 build 时跳过依赖网络拉取（仅 APFS；源 task 必须先 build 过一次）。`--cd` 启用机器可读契约：stdout 只输出 worktree 绝对路径，状态和提示一律走 stderr —— 给 fish / nushell 这类用不了 `vch shellenv` 的 shell 写 `cd "$(vch new --cd foo)"` 这种 wrapper。跟 `--exec` 互斥。 |
 | `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列；`--git-status` 增加 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列（每个 worktree 多跑一次 `git rev-list` + `git status`）。 |
 | `vch state <name>` | 漂亮打印任务的 `.vch/state.json`。`--json` 输出原始文件内容。`--field <dotted>` 只输出单个字段值（如 `simulator.udid`），方便在脚本里 `$(vch state foo --field simulator.udid)` 这样取。 |
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |

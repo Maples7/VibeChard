@@ -9,6 +9,23 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch new --seed-spm-from <task>` COW-clones a sibling vch task's
+  SwiftPM bare-mirror cache into the new task at create time so
+  the first build can skip the dependency network fetch (#55).
+  Implementation uses APFS `clonefile(2)` directly, with full
+  copy-on-write semantics: the new task gets a private view that
+  splits from the source on first write. Only the
+  `<src>/.agent-build/SwiftPM/repositories/` subdir is seeded —
+  `checkouts/` is rebuilt locally on first build because its
+  embedded `.git` config has stale absolute back-pointers that
+  aren't safe to share. Validation (source task exists, source
+  has a populated SwiftPM cache) runs *before* the new worktree
+  is created, so a typo never leaves a half-initialised task
+  behind. Two new business-error variants:
+  `seedSourceTaskNotFound` and `seedSourceHasNoSwiftPMCache`.
+  Source task may be removed at any time after seeding without
+  affecting the new task. Requires APFS; non-APFS volumes will
+  surface the underlying `clonefile(2)` error.
 - `vch land --push` and `vch land --push-to <remote>` push the
   resolved `--into` branch to a remote after the merge succeeds
   (#49). `--push` resolves the remote via `branch.<into>.remote`

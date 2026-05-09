@@ -274,7 +274,7 @@ vch rm foo                                       # 終わってから片付け�
 
 | コマンド | 役割 |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。`--cd` は機械可読コントラクト：stdout には worktree の絶対パスのみを出力し、ステータスやヒントは stderr へ流れます。fish / nushell など `vch shellenv` を使えないシェルから `cd "$(vch new --cd foo)"` 形式でラップするための入口。`--exec` とは排他。 |
+| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。`--seed-spm-from <task>` は APFS の COW で別の vch タスクの SwiftPM bare-mirror キャッシュをクローンして、このタスクの初回ビルドで依存ライブラリのネットワークフェッチをスキップします（APFS 限定。コピー元タスクは事前に一度はビルドしておく必要があります）。`--cd` は機械可読コントラクト：stdout には worktree の絶対パスのみを出力し、ステータスやヒントは stderr へ流れます。fish / nushell など `vch shellenv` を使えないシェルから `cd "$(vch new --cd foo)"` 形式でラップするための入口。`--exec` とは排他。 |
 | `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。`--git-status` で `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列を追加（worktree ごとに `git rev-list` + `git status` を 1 回ずつ追加実行）。 |
 | `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。`--field <dotted>` で単一のスカラー値（例：`simulator.udid`）だけを出力——スクリプトで `$(vch state foo --field simulator.udid)` として使うため。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |

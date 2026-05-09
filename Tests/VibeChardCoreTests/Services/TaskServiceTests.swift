@@ -165,6 +165,126 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(git.listUntrackedCalls, ["/Users/me/Repo"])
     }
 
+    // MARK: - new --seed-spm-from (#55)
+
+    func testSeedSpmFromClonesSourceRepositoriesIntoNewTask() throws {
+        let (service, _, fs, _) = makeService()
+        // Stand up a source task on disk with a populated SwiftPM
+        // bare-mirror cache.
+        fs.seedDirectory("/Users/me/Repo-source")
+        fs.seedDirectory("/Users/me/Repo-source/.agent-build/SwiftPM/repositories")
+        fs.seedFile(
+            "/Users/me/Repo-source/.agent-build/SwiftPM/repositories/Foo.git/HEAD",
+            data: Data("ref: refs/heads/main\n".utf8)
+        )
+
+        let path = try service.newTask(
+            TaskName("follow-up"),
+            seedSpmFrom: TaskName("source")
+        )
+        XCTAssertEqual(path, "/Users/me/Repo-follow-up")
+
+        // The cloneItem call recorded the right (source, dest) pair.
+        XCTAssertEqual(fs.cloneItemCalls.count, 1)
+        XCTAssertEqual(
+            fs.cloneItemCalls.first?.source,
+            "/Users/me/Repo-source/.agent-build/SwiftPM/repositories"
+        )
+        XCTAssertEqual(
+            fs.cloneItemCalls.first?.destination,
+            "/Users/me/Repo-follow-up/.agent-build/SwiftPM/repositories"
+        )
+
+        // The destination repositories/ tree is materialized — file
+        // contents reachable, mirrors the source's layout.
+        XCTAssertEqual(
+            try fs.readFile(at: "/Users/me/Repo-follow-up/.agent-build/SwiftPM/repositories/Foo.git/HEAD"),
+            Data("ref: refs/heads/main\n".utf8)
+        )
+
+        // We must NOT have seeded checkouts/ or workspace-state.json
+        // — those were proven non-portable in the spike.
+        XCTAssertFalse(fs.directoryExists(at: "/Users/me/Repo-follow-up/.agent-build/SwiftPM/checkouts"))
+        XCTAssertFalse(fs.fileExists(at: "/Users/me/Repo-follow-up/.agent-build/SwiftPM/workspace-state.json"))
+    }
+
+    func testSeedSpmFromThrowsWhenSourceTaskDoesNotExist() throws {
+        let (service, _, _, _) = makeService()
+        // No source worktree on disk.
+        XCTAssertThrowsError(try service.newTask(
+            TaskName("follow-up"),
+            seedSpmFrom: TaskName("source")
+        )) { error in
+            guard case let VibeChardError.seedSourceTaskNotFound(name) = error else {
+                return XCTFail("expected seedSourceTaskNotFound, got \(error)")
+            }
+            XCTAssertEqual(name, "source")
+        }
+    }
+
+    func testSeedSpmFromThrowsWhenSourceHasNoSwiftPMCache() throws {
+        let (service, _, fs, _) = makeService()
+        // Source task exists but never ran a build — no
+        // .agent-build/SwiftPM/repositories/.
+        fs.seedDirectory("/Users/me/Repo-source")
+
+        XCTAssertThrowsError(try service.newTask(
+            TaskName("follow-up"),
+            seedSpmFrom: TaskName("source")
+        )) { error in
+            guard case let VibeChardError.seedSourceHasNoSwiftPMCache(name, expected) = error else {
+                return XCTFail("expected seedSourceHasNoSwiftPMCache, got \(error)")
+            }
+            XCTAssertEqual(name, "source")
+            XCTAssertEqual(
+                expected,
+                "/Users/me/Repo-source/.agent-build/SwiftPM/repositories"
+            )
+        }
+    }
+
+    func testSeedSpmFromValidatesBeforeCreatingWorktree() throws {
+        let (service, git, fs, _) = makeService()
+        // Source task exists but has no SwiftPM cache — should
+        // throw before any side effect on disk or git.
+        fs.seedDirectory("/Users/me/Repo-source")
+
+        XCTAssertThrowsError(try service.newTask(
+            TaskName("follow-up"),
+            seedSpmFrom: TaskName("source")
+        ))
+
+        XCTAssertEqual(git.addNewBranchCalls.count, 0,
+            "no worktree should be created when seed validation fails")
+        XCTAssertFalse(fs.directoryExists(at: "/Users/me/Repo-follow-up"),
+            "no half-initialised worktree on disk")
+    }
+
+    func testNewTaskWithoutSeedSpmFromDoesNotCallCloneItem() throws {
+        let (service, _, fs, _) = makeService()
+        _ = try service.newTask(TaskName("foo"))
+        XCTAssertEqual(fs.cloneItemCalls.count, 0,
+            "cloneItem must only be invoked when --seed-spm-from is set")
+    }
+
+    func testSeedSpmFromExitCodeIsBusinessNotUsage() throws {
+        // Both validation errors are business-state failures (the
+        // user asked for a real action that can't proceed) — they
+        // must not exit 2 (usage), which is reserved for argv-shape
+        // errors that the user can fix without changing the world.
+        XCTAssertEqual(
+            VibeChardError.seedSourceTaskNotFound(name: "x").exitCode,
+            ExitCode.business
+        )
+        XCTAssertEqual(
+            VibeChardError.seedSourceHasNoSwiftPMCache(
+                name: "x",
+                expectedPath: "/p"
+            ).exitCode,
+            ExitCode.business
+        )
+    }
+
     // MARK: - list
 
     func testListReturnsManagedWorktreesNewestFirst() throws {

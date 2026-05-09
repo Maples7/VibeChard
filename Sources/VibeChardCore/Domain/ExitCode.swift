@@ -45,7 +45,9 @@ public extension VibeChardError {
              .syncBaseUnresolved,
              .syncDirtyWorktree,
              .testNoPriorRun,
-             .testNoPriorFailures:
+             .testNoPriorFailures,
+             .seedSourceTaskNotFound,
+             .seedSourceHasNoSwiftPMCache:
             return ExitCode.business
         case .externalCommandFailed,
              .syncRebaseConflict:

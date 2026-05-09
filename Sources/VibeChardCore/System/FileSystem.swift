@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 /// Filesystem operations VibeChard cares about. Kept narrow on purpose so
 /// unit tests can substitute an in-memory implementation without
@@ -32,6 +35,16 @@ public protocol FileSystem: Sendable {
     /// copied as-is, not followed). Parent of `destination` must
     /// already exist. Throws if `destination` already exists.
     func copyItem(from source: String, to destination: String) throws
+
+    /// Recursively clone `source` to `destination` using APFS
+    /// `clonefile(2)` so the dest is a copy-on-write view of the
+    /// source. Used by `vch new --seed-spm-from <task>` (#55) to
+    /// reuse a sibling task's SwiftPM bare-mirror cache without
+    /// double-paying the disk. The destination must NOT exist; the
+    /// parent directory of `destination` must exist. On non-APFS
+    /// volumes or unsupported filesystems the call throws so callers
+    /// can surface a clear error rather than silently fall back.
+    func cloneItem(from source: String, to destination: String) throws
 }
 
 /// Production implementation backed by `FileManager`.
@@ -101,5 +114,32 @@ public struct DiskFileSystem: FileSystem {
 
     public func copyItem(from source: String, to destination: String) throws {
         try FileManager.default.copyItem(atPath: source, toPath: destination)
+    }
+
+    public func cloneItem(from source: String, to destination: String) throws {
+        // `clonefile(2)` requires the destination to NOT exist. Bail
+        // early with a clear error rather than letting Darwin
+        // surface a less informative EEXIST.
+        if fileExists(at: destination) || directoryExists(at: destination) {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "clonefile",
+                exitCode: Int32(EEXIST),
+                stderr: "destination already exists at \(destination)"
+            )
+        }
+        let result = source.withCString { src in
+            destination.withCString { dst in
+                clonefile(src, dst, 0)
+            }
+        }
+        if result != 0 {
+            let savedErrno = errno
+            let message = String(cString: strerror(savedErrno))
+            throw VibeChardError.externalCommandFailed(
+                cmd: "clonefile \(source) \(destination)",
+                exitCode: savedErrno,
+                stderr: message
+            )
+        }
     }
 }
