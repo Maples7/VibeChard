@@ -51,6 +51,19 @@ public struct SimRuntimeVersion: Equatable, Comparable, Sendable {
         return lhs.minor < rhs.minor
     }
 
+    /// Human-readable iOS form, e.g. `iOS 26.4`. Matches what
+    /// `vch test --runtime` accepts on the CLI and what
+    /// `vch sim warm-template list` emits in its name column, so
+    /// users can copy-paste between commands.
+    public var dottedLabel: String { "iOS \(major).\(minor)" }
+
+    /// Canonical CoreSimulator runtime identifier round-trippable
+    /// with `parse(runtimeIdentifier:)`. Used wherever vch needs to
+    /// hand a runtime to `xcrun simctl create` / `simctl list -j`.
+    public var iOSRuntimeIdentifier: String {
+        "com.apple.CoreSimulator.SimRuntime.iOS-\(major)-\(minor)"
+    }
+
     /// Parse from a runtime identifier like
     /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4` →
     /// `SimRuntimeVersion(major: 26, minor: 4)`. Returns `nil` for
@@ -87,6 +100,16 @@ public protocol SimctlClient: Sendable {
     /// Clone an existing device. Returns the new device's UDID.
     /// Equivalent to `xcrun simctl clone <sourceUDID> "<newName>"`.
     func clone(sourceUDID: String, newName: String) throws -> String
+
+    /// Create a new device from an Apple device template +
+    /// runtime. Returns the new device's UDID. Equivalent to
+    /// `xcrun simctl create "<name>" "<deviceTypeID>" "<runtimeID>"`.
+    /// Both identifiers accept either the verbose CoreSimulator ID
+    /// (`com.apple.CoreSimulator.SimDeviceType.iPhone-16`) or the
+    /// human-readable form simctl knows (`"iPhone 16"` /
+    /// `"iOS 26.4"`); this client passes them through verbatim.
+    /// Used by `vch sim warm-template create` (#47).
+    func create(name: String, deviceTypeID: String, runtimeID: String) throws -> String
 
     /// Boot the device if needed and wait for boot completion. Idempotent.
     /// Equivalent to `xcrun simctl bootstatus <udid> -b`.
@@ -179,6 +202,34 @@ public struct DiskSimctlClient: SimctlClient {
                 cmd: "xcrun simctl clone \(sourceUDID) \"\(newName)\"",
                 exitCode: result.exitCode,
                 stderr: "simctl clone produced no UDID on stdout"
+            )
+        }
+        return udid
+    }
+
+    public func create(
+        name: String,
+        deviceTypeID: String,
+        runtimeID: String
+    ) throws -> String {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "create", name, deviceTypeID, runtimeID]
+        )
+        guard result.succeeded else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl create \"\(name)\" \"\(deviceTypeID)\" \"\(runtimeID)\"",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+        // simctl create prints the new UDID on its own line.
+        let udid = result.stdoutTrimmed
+        guard !udid.isEmpty else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl create \"\(name)\" \"\(deviceTypeID)\" \"\(runtimeID)\"",
+                exitCode: result.exitCode,
+                stderr: "simctl create produced no UDID on stdout"
             )
         }
         return udid

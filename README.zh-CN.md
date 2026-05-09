@@ -259,6 +259,39 @@ vch rm foo                                       # 然后再清理
 被搬」「应该怎么搬」，因为答案完全取决于你的项目为什么 ignore
 那些文件。
 
+### 用 warm 模板省掉首次启动模拟器的等待
+
+第一次对一个新克隆的模拟器跑 `vch test` 时，墙钟里大约 30 秒
+是 `simctl create` + 首次启动的缓存预热，**不是**你的 build 本身。
+如果你在同一台机器上对同一组 `(device, runtime)` 并行跑多个
+agent，每个任务都会再付一次这笔钱。"warm 模板" 就是把这笔钱
+预先付一次，让全机所有任务共享。
+
+```sh
+# 一次性准备（每对你实际用到的 device / runtime 跑一次）：
+vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
+
+# 之后每个 pin 了同一 runtime 的任务，第一次 `vch test` 都会少花
+# 大约 21 秒 —— 单任务克隆会继承已经预热好的缓存。
+vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
+vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
+
+# 看一下当前缓存了哪些：
+vch sim warm-template list
+
+# 不再需要的时候释放磁盘：
+vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
+```
+
+warm 模板的生命周期**和任何任务都解耦**。`vch remove` 和
+`vch doctor --clean` 永远不会动 warm 模板 —— 你创建，你删除。
+`vch doctor` 会列出它们方便你发现 stale 或被启动的异常状态，
+但绝不会自动清理（自动清理会悄悄抹掉 30 多秒的预热成果）。
+`--runtime` 是必填的，因为同一个 device 不同 runtime 是不同的
+warm 模板；不 pin 的话 vch 没办法精确查找。SPIKE 实测数据
+（iPhone 16 + iOS 26.4，N=5 取中位数）：cold 30.75 s，warm 9.41 s，
+节省 21.35 s，约 69.4%。
+
 ## 命令一览
 
 | 命令 | 作用 |
@@ -275,6 +308,7 @@ vch rm foo                                       # 然后再清理
 | `vch run   <name> [flags] [-- launch-args]` | 在任务的模拟器克隆上构建、安装并启动 App。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 通过 `xcodebuild -showBuildSettings -json` 自动解析。`--` 之后的参数原样转发给 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要会自动启动模拟器并打开 `Simulator.app`。 |
 | `vch logs <name> [--test\|--build]` | 打印任务最近一次 `vch test` 或 `vch build` 的完整 xcodebuild 日志。默认 `--test`；传 `--build` 看构建 firehose。日志每次运行时覆盖。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆。 |
+| `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模拟器模板（#47）。warm 模板是一个被「booted-once-then-shutdown」预热好的模拟器，后续 `vch test` 单任务克隆会继承它的缓存，把首次模拟器启动从约 30 秒降到约 9 秒。`create <device> --runtime "iOS 26.4"` 创建；`list [--json]` 查看；`remove <device> --runtime "iOS 26.4"` 删除。**生命周期与任何任务都解耦** —— `vch remove` 和 `vch doctor --clean` 都不会动 warm 模板，需要你自己管。`vch test --device "<device>" --runtime "iOS X.Y"` 在匹配的 warm 模板存在时会自动选用。 |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。`--push` 把解析后的 `--into` 分支推到其追踪的 remote（`branch.<into>.remote`，没有时回落到 `origin`）；`--push-to <remote>` 显式覆盖 remote。两个标志都没传时 `vch land` 绝不联网。push 失败不会回滚 merge —— 失败信息以 stderr warning 输出。只有**已 commit** 的内容会被搬过去 —— 未提交改动、untracked 文件、被 `.gitignore` 排除的产物会随 worktree 一起被删（用 `--keep` + 手动拷贝；详见 cookbook 「`vch land` 时保留生成的产物」）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 拉取记录的基准分支的 upstream，并把 `agent/<name>` rebase 到其上。`--merge` 改用 `git merge --no-ff`（仅当任务分支已经被推到协作者会读的地方时再用）。`--onto <ref>` 覆盖基准；`--no-fetch` 跳过网络；`--allow-dirty` 把脏 worktree 检查交给 git 自己决定；`--dry-run` 只打印 ahead/behind 与计划策略，不写任何东西。所有 git 操作都在任务 worktree 内执行，绝不动主 worktree。成功后写入 `lastSync`。 |
 | `vch remove <name> [--allow-dirty] [--allow-unmerged] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。`--allow-dirty` 允许未提交改动；`--allow-unmerged` 强删未合并的分支。 |

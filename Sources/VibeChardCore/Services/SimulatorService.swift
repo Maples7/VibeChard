@@ -117,17 +117,35 @@ public struct SimulatorService: Sendable {
             return nil
         }
 
-        let template = try pickNewestTemplate(name: requested,
-                                                requestedRuntime: requestedRuntime)
-        let cloneName = cloneDisplayName(originalName: template.name, task: task)
+        // #47: warm-template lookup wins over the Apple-template scan
+        // when the user pinned a runtime AND a vch-managed warm
+        // template exists for `<requested>:<runtime>`. The clone path
+        // is otherwise identical, so the rest of state.json (including
+        // `templateName` + `runtimeIdentifier`) keeps the *device*
+        // identity instead of the warm template's `vch-warm[...]` name
+        // — that way later reuse comparisons still match the user's
+        // `--device "iPhone 16"` argument as expected.
+        let template: SimDevice
+        let sourceKind: TaskState.SourceKind
+        if let warm = try pickWarmTemplate(deviceName: requested,
+                                           requestedRuntime: requestedRuntime) {
+            template = warm
+            sourceKind = .warmTemplate
+        } else {
+            template = try pickNewestTemplate(name: requested,
+                                              requestedRuntime: requestedRuntime)
+            sourceKind = .appleTemplate
+        }
+        let cloneName = cloneDisplayName(originalName: requested, task: task)
         let newUDID = try simctl.clone(sourceUDID: template.udid, newName: cloneName)
 
         let record = TaskState.SimulatorRecord(
             cloneUDID: newUDID,
             sourceUDID: template.udid,
             name: cloneName,
-            templateName: template.name,
-            runtimeIdentifier: template.runtime
+            templateName: requested,
+            runtimeIdentifier: template.runtime,
+            sourceKind: sourceKind
         )
         state.simulator = record
         try fs.writeFileAtomic(state.jsonData(), to: statePath)

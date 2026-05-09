@@ -20,7 +20,7 @@ public extension VibeChardError {
     var exitCode: Int32 {
         switch self {
         case .invalidTaskName, .missingArgument, .landConflictingStrategies, .newConflictingCdExec,
-             .testConflictingRerunFlags, .testRerunWithExtraArgs:
+             .testConflictingRerunFlags, .testRerunWithExtraArgs, .invalidRuntime:
             return ExitCode.usage
         case .worktreeAlreadyExists,
              .taskNotFound,
@@ -32,6 +32,7 @@ public extension VibeChardError {
              .stateFileMissing,
              .simulatorTemplateNotFound,
              .simulatorAlreadyBound,
+             .warmTemplateAlreadyExists,
              .worktreeBusy,
              .logFileMissing,
              .landMainNotOnInto,

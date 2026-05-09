@@ -26,6 +26,7 @@ public enum TaskStateField {
         "simulator.templateName",
         "simulator.runtime",
         "simulator.runtimeIdentifier",
+        "simulator.sourceKind",
         "lastBuild.success",
         "lastBuild.finishedAt",
         "lastBuild.durationSeconds",
@@ -86,11 +87,17 @@ public enum TaskStateField {
             // exists (legacy state with no runtime info at all).
             if let v = state.simulator?.runtimeIdentifier
                 .flatMap({ SimRuntimeVersion.parse(runtimeIdentifier: $0) }) {
-                return .value("iOS \(v.major).\(v.minor)")
+                return .value(v.dottedLabel)
             }
             return optional(state.simulator?.runtimeIdentifier)
         case "simulator.runtimeIdentifier":
             return optional(state.simulator?.runtimeIdentifier)
+        case "simulator.sourceKind":
+            // Surfaces the clone-source kind to scripts so they can
+            // distinguish a warm-template-cloned task from an
+            // Apple-template-cloned one (#47). Legacy state.json
+            // files (no `sourceKind` field) read as unset.
+            return optional(state.simulator?.sourceKind?.rawValue)
 
         case "lastBuild.success":
             return optional(state.lastBuild.map { $0.success ? "true" : "false" })

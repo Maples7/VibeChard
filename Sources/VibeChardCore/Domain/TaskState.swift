@@ -99,16 +99,39 @@ public struct TaskState: Codable, Equatable, Sendable {
         /// through `simctl list` (#11). Optional for backward
         /// compatibility with state.json written by vch ≤ v0.1.x.
         public let runtimeIdentifier: String?
+        /// Provenance of the source UDID this clone was made from (#47).
+        /// Purely informational — surfaces as a one-line note in
+        /// `vch state` so users can spot when a clone came off a warm
+        /// template vs. a fresh Apple template. Reuse and lookup keep
+        /// keying on `templateName` + `runtimeIdentifier`; this field
+        /// participates in zero decision paths. `nil` on legacy
+        /// state.json files written by vch ≤ v0.3.0.
+        public let sourceKind: SourceKind?
 
         public init(cloneUDID: String, sourceUDID: String, name: String,
                     templateName: String? = nil,
-                    runtimeIdentifier: String? = nil) {
+                    runtimeIdentifier: String? = nil,
+                    sourceKind: SourceKind? = nil) {
             self.cloneUDID = cloneUDID
             self.sourceUDID = sourceUDID
             self.name = name
             self.templateName = templateName
             self.runtimeIdentifier = runtimeIdentifier
+            self.sourceKind = sourceKind
         }
+    }
+
+    /// Provenance of a clone's source device (#47). Stored as a
+    /// string-backed enum so legacy state.json files (which encode
+    /// no `sourceKind`) still decode. New variants must be additive;
+    /// removing or renaming a case is a schema break.
+    public enum SourceKind: String, Codable, Equatable, Sendable {
+        /// Cloned from a `vch sim warm-template` template that was
+        /// booted-once-then-shutdown to prime first-boot caches.
+        case warmTemplate = "warm-template"
+        /// Cloned from an Apple-provided device template found in
+        /// `xcrun simctl list devices --json`.
+        case appleTemplate = "apple-template"
     }
 
     public struct BuildRecord: Codable, Equatable, Sendable {

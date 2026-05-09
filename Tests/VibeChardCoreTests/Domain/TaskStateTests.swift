@@ -218,4 +218,51 @@ final class TaskStateTests: XCTestCase {
         let restoredEmpty = try TaskState.parse(try originalEmpty.jsonData())
         XCTAssertEqual(restoredEmpty.lastTest?.extraArgs, [])
     }
+
+    // MARK: - simulator.sourceKind (#47)
+
+    func testRoundtripsSimulatorSourceKindWarmTemplate() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_400)
+        let original = TaskState(
+            name: "alpha",
+            branch: "agent/alpha",
+            createdAt: now,
+            baseRef: "deadbee",
+            simulator: .init(
+                cloneUDID: "C", sourceUDID: "WARM", name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                sourceKind: .warmTemplate
+            )
+        )
+        let restored = try TaskState.parse(try original.jsonData())
+        XCTAssertEqual(restored.simulator?.sourceKind, .warmTemplate)
+    }
+
+    /// Legacy state.json files written by vch ≤ v0.3.0 don't carry
+    /// the `sourceKind` field. They must still decode (it stays nil)
+    /// — adding a required field would be a breaking schema change
+    /// that strands users with existing tasks.
+    func testLegacySimulatorRecordWithoutSourceKindStillDecodes() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "alpha",
+          "branch": "agent/alpha",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "deadbee",
+          "simulator": {
+            "cloneUDID": "C",
+            "sourceUDID": "S",
+            "name": "iPhone 16-vch-alpha",
+            "templateName": "iPhone 16",
+            "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+          }
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNotNil(state.simulator)
+        XCTAssertNil(state.simulator?.sourceKind)
+        XCTAssertEqual(state.simulator?.cloneUDID, "C")
+    }
 }

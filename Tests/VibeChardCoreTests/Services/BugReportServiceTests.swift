@@ -217,6 +217,59 @@ final class BugReportServiceTests: XCTestCase {
         XCTAssertEqual(service.defaultOutputName(),
                        "vch-bug-report-20180314T144000Z.tgz")
     }
+
+    // MARK: - warm-templates.json (#47)
+
+    func testCollectIncludesWarmTemplatesJSONWhenSimctlInjected() throws {
+        let workspace = Workspace(mainWorktreePath: "/Users/test/Repo")
+        let fs = InMemoryFileSystem()
+        let runner = ScriptedRunner()
+        let simctl = FakeSimctl()
+        simctl.allDevicesOverride = [
+            SimDevice(udid: "WARM",
+                      name: "vch-warm[iPhone 16:iOS 26.4]",
+                      runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                      runtimeVersion: .init(major: 26, minor: 4),
+                      isAvailable: true,
+                      state: "Shutdown"),
+        ]
+        let service = BugReportService(
+            workspace: workspace,
+            git: FakeGitClient(),
+            fs: fs,
+            runner: runner,
+            simctl: simctl,
+            now: { Date(timeIntervalSince1970: 1_700_000_000) },
+            homeDir: { "/Users/test" }
+        )
+        let entries = try service.collect()
+        let warm = entries.first { $0.path == "warm-templates.json" }
+        XCTAssertNotNil(warm, "warm-templates.json must be in the bundle when simctl is wired")
+
+        let body = String(data: warm!.data, encoding: .utf8) ?? ""
+        XCTAssertTrue(body.contains("\"WARM\""))
+        XCTAssertTrue(body.contains("\"iPhone 16\""))
+        XCTAssertTrue(body.contains("\"iOS 26.4\""))
+        XCTAssertTrue(body.contains("\"ok\""))
+    }
+
+    /// Without an injected simctl, warm-templates.json is silently
+    /// skipped (so existing tests that don't care still work). This
+    /// is the supported "minimal" wiring for callers that don't have
+    /// a `SimctlClient` handy.
+    func testCollectSkipsWarmTemplatesJSONWhenNoSimctl() throws {
+        let workspace = Workspace(mainWorktreePath: "/Users/test/Repo")
+        let service = BugReportService(
+            workspace: workspace,
+            git: FakeGitClient(),
+            fs: InMemoryFileSystem(),
+            runner: ScriptedRunner(),
+            now: { Date(timeIntervalSince1970: 1_700_000_000) },
+            homeDir: { "/Users/test" }
+        )
+        let entries = try service.collect()
+        XCTAssertFalse(entries.contains { $0.path == "warm-templates.json" })
+    }
 }
 
 // MARK: - test doubles
