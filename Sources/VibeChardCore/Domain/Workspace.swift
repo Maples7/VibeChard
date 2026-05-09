@@ -71,6 +71,13 @@ public struct Workspace: Equatable, Sendable {
         PathOps.join(vchDir(for: task), "last-test.log")
     }
 
+    /// Path of the last `vch build` xcodebuild firehose, tee'd
+    /// regardless of whether `--verbose` was passed (#48). Mirrors
+    /// `lastTestLogPath(for:)`.
+    public func lastBuildLogPath(for task: TaskName) -> String {
+        PathOps.join(vchDir(for: task), "last-build.log")
+    }
+
     /// Recognize a worktree path as belonging to vch (i.e. the leaf is
     /// `<repoName>-<something>`). Returns the task-name suffix or nil.
     public func taskNameRaw(forWorktreePath path: String) -> String? {
@@ -103,6 +110,11 @@ public struct Workspace: Equatable, Sendable {
     /// Mirrors `lastTestLogPath(for:)` for callers iterating worktrees
     /// without a `TaskName` in scope (BugReport).
     public static let lastTestLogRelativePath = ".vch/last-test.log"
+
+    /// Per-worktree last-build log, relative to the worktree root.
+    /// Mirrors `lastBuildLogPath(for:)` for callers iterating worktrees
+    /// without a `TaskName` in scope (BugReport).
+    public static let lastBuildLogRelativePath = ".vch/last-build.log"
 
     /// Worktree-relative directory prefixes that vch manages
     /// (`.vch/` for state, `.agent-build/` for caches). Callers

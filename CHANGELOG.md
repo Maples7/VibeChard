@@ -8,6 +8,23 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Changed
+- `vch build` now mirrors `vch test`'s concise-summary path
+  instead of streaming the full xcodebuild firehose to stdout
+  (#48). The default output is a single trailing line
+  (`✓ build succeeded in 12.4s   (3 warnings)   ** BUILD SUCCEEDED **`
+  on success, an error list followed by
+  `✗ build failed in 8.1s   (2 errors, 5 warnings)   ** BUILD FAILED **`
+  on failure). The full firehose is always tee'd to
+  `<wt>/.vch/last-build.log` and recoverable via the new
+  `vch logs <name> --build`. Pass `--verbose` to mirror
+  xcodebuild's full output to stdout the way `vch build` used
+  to. The build log is bundled into `vch doctor --bug-report`
+  on the same terms as `last-test.log` (256 KiB cap, `$HOME`
+  scrubbed).
+- `vch logs <name>` accepts `--build` alongside `--test` (mutually
+  exclusive). Default remains `--test` when neither is passed (#48).
+
 ### Fixed
 - `vch test` now reports the real passed/failed count for
   swift-testing targets (#45). The previous summary line printed

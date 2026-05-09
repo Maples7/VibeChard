@@ -2,12 +2,10 @@ import ArgumentParser
 import Foundation
 import VibeChardCore
 
-/// `vch logs <name> --test` — print the firehose log preserved during
-/// the most recent `vch test` run (#9). The log lives at
-/// `<wt>/.vch/last-test.log` and is overwritten every run.
-///
-/// Currently only `--test` is supported; `--build` is reserved for a
-/// follow-up that tees `xcodebuild build` output the same way.
+/// `vch logs <name>` — print the firehose log preserved during the
+/// most recent `vch test` (#9) or `vch build` (#48) run. Logs live at
+/// `<wt>/.vch/last-test.log` and `<wt>/.vch/last-build.log`
+/// respectively and are overwritten every run.
 struct LogsCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "logs",
@@ -19,25 +17,32 @@ struct LogsCommand: ParsableCommand {
     var name: String
 
     @Flag(name: .long,
-          help: "Print the last `vch test` log (default).")
+          help: "Print the last `vch test` log (default when neither --test nor --build is passed).")
     var test: Bool = false
+
+    @Flag(name: .long,
+          help: "Print the last `vch build` log.")
+    var build: Bool = false
 
     func run() throws {
         try CLIBridge.run {
+            if test && build {
+                throw VibeChardError.missingArgument(
+                    "--test and --build are mutually exclusive"
+                )
+            }
             let task = try TaskName(name)
             let cwd = FileManager.default.currentDirectoryPath
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
-            // Currently `--test` is the only flavor; if neither flag
-            // was passed default to test (matches the issue's CLI
-            // sketch). When --build lands we'll require the user to
-            // pick exactly one.
-            _ = test
-            let logPath = workspace.lastTestLogPath(for: task)
+            let logPath = build
+                ? workspace.lastBuildLogPath(for: task)
+                : workspace.lastTestLogPath(for: task)
             let url = URL(fileURLWithPath: logPath)
             guard FileManager.default.fileExists(atPath: logPath) else {
+                let cmd = build ? "vch build" : "vch test"
                 throw VibeChardError.logFileMissing(
                     path: logPath,
-                    hint: "run `vch test \(task.raw)` first"
+                    hint: "run `\(cmd) \(task.raw)` first"
                 )
             }
             let data = try Data(contentsOf: url)

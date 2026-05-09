@@ -102,9 +102,24 @@ private enum BuildOrTest {
         let result: PlanLauncher.RunResult
         switch action {
         case .build:
-            // Build keeps today's firehose behavior — no parsing,
-            // direct stdout/stderr inheritance.
-            result = try PlanLauncher.run(plan)
+            // #48: Build now mirrors the test path — concise summary
+            // by default, full firehose only with --verbose. The full
+            // log is always tee'd to <wt>/.vch/last-build.log so
+            // `vch logs <name> --build` can recover it.
+            let logURL = URL(fileURLWithPath: workspace.lastBuildLogPath(for: task))
+            CLIBridge.eprintln("→ building\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
+            let s = BuildOutputSummarizer()
+            result = try PlanLauncher.runTee(
+                plan,
+                logURL: logURL,
+                mirror: verbose,
+                onLine: { s.feed($0) }
+            )
+            // Render concise summary unconditionally (the test branch
+            // does the same — keeps the trailing ✓/✗ line easy to
+            // grep even in verbose mode).
+            let colorize = ANSI.defaultEnabledForStdout()
+            print(s.render(durationSeconds: result.durationSeconds, colorize: colorize))
         case .test:
             // Test goes through the tee path so we can summarize at
             // the end (#9). The full log is always preserved at
@@ -197,6 +212,9 @@ struct BuildCommand: ParsableCommand {
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
+    @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-build.log (see `vch logs <name> --build`).")
+    var verbose: Bool = false
+
     @Argument(parsing: .postTerminator,
               help: "Extra args appended to xcodebuild after `--`.")
     var extraArgs: [String] = []
@@ -211,6 +229,7 @@ struct BuildCommand: ParsableCommand {
                 device: device,
                 runtime: runtime,
                 noSim: noSim,
+                verbose: verbose,
                 extraArgs: extraArgs
             )
         }
