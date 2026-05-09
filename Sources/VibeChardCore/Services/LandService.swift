@@ -29,6 +29,11 @@ public struct LandService: Sendable {
         public var dryRun: Bool
         /// `--keep` — skip the auto `vch rm` after a successful merge.
         public var keep: Bool
+        /// `--push` / `--push-to <remote>` — push the resolved
+        /// `--into` branch to `<remote>` after the merge succeeds.
+        /// `nil` = don't push (the default; never publish without
+        /// being asked). (#49)
+        public var push: Push?
 
         public init(
             into: String? = nil,
@@ -36,7 +41,8 @@ public struct LandService: Sendable {
             message: String? = nil,
             allowDirty: Bool = false,
             dryRun: Bool = false,
-            keep: Bool = false
+            keep: Bool = false,
+            push: Push? = nil
         ) {
             self.into = into
             self.strategy = strategy
@@ -44,7 +50,18 @@ public struct LandService: Sendable {
             self.allowDirty = allowDirty
             self.dryRun = dryRun
             self.keep = keep
+            self.push = push
         }
+    }
+
+    /// Where `vch land --push` should push. `defaultRemote` resolves
+    /// to the upstream tracked by the resolved `--into` branch
+    /// (`branch.<into>.remote`), falling back to `"origin"` when
+    /// the branch has no upstream configured. `explicit(name)` is the
+    /// `--push-to <name>` form. (#49)
+    public enum Push: Equatable, Sendable {
+        case defaultRemote
+        case explicit(String)
     }
 
     public struct Outcome: Equatable, Sendable {
@@ -60,6 +77,17 @@ public struct LandService: Sendable {
         public let removeError: String?
         /// `[base..task]` paths the merge touched, surfaced for `--dry-run`.
         public let touchedPaths: [String]
+        /// `true` when `--push` was requested and `git push` succeeded
+        /// after the merge. `false` for every other case (push not
+        /// requested, dry-run, push failed). (#49)
+        public let pushed: Bool
+        /// Resolved remote name used for `git push` when `--push` was
+        /// requested. `nil` when no push was requested. Surfaced even
+        /// on failure so the user sees which remote vch tried. (#49)
+        public let pushRemote: String?
+        /// Human-readable description when `--push` was requested but
+        /// `git push` failed. The merge is not rolled back. (#49)
+        public let pushError: String?
 
         public init(
             merged: Bool,
@@ -68,7 +96,10 @@ public struct LandService: Sendable {
             message: String,
             removed: Bool,
             removeError: String?,
-            touchedPaths: [String]
+            touchedPaths: [String],
+            pushed: Bool = false,
+            pushRemote: String? = nil,
+            pushError: String? = nil
         ) {
             self.merged = merged
             self.into = into
@@ -77,6 +108,9 @@ public struct LandService: Sendable {
             self.removed = removed
             self.removeError = removeError
             self.touchedPaths = touchedPaths
+            self.pushed = pushed
+            self.pushRemote = pushRemote
+            self.pushError = pushError
         }
     }
 
@@ -175,6 +209,38 @@ public struct LandService: Sendable {
                 }
             }
 
+            // Optional `git push`. The merge already succeeded; we
+            // never roll it back if push fails. Attempt is recorded
+            // in the Outcome so the CLI can surface the failure as
+            // a warning the user sees right after the merge line. (#49)
+            var pushed = false
+            var pushRemote: String?
+            var pushError: String?
+            if let pushSpec = options.push {
+                let remote: String
+                switch pushSpec {
+                case .defaultRemote:
+                    let upstream = (try? git.upstreamRemote(
+                        repoCwd: workspace.mainWorktreePath,
+                        branch: resolved.into
+                    )) ?? nil
+                    remote = upstream ?? "origin"
+                case .explicit(let name):
+                    remote = name
+                }
+                pushRemote = remote
+                do {
+                    try git.push(
+                        repoCwd: workspace.mainWorktreePath,
+                        remote: remote,
+                        branch: resolved.into
+                    )
+                    pushed = true
+                } catch {
+                    pushError = String(describing: error)
+                }
+            }
+
             return Outcome(
                 merged: true,
                 into: resolved.into,
@@ -182,7 +248,10 @@ public struct LandService: Sendable {
                 message: resolved.message,
                 removed: removed,
                 removeError: removeError,
-                touchedPaths: diff
+                touchedPaths: diff,
+                pushed: pushed,
+                pushRemote: pushRemote,
+                pushError: pushError
             )
         }
     }
