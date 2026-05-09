@@ -100,6 +100,14 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// extra args verbatim, so passing fresh ones would be ignored
     /// or overridden. (#46)
     case testRerunWithExtraArgs
+    /// `vch new --seed-spm-from <task>` was given a source task name
+    /// that has no managed worktree. (#55)
+    case seedSourceTaskNotFound(name: String)
+    /// `vch new --seed-spm-from <task>` was given a source task that
+    /// exists but has no SwiftPM bare-mirror cache yet — typically
+    /// because the source task was never built. The user should run
+    /// `vch build <source>` once before re-trying. (#55)
+    case seedSourceHasNoSwiftPMCache(name: String, expectedPath: String)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -191,6 +199,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "--rerun and --rerun-failed are mutually exclusive"
         case .testRerunWithExtraArgs:
             return "--rerun / --rerun-failed cannot be combined with positional xcodebuild args after `--`: rerun reuses the recorded args verbatim"
+        case let .seedSourceTaskNotFound(name):
+            return "--seed-spm-from: source task '\(name)' not found (no managed worktree at <repo>-\(name)/)"
+        case let .seedSourceHasNoSwiftPMCache(name, expectedPath):
+            return "--seed-spm-from: source task '\(name)' has no SwiftPM cache yet at \(expectedPath) — run `vch build \(name)` once first"
         }
     }
 }

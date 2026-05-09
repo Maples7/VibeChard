@@ -60,6 +60,17 @@ public struct Workspace: Equatable, Sendable {
         PathOps.join(agentBuildDir(for: task), "SwiftPM")
     }
 
+    /// Subdirectory of `swiftpmCacheDir(for:)` that holds the
+    /// content-addressed bare git mirrors xcodebuild populates when
+    /// resolving SwiftPM dependencies. This is the only portion of
+    /// the SwiftPM tree that is portable across worktrees (#55):
+    /// `workspace-state.json` is portable too but `checkouts/` has
+    /// stale absolute back-pointers, so we restrict
+    /// `--seed-spm-from` to this dir alone.
+    public func swiftpmRepositoriesDir(for task: TaskName) -> String {
+        PathOps.join(swiftpmCacheDir(for: task), "repositories")
+    }
+
     public func resultBundlePath(for task: TaskName) -> String {
         PathOps.join(agentBuildDir(for: task), "Result.xcresult")
     }

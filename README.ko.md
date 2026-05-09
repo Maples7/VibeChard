@@ -275,7 +275,7 @@ vch rm foo                                       # 그 뒤에 정리
 
 | 명령어 | 동작 |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. `--cd` 는 기계 판독 가능 계약: stdout 에는 worktree 절대 경로만 출력하고, 상태와 힌트는 모두 stderr 로 보냅니다. `vch shellenv` 헬퍼를 못 쓰는 fish / nushell 같은 셸에서 `cd "$(vch new --cd foo)"` 형태로 래핑하기 위한 진입점입니다. `--exec` 와 상호 배타. |
+| `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. `--seed-spm-from <task>` 는 APFS COW 로 같은 repo 의 다른 vch 태스크가 가진 SwiftPM bare-mirror 캐시를 복제해, 이 태스크의 첫 빌드에서 의존성 네트워크 페치를 건너뛰게 합니다 (APFS 전용; 소스 태스크는 한 번 빌드한 적이 있어야 함). `--cd` 는 기계 판독 가능 계약: stdout 에는 worktree 절대 경로만 출력하고, 상태와 힌트는 모두 stderr 로 보냅니다. `vch shellenv` 헬퍼를 못 쓰는 fish / nushell 같은 셸에서 `cd "$(vch new --cd foo)"` 형태로 래핑하기 위한 진입점입니다. `--exec` 와 상호 배타. |
 | `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. `--git-status` 는 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 열 추가（worktree 당 `git rev-list` + `git status` 한 번 새로 실행）. |
 | `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. `--field <dotted>` 는 단일 스칼라 값(예: `simulator.udid`)만 출력 — 스크립트에서 `$(vch state foo --field simulator.udid)` 으로 쓰기 위해 설계. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |

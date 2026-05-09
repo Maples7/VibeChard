@@ -31,6 +31,21 @@ struct NewCommand: ParsableCommand {
     @Option(
         name: .long,
         help: ArgumentHelp(
+            "COW-clone the SwiftPM bare-mirror cache from a sibling "
+                + "vch task so this task's first build skips the "
+                + "network fetch of dependency objects (~hundreds of "
+                + "MB on real projects). Source task must already "
+                + "have built once. Only `repositories/` is seeded — "
+                + "checkouts/ is rebuilt locally. APFS-only.",
+            valueName: "task"
+        ),
+        completion: .custom(TaskNameCompletion.candidates)
+    )
+    var seedSpmFrom: String?
+
+    @Option(
+        name: .long,
+        help: ArgumentHelp(
             "Command to run inside the new worktree once it's ready. "
                 + "Passed to `/bin/sh -c`, so quoting works as in the shell. "
                 + "Replaces vch via execve — vch is no longer the parent.",
@@ -69,10 +84,12 @@ struct NewCommand: ParsableCommand {
                 workspace: workspace,
                 git: DiskGitClient()
             )
+            let seedTask = try seedSpmFrom.map(TaskName.init)
             let path = try service.newTask(
                 task,
                 baseRef: base,
-                copyUntracked: copyUntracked
+                copyUntracked: copyUntracked,
+                seedSpmFrom: seedTask
             )
             print(path)
 
