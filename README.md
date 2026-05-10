@@ -435,12 +435,40 @@ never auto-touches a shared resource). If another task's
 shutdown would yank it out from under that task. With the flag
 explicit you decide once per invocation.
 
+### Cleaning up tasks whose branches have already merged
+
+After a few `vch land`s (or upstream merges via your usual GitHub /
+GitLab flow), it's easy to lose track of which leftover worktrees
+are still doing real work and which are just rusting out. `vch list`
+alone shows the BUILD column, but not whether the task's branch is
+still ahead of its base.
+
+Two complementary tools (#67):
+
+```sh
+vch list --git-status              # passive signal: MERGED column
+vch prune                          # dry-run: list every safe-to-remove task
+vch prune --rm                     # actually remove them
+```
+
+`vch prune` only touches tasks whose branch is **fully merged**
+into its recorded base. By default it also skips tasks with
+uncommitted changes (override with `--allow-dirty`) and tasks where
+an editor / shell still has files open inside the worktree
+(override with `--force`). The flag vocabulary mirrors `vch rm` so
+the two commands behave the same way.
+
+If you'd rather see the merged-state passively next to the rest of
+your task list, just add `--git-status` to your usual `vch list` —
+the new `MERGED` column reads `yes` / `no` / `-` (unknown). The
+same value lands in `git.mergedIntoBase` under `vch list --json`.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. `--seed-spm-from <task>` COW-clones a sibling vch task's SwiftPM bare-mirror cache so this task's first build skips the dependency network fetch (APFS only; source task must already have built once). `--cd` opts into the machine-readable contract: stdout prints **only** the absolute worktree path, all status/hints go to stderr — for fish/nushell wrappers like `cd "$(vch new --cd foo)"`. Mutually exclusive with `--exec`. |
-| `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns; `--git-status` adds `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` columns (one extra `git rev-list` + `git status` per worktree). |
+| `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns; `--git-status` adds `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` columns (one extra `git rev-list` + `git status` per worktree). |
 | `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. `--field <dotted>` prints just one scalar (e.g. `simulator.udid`) — designed for `$(vch state foo --field simulator.udid)` in scripts. |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
@@ -455,6 +483,7 @@ explicit you decide once per invocation.
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. After a successful auto-rm, vch also deletes the per-task simulator clone (mirroring `vch rm`'s default); pass `--keep-sim` to retain it. `--push` pushes the resolved `--into` branch to its tracked remote (`branch.<into>.remote`, falling back to `origin`); `--push-to <remote>` overrides with an explicit remote. Without either flag `vch land` never contacts a remote. If the post-merge push fails the merge is **not** rolled back — the failure is surfaced as a stderr warning. Only **committed** content is carried over — uncommitted changes, untracked files, and `.gitignore`d artifacts in the worktree are lost when the worktree is removed (use `--keep` + manual copy; see the "Preserving generated artifacts" cookbook recipe). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | Fetch the recorded base branch's upstream and rebase `agent/<name>` onto it. `--merge` switches to `git merge --no-ff` (use only when the task branch has been pushed somewhere a coworker reads from). `--onto <ref>` overrides the base; `--no-fetch` skips the network call; `--allow-dirty` defers the dirty-worktree check to git itself; `--dry-run` prints ahead/behind counts and the planned strategy without writing. All git work runs inside the task worktree, so the main worktree is never touched. Records `lastSync` on success. |
 | `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--force` overrides the held-open-files check (e.g. an editor still open inside the worktree, #65); `--allow-unmerged` force-deletes a branch that isn't fully merged. |
+| `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | List (default) or remove (`--rm`) every task whose branch is already fully merged into its base. Skips dirty worktrees (`--allow-dirty` overrides) and worktrees with open holders (`--force` overrides). `--keep-sim` retains the per-task simulator clone (default: delete). One pruned task per row; the rest are reported on stderr with the reason they were skipped. |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | Delete the task's `DerivedData` + `ModuleCache` (default). Add `--swiftpm` to also drop the SwiftPM clone dir, `--logs` to drop `.vch/last-test.log`, `--all` for everything. Refuses if any process still has a file open inside `.agent-build/` or `.vch/` (e.g. an Xcode that's actively indexing); `--dry-run` lists what would be removed. |
 | `vch doctor [--clean] [--json]` | Detect orphan simulator clones, stale state bindings, and corrupt `state.json`s. Exits non-zero on any finding. |

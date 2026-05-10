@@ -231,13 +231,14 @@ struct ListCommand: ParsableCommand {
             // Inserted before the optional PATH column so PATH stays
             // last (verbose layout) and so the columns read
             // left-to-right as: identity → build → git → path.
-            let extraHeader = ["AHEAD/BEHIND", "DIRTY", "LAST COMMIT"]
+            let extraHeader = ["AHEAD/BEHIND", "DIRTY", "MERGED", "LAST COMMIT"]
             let insertAt = verbose ? header.count - 1 : header.count
             header.insert(contentsOf: extraHeader, at: insertAt)
             for (i, s) in summaries.enumerated() {
                 let extra = [
                     aheadBehindLabel(s.gitStatus),
                     dirtyLabel(s.gitStatus),
+                    mergedLabel(s.gitStatus),
                     lastCommitLabel(s.gitStatus),
                 ]
                 rows[i].insert(contentsOf: extra, at: insertAt)
@@ -281,6 +282,15 @@ struct ListCommand: ParsableCommand {
                 case "yes":  return ANSI.wrap(padded, .fail, enabled: colorize)
                 case "no":   return ANSI.wrap(padded, .ok, enabled: colorize)
                 default:     return ANSI.wrap(padded, .placeholder, enabled: colorize)
+                }
+            case "MERGED":
+                // Merged → success colour; not-merged → informational
+                // (it's the normal state for an active task, not a
+                // failure). Unknown stays muted.
+                switch raw {
+                case "yes": return ANSI.wrap(padded, .ok, enabled: colorize)
+                case "no":  return padded
+                default:    return ANSI.wrap(padded, .placeholder, enabled: colorize)
                 }
             case "LAST COMMIT":
                 return raw == "-"
@@ -333,6 +343,14 @@ struct ListCommand: ParsableCommand {
         return git.isDirty ? "yes" : "no"
     }
 
+    /// Three-state label: `yes` (fully merged into base), `no`
+    /// (commits not yet on base), `-` (unknown — no recorded base or
+    /// git failed). (#67)
+    private func mergedLabel(_ git: GitStatus?) -> String {
+        guard let git, let merged = git.mergedIntoBase else { return "-" }
+        return merged ? "yes" : "no"
+    }
+
     private func lastCommitLabel(_ git: GitStatus?) -> String {
         guard let git, let s = git.lastCommitSubject, !s.isEmpty else {
             return "-"
@@ -369,6 +387,10 @@ struct ListCommand: ParsableCommand {
             let behindCount: Int?
             let isDirty: Bool
             let lastCommitSubject: String?
+            /// `mergedIntoBase` from `GitStatus`. Nil = couldn't
+            /// compute; distinct from `false` so scripts can branch
+            /// safely. (#67)
+            let mergedIntoBase: Bool?
         }
 
         init(_ s: TaskSummary) {
@@ -389,7 +411,8 @@ struct ListCommand: ParsableCommand {
                     aheadCount: g.aheadCount,
                     behindCount: g.behindCount,
                     isDirty: g.isDirty,
-                    lastCommitSubject: g.lastCommitSubject
+                    lastCommitSubject: g.lastCommitSubject,
+                    mergedIntoBase: g.mergedIntoBase
                 )
             } else {
                 self.git = nil

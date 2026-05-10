@@ -422,12 +422,39 @@ flag は意図的に**デフォルト OFF** です：warm テンプレートは�
 そちらを巻き込んで落としてしまいます。flag を明示することで、
 1 回ごとに自分で判断できます。
 
+### マージ済みタスクをまとめて掜除する
+
+何回か `vch land`（もしくは普段使っている GitHub / GitLab の upstream
+マージ）を重ねると、「どれがまだ作業中の worktree で、どれがも
+う掜除していいタスクか」が見えにくくなります。`vch list` は
+デフォルトで BUILD 列しか見せず、「そのタスクのブランチがもう
+ベースに追いついているか」は教えてくれません。
+
+補完関係にある 2 つのツール（#67）：
+
+```sh
+vch list --git-status              # 受動的なシグナル：表に MERGED 列が増える
+vch prune                          # dry-run：安全に掜除できるタスクを列挙
+vch prune --rm                     # 実際に掜除を適用
+```
+
+`vch prune` は**ベースに完全にマージ済み**のブランチだけを触ります。
+デフォルトでは未コミット変更を含む worktree（`--allow-dirty` で上書
+き）や、エディタ / シェルにファイルを掴まれている worktree
+（`--force` で上書き）はスキップします。flag の語彙は `vch rm` と
+ミラーしているので、2 つのコマンドは同じ意味で動きます。
+
+もっと受動的に、いつもの一覧の中でマージ状態を見たいだけなら、
+`vch list` に `--git-status` を足すだけでよく、新しい `MERGED` 列が
+`yes` / `no` / `-`（不明）を表示します。`vch list --json` では同じ
+値が `git.mergedIntoBase` に入ります。
+
 ## コマンド一覧
 
 | コマンド | 役割 |
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。`--seed-spm-from <task>` は APFS の COW で別の vch タスクの SwiftPM bare-mirror キャッシュをクローンして、このタスクの初回ビルドで依存ライブラリのネットワークフェッチをスキップします（APFS 限定。コピー元タスクは事前に一度はビルドしておく必要があります）。`--cd` は機械可読コントラクト：stdout には worktree の絶対パスのみを出力し、ステータスやヒントは stderr へ流れます。fish / nushell など `vch shellenv` を使えないシェルから `cd "$(vch new --cd foo)"` 形式でラップするための入口。`--exec` とは排他。 |
-| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。`--git-status` で `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列を追加（worktree ごとに `git rev-list` + `git status` を 1 回ずつ追加実行）。 |
+| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。`--git-status` で `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` 列を追加（worktree ごとに `git rev-list` + `git status` を 1 回ずつ追加実行）。 |
 | `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。`--field <dotted>` で単一のスカラー値（例：`simulator.udid`）だけを出力——スクリプトで `$(vch state foo --field simulator.udid)` として使うため。 |
 | `vch path <name>` | タスク worktree の絶対パスを出力。 |
 | `vch open [<name>] [--with <ide>]` | worktree を IDE で開く。`*.xcworkspace` / `*.xcodeproj` / `Package.swift` を自動検出（プロジェクトファイルは Xcode、それ以外は VS Code）。`--with` は `xcode`、`code`/`vscode`、`cursor`、または任意のアプリ名（`open -a` に渡す）に対応。`VCH_OPEN_DEFAULT` でデフォルトを上書き可能。`<name>` 省略時は `$PWD` のある worktree を使う。 |
@@ -442,6 +469,7 @@ flag は意図的に**デフォルト OFF** です：warm テンプレートは�
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。自動 rm が成功した場合は、タスク用の simulator clone も削除される（`vch rm` のデフォルトと同じ）。`--keep-sim` で clone を残す。`--push` は解決済みの `--into` ブランチを追跡している remote（`branch.<into>.remote`、未設定なら `origin` にフォールバック）に push する。`--push-to <remote>` は明示的に remote を指定する上書き。どちらのフラグもなければ `vch land` はネットワークに一切触れない。push が失敗してもマージは**ロールバックされない** — 失敗内容は stderr に warning として出る。**コミット済み**の内容しか持ち越されません — 未コミット変更、untracked ファイル、`.gitignore` で除外された成果物は worktree と一緒に削除されます（`--keep` + 手動コピー；cookbook の「`vch land` 時に生成された成果物を残す」を参照）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 記録されたベースブランチの upstream を fetch し、`agent/<name>` を rebase で取り込む。`--merge` で `git merge --no-ff` に切り替え（タスクブランチが共同作業者から見える場所に push 済みのときのみ推奨）。`--onto <ref>` でベースを上書き、`--no-fetch` で fetch をスキップ、`--allow-dirty` で dirty worktree チェックを git 側に委ねる、`--dry-run` は ahead/behind と計画戦略を表示するだけで何も書かない。git 操作はすべてタスク worktree 内で行い、メイン worktree には触れない。成功時に `lastSync` を記録する。 |
 | `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--force` で「エディタ/シェルがファイルを掴んでいる」チェックを上書き（#65）、`--allow-unmerged` で未マージのブランチを強制削除。 |
+| `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | ブランチがベースに完全にマージされているタスクをすべて一覧表示（デフォルト）、または削除（`--rm`）します。dirty な worktree（`--allow-dirty` で上書き）やエディタ等に掴まれている worktree（`--force` で上書き）はスキップします。`--keep-sim` は掜除される各タスクのシミュレータークローンを保持（デフォルトは削除）。掜除されるタスクは 1 行ずつ、スキップされたタスクは理由と一緒に stderr へ出力されます。 |
 | `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | タスクの `DerivedData` + `ModuleCache` を削除（デフォルト）。`--swiftpm` で SwiftPM クローンディレクトリも、`--logs` で `.vch/last-test.log` も、`--all` で全部を削除。`.agent-build/` または `.vch/` 以下のファイルを開いているプロセス（インデックス中の Xcode など）があれば拒否。`--dry-run` は削除予定の一覧を表示して何も触らずに返る。 |
 | `vch doctor [--clean] [--json]` | 孤児シミュレータークローン、古いステートバインディング、破損 `state.json` を検出。検出時は非ゼロ終了。 |

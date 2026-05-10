@@ -519,6 +519,8 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(status.behindCount, 1)
         XCTAssertTrue(status.isDirty)
         XCTAssertEqual(status.lastCommitSubject, "wire up payment splitting")
+        // ahead == 3 → not yet fully merged. (#67)
+        XCTAssertEqual(status.mergedIntoBase, false)
     }
 
     func testGitStatusFallsBackToBaseRefWhenBaseBranchUnknown() throws {
@@ -541,6 +543,9 @@ final class TaskServiceTests: XCTestCase {
         let status = service.gitStatus(forSummary: summary)
         XCTAssertEqual(status.aheadCount, 5)
         XCTAssertEqual(status.behindCount, 0)
+        // Fall-back range is computed correctly, ahead > 0 → not
+        // merged. (#67)
+        XCTAssertEqual(status.mergedIntoBase, false)
     }
 
     func testGitStatusLeavesAheadBehindNilWhenNoBaseAvailable() throws {
@@ -562,5 +567,29 @@ final class TaskServiceTests: XCTestCase {
         // Dirty defaults to false (no entry in fake), subject nil.
         XCTAssertFalse(status.isDirty)
         XCTAssertNil(status.lastCommitSubject)
+        // No base → we cannot say whether the branch is merged. Stay
+        // nil rather than guessing. (#67)
+        XCTAssertNil(status.mergedIntoBase)
+    }
+
+    func testGitStatusReportsMergedIntoBaseWhenAheadIsZero() throws {
+        let (service, git, _, _) = makeService()
+        let summary = TaskSummary(
+            name: "shipped",
+            branch: "agent/shipped",
+            path: "/Users/me/Repo-shipped",
+            createdAt: nil,
+            baseRef: "deadbee",
+            baseBranch: "main",
+            simulatorName: nil,
+            lastBuildSucceeded: nil,
+            lastBuildAt: nil
+        )
+        // No entry in revListCountByRange → fake returns 0. That's
+        // exactly "branch is fully merged into base" — (#67) the
+        // gate `vch prune` keys on.
+        let status = service.gitStatus(forSummary: summary)
+        XCTAssertEqual(status.aheadCount, 0)
+        XCTAssertEqual(status.mergedIntoBase, true)
     }
 }

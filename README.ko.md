@@ -419,12 +419,39 @@ vch test add-paywall --shutdown-template
 그 작업까지 함께 끊기게 됩니다. 플래그를 명시함으로써 매 호출
 마다 직접 결정할 수 있습니다.
 
+### 이미 병합된 작업들 정리하기
+
+`vch land` (또는 평소 쓰는 GitHub / GitLab 업스트림 병합) 를 몇 번
+돌리고 나면 어느순간 헷갈릴 수 있습니다: 어떤 worktree 는 아직
+작업 중이고, 어떤 worktree 는 이미 정리해도 되는지. `vch list` 는
+기본에서 BUILD 열만 보여주고, "이 브랜치가 base 를 이미 따락았는지"
+는 알려주지 않습니다.
+
+서로 보완하는 도구 두 개 (#67):
+
+```sh
+vch list --git-status              # 수동적 신호: 표에 MERGED 열이 추가됨
+vch prune                          # dry-run: 안전하게 정리 가능한 작업들 나열
+vch prune --rm                     # 실제로 정리 실행
+```
+
+`vch prune` 은 **base 에 완전히 병합된** 브랜치만 건드립니다. 기본적으로
+커밋되지 않은 변경이 있는 worktree (`--allow-dirty` 로 덮어쓰기) 와
+에디터 / 셔이 파일을 잡고 있는 worktree (`--force` 로 덮어쓰기) 는
+건너뛰고, 플래그 어휘는 `vch rm` 과 맞춰져 있어 두 명령의 의미가
+일관됩니다.
+
+그냥 작업 목록에서 수동적으로 병합 상태를 확인하고 싶을 때는
+`vch list` 에 `--git-status` 를 붙이면 되는데, 새로 추가된 `MERGED`
+열이 `yes` / `no` / `-` (미지) 를 보여줍니다. `vch list --json` 에서는
+`git.mergedIntoBase` 필드에 대응됩니다.
+
 ## 명령어
 
 | 명령어 | 동작 |
 |---|---|
 | `vch new <name>` | `../<repo>-<name>` 에 worktree 생성, 브랜치는 `agent/<name>`. `--exec "<cmd>"` 로 worktree 내부에서 명령 실행 (예: AI 에이전트). `--copy-untracked` 는 추적되지 않고 무시되지도 않은 파일(`.env`, `.vscode/settings.json` 등)도 메인 worktree에서 복사해 옵니다. `--seed-spm-from <task>` 는 APFS COW 로 같은 repo 의 다른 vch 태스크가 가진 SwiftPM bare-mirror 캐시를 복제해, 이 태스크의 첫 빌드에서 의존성 네트워크 페치를 건너뛰게 합니다 (APFS 전용; 소스 태스크는 한 번 빌드한 적이 있어야 함). `--cd` 는 기계 판독 가능 계약: stdout 에는 worktree 절대 경로만 출력하고, 상태와 힌트는 모두 stderr 로 보냅니다. `vch shellenv` 헬퍼를 못 쓰는 fish / nushell 같은 셸에서 `cd "$(vch new --cd foo)"` 형태로 래핑하기 위한 진입점입니다. `--exec` 와 상호 배타. |
-| `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. `--git-status` 는 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 열 추가（worktree 당 `git rev-list` + `git status` 한 번 새로 실행）. |
+| `vch list` | 현재 워크스페이스의 모든 작업 나열. `--json` 으로 기계 판독 가능한 형식. `-v`/`--verbose` 는 `BASE` 와 `PATH` 열 추가. `--git-status` 는 `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` 열 추가（worktree 당 `git rev-list` + `git status` 한 번 새로 실행）. |
 | `vch state <name>` | 작업의 `.vch/state.json` 을 보기 좋게 출력. `--json` 은 원본 파일 내용. `--field <dotted>` 는 단일 스칼라 값(예: `simulator.udid`)만 출력 — 스크립트에서 `$(vch state foo --field simulator.udid)` 으로 쓰기 위해 설계. |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
@@ -438,8 +465,7 @@ vch test add-paywall --shutdown-template
 | `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿을 관리 (#47, #58). warm 템플릿은 "booted-once-then-shutdown" 으로 첫 부팅 캐시를 워밍해 둔 시뮬레이터로, 이후의 `vch test` 태스크 클론들이 그 캐시를 상속합니다 (iOS 실측: 약 30 초 → 약 9 초; watchOS: 약 31 초 → 약 23 초). iOS / watchOS / tvOS / visionOS 지원. `create <device> --runtime "iOS 26.4"` (또는 `"watchOS 11.5"` / `"tvOS 18.0"` / `"visionOS 2.5"`) 으로 생성, `list [--json]` 으로 확인, `remove <device> --runtime "..."` 로 삭제. **라이프사이클은 어떤 태스크와도 분리되어 있어** — `vch remove` 와 `vch doctor --clean` 모두 warm 템플릿을 건드리지 않으며 본인이 관리합니다. `vch test --device "<device>" --runtime "..."` 는 일치하는 warm 템플릿이 있으면 자동으로 선택합니다. |
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | `agent/<name>` 을 기본 브랜치로 합친 후 worktree 삭제. 기본 브랜치는 `vch new` 시 메인 worktree 가 있던 브랜치 (`state.json` 에 기록). 기본 전략은 `--no-ff`. 기본 메시지 `Merge agent/<name>: <최근 비머지 커밋의 제목>`. 다음 경우 합치기 거부: 빈 합치기, 메인 worktree 가 대상 브랜치에 없음, 메인 worktree 의 더티 파일이 태스크 브랜치 diff 와 겹침 (`--allow-dirty` 로 우회). `--keep` 는 자동 rm 건너뛰기, `--dry-run` 은 계획만 출력하고 아무 것도 변경하지 않음. 자동 rm 이 성공하면 태스크의 simulator clone 도 삭제된다 (`vch rm` 기본 동작과 동일). `--keep-sim` 로 clone 을 유지할 수 있다. `--push` 는 머지가 끝난 후 해석된 `--into` 브랜치를 추적 remote (`branch.<into>.remote`, 없으면 `origin`) 로 푸시한다. `--push-to <remote>` 는 명시적으로 remote 를 지정하는 우회. 둘 다 없으면 `vch land` 는 네트워크를 절대 건드리지 않는다. 푸시가 실패해도 머지는 **롤백되지 않는다** — 실패 메시지는 stderr warning 으로 표시된다. **커밋된** 내용만 옮겨갑니다 — 커밋되지 않은 변경, untracked 파일, `.gitignore` 로 제외된 산출물은 worktree 와 함께 삭제됩니다 (`--keep` + 수동 복사; cookbook 의 「`vch land` 시 생성된 산출물 보존하기」 참고). |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 기록된 기본 브랜치의 upstream 을 fetch 하고 `agent/<name>` 을 그 위에 rebase. `--merge` 는 `git merge --no-ff` 사용 (태스크 브랜치가 동료가 읽는 곳에 push 된 경우에만 권장). `--onto <ref>` 로 기본 변경, `--no-fetch` 로 네트워크 스킵, `--allow-dirty` 는 더티 worktree 검사를 git 에 위임, `--dry-run` 은 ahead/behind 와 계획 전략만 출력하고 아무 것도 쓰지 않음. 모든 git 작업은 태스크 worktree 안에서 실행되어 메인 worktree 는 절대 건드리지 않음. 성공 시 `lastSync` 를 기록. |
-| `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--force` 는 “파일을 잡고 있는 에디터/셸” 검사를 무시 (#65), `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. |
-| `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
+| `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | worktree, 브랜치, (기본으로) 시뮬레이터 클론 삭제. `--allow-dirty` 는 커밋되지 않은 변경을 허용, `--force` 는 “파일을 잡고 있는 에디터/셸” 검사를 무시 (#65), `--allow-unmerged` 는 완전히 병합되지 않은 브랜치를 강제 삭제. || `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | 브랜치가 base 에 완전히 병합된 모든 작업을 나열 (기본) 하거나 삭제 (`--rm`). dirty 한 worktree (`--allow-dirty` 로 덮어쓰기) 와 점유된 worktree (`--force` 로 덮어쓰기) 는 건너뛰며, `--keep-sim` 은 삭제되는 각 작업의 시뮬레이터 클론을 보존 (기본은 삭제). 정리되는 작업은 행 당 하나씩, 건너뛴 작업은 사유와 함께 stderr 로 상세하게 출력됩니다. || `vch repair` | `git worktree list` 의 실제 상태에 맞춰 `.vch/state.json` 재동기화. |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 작업의 `DerivedData` + `ModuleCache` 삭제（기본）. `--swiftpm` 는 SwiftPM 클론 디렉터리도, `--logs` 는 `.vch/last-test.log` 도, `--all` 은 전부 삭제. `.agent-build/` 또는 `.vch/` 내 파일을 여는 프로세스（인덱싱 중인 Xcode 등）가 있으면 거부. `--dry-run` 은 삭제 예정 항목만 나열하고 아무것도 건들지 않음. |
 | `vch doctor [--clean] [--json]` | 고아 시뮬레이터 클론, 오래된 상태 바인딩, 손상된 `state.json` 탐지. 발견 시 비정상 종료. |
 | `vch doctor --bug-report [--out <path>] [--json]` | 로컬에서 민감정보 제거된 진단 tarball 생성. 모든 작업의 `state.json` + `last-test.log`, porcelain worktree 목록, `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` 출력을 포함. `$HOME` 경로는 손질 완료. 네트워크 접근 없음. 기본 출력 `./vch-bug-report-<UTC 타임스탬프>.tgz`. |

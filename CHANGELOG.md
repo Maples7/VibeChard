@@ -9,6 +9,13 @@ The English README is the source of truth; localized READMEs may lag.
 ## [Unreleased]
 
 ### Added
+- `vch prune` — list (and optionally remove) every task whose branch
+  is already fully merged into its base (#67). Default is dry-run;
+  pass `--rm` to apply. Skips dirty worktrees and worktrees with
+  open holders unless `--allow-dirty` / `--force` is set, mirroring
+  `vch rm`'s flag vocabulary. Also: `vch list --git-status` gains
+  a `MERGED` column (and `git.mergedIntoBase` in `--json`) so the
+  same signal is visible without running `prune`.
 - `vch test --help` and the README cookbook now ship a worked
   `-only-testing` / `-skip-testing` example (#70). The flag is an
   `xcodebuild` flag (single dash, after a literal `--`), and the

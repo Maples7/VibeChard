@@ -23,6 +23,7 @@ public struct TaskName: Hashable, Sendable {
         "build", "test", "run", "logs", "sim", "state", "completions",
         "clean", "sync",
         "remove", "rm", "repair", "doctor", "land",
+        "prune",
         "shellenv", "version", "help",
     ]
 
