@@ -560,8 +560,12 @@ struct RemoveCommand: ParsableCommand {
     var name: String
 
     @Flag(name: .long,
-          help: "Discard uncommitted changes and remove the worktree anyway.")
+          help: "Discard uncommitted changes in the worktree and remove anyway.")
     var allowDirty: Bool = false
+
+    @Flag(name: .long,
+          help: "Force-remove even when an editor or shell is still holding files inside the worktree (#65).")
+    var force: Bool = false
 
     @Flag(name: .long,
           help: "Delete the branch even if it has commits not merged into its base.")
@@ -577,13 +581,21 @@ struct RemoveCommand: ParsableCommand {
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
             let service = TaskService(workspace: workspace, git: DiskGitClient())
 
-            // #10: refuse to delete the worktree out from under an open
-            // editor / shell unless the user explicitly forces. We do
-            // this BEFORE reading state.json (which is also held by us
-            // for the simulator-cleanup step) so the diagnostic lands
+            // #10 / #65: refuse to delete the worktree out from
+            // under an open editor / shell unless the user
+            // explicitly forces. We do this BEFORE reading
+            // state.json (which is also held by us for the
+            // simulator-cleanup step) so the diagnostic lands
             // before we touch anything.
+            //
+            // Prior to v0.5.0 this was gated on `--allow-dirty`,
+            // which conflated two unrelated concerns. The holder
+            // check now has its own `--force` flag, so users with
+            // a clean tree but an open editor can override
+            // without also being told to discard uncommitted
+            // work. `--allow-dirty` no longer affects this check.
             let wtPath = workspace.worktreePath(for: task)
-            if !allowDirty,
+            if !force,
                FileManager.default.fileExists(atPath: wtPath) {
                 let scanner = DiskWorktreeHolderScanner()
                 if let holders = try? scanner.findHolders(of: wtPath),

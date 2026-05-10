@@ -21,6 +21,17 @@ The English README is the source of truth; localized READMEs may lag.
   `last-test.log` (#69). Previously the path was only emitted in
   the launch banner, which had typically scrolled off by the time
   the unknown-status line landed.
+- **Breaking**: `vch rm --allow-dirty` no longer overrides held-open
+  files (#65). The two concerns — uncommitted changes vs. an
+  editor / shell still inside the worktree — are now separate flags:
+  - `--allow-dirty` still discards uncommitted changes (and feeds
+    `--force` to `git worktree remove`).
+  - `--force` is new; it bypasses the held-open-files check (which
+    fires when `lsof` reports an open file inside the worktree).
+  The `worktreeBusy` error message now points users at `--force`
+  instead of `--allow-dirty`. Scripts that previously used
+  `--allow-dirty` solely to silence the holders error need to add
+  `--force`.
 
 ### Fixed
 - `vch test --rerun-failed` now repairs short-form swift-testing
