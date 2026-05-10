@@ -48,6 +48,7 @@ final class TaskNameTests: XCTestCase {
                   "build", "test", "run", "logs", "sim", "state", "completions",
                   "clean", "sync",
                   "remove", "rm", "repair", "doctor", "land",
+                  "prune",
                   "shellenv", "version", "help"] {
             XCTAssertThrowsError(try TaskName(r), "expected reserved name '\(r)' to fail") { error in
                 assertInvalidName(error, contains: "reserved subcommand")

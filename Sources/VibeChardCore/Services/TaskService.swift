@@ -19,17 +19,27 @@ public struct GitStatus: Equatable, Sendable {
     /// branch. Nil if the branch has no non-merge commits or the
     /// query failed.
     public let lastCommitSubject: String?
+    /// True iff the task branch is fully merged into its base
+    /// (i.e. `aheadCount == 0`). Nil when we couldn't compute it
+    /// (no recorded base, git failure, etc.) — distinct from
+    /// `false` so the caller can render "unknown" without
+    /// pretending the branch is unmerged. Used by `vch list` to
+    /// surface a MERGED column and by `vch prune` to pick safe
+    /// candidates. (#67)
+    public let mergedIntoBase: Bool?
 
     public init(
         aheadCount: Int?,
         behindCount: Int?,
         isDirty: Bool,
-        lastCommitSubject: String?
+        lastCommitSubject: String?,
+        mergedIntoBase: Bool? = nil
     ) {
         self.aheadCount = aheadCount
         self.behindCount = behindCount
         self.isDirty = isDirty
         self.lastCommitSubject = lastCommitSubject
+        self.mergedIntoBase = mergedIntoBase
     }
 }
 
@@ -336,11 +346,19 @@ public struct TaskService: Sendable {
             ahead  = try? git.revListCount(repoCwd: wt, base: base, head: "HEAD")
             behind = try? git.revListCount(repoCwd: wt, base: "HEAD", head: base)
         }
+        // "Fully merged" = no commits on the task branch that
+        // aren't already on its base. This is the same shape `git
+        // branch --merged` uses, but driven off the per-task
+        // baseBranch we recorded in state.json so the answer
+        // doesn't depend on which branch the main worktree
+        // happens to have checked out right now. (#67)
+        let merged: Bool? = ahead.map { $0 == 0 }
         return GitStatus(
             aheadCount: ahead,
             behindCount: behind,
             isDirty: isDirty,
-            lastCommitSubject: subject
+            lastCommitSubject: subject,
+            mergedIntoBase: merged
         )
     }
 

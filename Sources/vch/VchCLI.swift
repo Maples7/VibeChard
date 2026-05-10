@@ -31,6 +31,7 @@ struct VchCLI: ParsableCommand {
             SyncCommand.self,
             LandCommand.self,
             RemoveCommand.self,
+            PruneCommand.self,
             // Maintenance / diagnostics.
             CleanCommand.self,
             RepairCommand.self,

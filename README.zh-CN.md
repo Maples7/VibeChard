@@ -394,12 +394,36 @@ vch test add-paywall --shutdown-template
 资源。如果另一个任务的 `vch run` 正在用同一份模板，自动 shutdown
 会把那个任务一起拽下来。flag 显式之后，每次调用都由你自己拍板。
 
+### 清理已经合并完成的任务
+
+几次 `vch land`（或者你平时走 GitHub / GitLab 走的 upstream 合并）
+之后，很容易搞不清楚：哪些遗留 worktree 还在干活，哪些只是占着
+位置生锈。`vch list` 默认只展示 BUILD 列，不会告诉你「这个分支
+是不是已经追上 base 了」。
+
+两个互补的工具（#67）：
+
+```sh
+vch list --git-status              # 被动信号：表格里多一列 MERGED
+vch prune                          # dry-run：列出可以安全清理的任务
+vch prune --rm                     # 真正执行清理
+```
+
+`vch prune` 只会动那些**完全合并**进 base 的分支。默认还会跳过
+带未提交改动的 worktree（用 `--allow-dirty` 覆盖）以及还有编辑器
+/shell 占用文件的 worktree（用 `--force` 覆盖）。flag 用词跟
+`vch rm` 对齐，两个命令的语义一致。
+
+如果你只是想被动地在任务列表里看一眼合并状态，给 `vch list` 加上
+`--git-status` 就行 —— 新增的 `MERGED` 列会显示 `yes` / `no` /
+`-`（未知）。`vch list --json` 里对应字段是 `git.mergedIntoBase`。
+
 ## 命令一览
 
 | 命令 | 作用 |
 |---|---|
 | `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。`--seed-spm-from <task>` 用 APFS COW 把同 repo 下另一个 vch task 的 SwiftPM bare-mirror 缓存克隆过来，让这个 task 第一次 build 时跳过依赖网络拉取（仅 APFS；源 task 必须先 build 过一次）。`--cd` 启用机器可读契约：stdout 只输出 worktree 绝对路径，状态和提示一律走 stderr —— 给 fish / nushell 这类用不了 `vch shellenv` 的 shell 写 `cd "$(vch new --cd foo)"` 这种 wrapper。跟 `--exec` 互斥。 |
-| `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列；`--git-status` 增加 `AHEAD/BEHIND` + `DIRTY` + `LAST COMMIT` 列（每个 worktree 多跑一次 `git rev-list` + `git status`）。 |
+| `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列；`--git-status` 增加 `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` 列（每个 worktree 多跑一次 `git rev-list` + `git status`）。 |
 | `vch state <name>` | 漂亮打印任务的 `.vch/state.json`。`--json` 输出原始文件内容。`--field <dotted>` 只输出单个字段值（如 `simulator.udid`），方便在脚本里 `$(vch state foo --field simulator.udid)` 这样取。 |
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中打开 worktree。自动识别 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（项目文件用 Xcode，否则用 VS Code）。`--with` 支持 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名（透传给 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆盖默认值。不传 `<name>` 时使用 `$PWD` 所在的 worktree。 |
@@ -414,6 +438,7 @@ vch test add-paywall --shutdown-template
 | `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。自动 rm 成功后还会删除该任务的 simulator clone（与 `vch rm` 默认一致）；用 `--keep-sim` 保留 clone。`--push` 把解析后的 `--into` 分支推到其追踪的 remote（`branch.<into>.remote`，没有时回落到 `origin`）；`--push-to <remote>` 显式覆盖 remote。两个标志都没传时 `vch land` 绝不联网。push 失败不会回滚 merge —— 失败信息以 stderr warning 输出。只有**已 commit** 的内容会被搬过去 —— 未提交改动、untracked 文件、被 `.gitignore` 排除的产物会随 worktree 一起被删（用 `--keep` + 手动拷贝；详见 cookbook 「`vch land` 时保留生成的产物」）。 |
 | `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 拉取记录的基准分支的 upstream，并把 `agent/<name>` rebase 到其上。`--merge` 改用 `git merge --no-ff`（仅当任务分支已经被推到协作者会读的地方时再用）。`--onto <ref>` 覆盖基准；`--no-fetch` 跳过网络；`--allow-dirty` 把脏 worktree 检查交给 git 自己决定；`--dry-run` 只打印 ahead/behind 与计划策略，不写任何东西。所有 git 操作都在任务 worktree 内执行，绝不动主 worktree。成功后写入 `lastSync`。 |
 | `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。`--allow-dirty` 允许未提交改动；`--force` 跳过 “文件被编辑器/shell 占用” 的检查（#65）；`--allow-unmerged` 强删未合并的分支。 |
+| `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | 列出（默认）或删除（`--rm`）所有「分支已经完全合并进 base」的任务。会跳过脏 worktree（`--allow-dirty` 可覆盖）和被占用的 worktree（`--force` 可覆盖）；`--keep-sim` 保留每个被删任务的模拟器克隆（默认会删）。会被清理的任务每行一个，被跳过的任务连同跳过原因写到 stderr。 |
 | `vch repair` | 用 `git worktree list` 的实际状态重新对齐 `.vch/state.json`。 |
 | `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 清理任务的 `DerivedData` + `ModuleCache`（默认）。`--swiftpm` 还会删 SwiftPM 克隆目录，`--logs` 删 `.vch/last-test.log`，`--all` 表示全删。如果有进程还在用 `.agent-build/` 或 `.vch/` 内的文件（比如 Xcode 正在索引）会拒绝；`--dry-run` 只列要删的内容不真删。 |
 | `vch doctor [--clean] [--json]` | 检测孤儿模拟器克隆、失效绑定、损坏的 `state.json`。有发现就退出非零。 |
