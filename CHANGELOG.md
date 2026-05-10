@@ -22,6 +22,20 @@ The English README is the source of truth; localized READMEs may lag.
   the launch banner, which had typically scrolled off by the time
   the unknown-status line landed.
 
+### Fixed
+- `vch test --rerun-failed` now repairs short-form swift-testing
+  identifiers before feeding them back to `xcodebuild` (#64).
+  Under some Xcode 16 swift-testing setups, xcresulttool emits
+  `Suite/Case()` (two segments) instead of the documented
+  `Target/Suite/Case()` (three). Passing the short form back to
+  `xcodebuild -only-testing:` made xcodebuild parse the first
+  segment as the test-target name and abort with
+  `Tests in the target "<Suite>" can't be run because "<Suite>"
+  isn't a member of the specified test plan or scheme.` `vch` now
+  prepends `<targetName>/` (taken from the same `testFailures`
+  entry) when the first segment doesn't already match the target
+  name, so the rerun command works without manual editing.
+
 ## [0.4.0] - 2026-05-09
 
 ### Added
