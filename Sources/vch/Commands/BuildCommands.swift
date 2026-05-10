@@ -20,6 +20,7 @@ private enum BuildOrTest {
         device: String?,
         runtime: String?,
         noSim: Bool,
+        eraseClone: Bool = false,
         verbose: Bool = false,
         extraArgs: [String]
     ) throws {
@@ -78,6 +79,18 @@ private enum BuildOrTest {
         if let resolved {
             if resolved.createdNow {
                 CLIBridge.eprintln("→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))")
+            }
+            // #68: opt-in `--erase-clone` wipes accumulated state
+            // (UserDefaults, app containers, keychain) before this
+            // run. Useful when the template was used interactively
+            // and a test depends on first-launch defaults. Costs
+            // ~10–20s. Erase requires the clone to be shut down
+            // first; `SimulatorService.eraseClone` chains
+            // shutdown→erase, so this also collapses any prior
+            // boot state.
+            if eraseClone {
+                CLIBridge.eprintln("→ erasing simulator '\(resolved.name)' (--erase-clone)")
+                try simulator.eraseClone(udid: resolved.udid)
             }
             CLIBridge.eprintln("→ booting simulator '\(resolved.name)'\(formatRuntime(resolved.runtime)) …")
             try service.bootSimulator(resolved)
@@ -214,6 +227,9 @@ struct BuildCommand: ParsableCommand {
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
+    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before building. Wipes UserDefaults, app containers, and other state inherited from the template (#68). Adds ~10–20s; off by default.")
+    var eraseClone: Bool = false
+
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-build.log (see `vch logs <name> --build`).")
     var verbose: Bool = false
 
@@ -231,6 +247,7 @@ struct BuildCommand: ParsableCommand {
                 device: device,
                 runtime: runtime,
                 noSim: noSim,
+                eraseClone: eraseClone,
                 verbose: verbose,
                 extraArgs: extraArgs
             )
@@ -280,6 +297,9 @@ struct TestCommand: ParsableCommand {
 
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
+
+    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before testing. Wipes UserDefaults, app containers, and other state inherited from the template — useful when a test depends on first-launch defaults but the template was used interactively (#68). Adds ~10–20s; off by default.")
+    var eraseClone: Bool = false
 
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-test.log (see `vch logs <name>`).")
     var verbose: Bool = false
@@ -355,6 +375,7 @@ struct TestCommand: ParsableCommand {
                 device: device,
                 runtime: runtime,
                 noSim: noSim,
+                eraseClone: eraseClone,
                 verbose: verbose,
                 extraArgs: effectiveExtraArgs
             )

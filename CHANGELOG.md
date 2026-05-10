@@ -14,6 +14,17 @@ The English README is the source of truth; localized READMEs may lag.
   `xcodebuild` flag (single dash, after a literal `--`), and the
   most common first-time mistake was passing `--only-testing` as
   if it were a vch option.
+- `vch build/test/run --erase-clone` — opt-in flag that runs
+  `simctl shutdown && simctl erase` on the per-task simulator clone
+  before the command (#68). Useful when a test depends on first-launch
+  behaviour and the warm template's inherited `UserDefaults` / app
+  containers / keychain entries are interfering. Off by default;
+  ~10–20 s overhead per invocation, so daily runs stay on the fast
+  path. The companion cookbook recipe ("Resetting per-task simulator
+  state") explains why this is opt-in: the per-task clone inheriting
+  `~/Library` from the warm template is a feature (#47/#58), not a
+  bug — `--erase-clone` is the escape hatch for the rare cases where
+  it's not.
 
 ### Changed
 - The "build/test status unknown — see full log" trailing line now

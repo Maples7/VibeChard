@@ -366,6 +366,43 @@ that would have made the optimisation pointless. tvOS and visionOS
 should be in the same ballpark (the SPIKE methodology is in PR #58
 and runnable with whatever runtimes you have installed).
 
+### Resetting per-task simulator state
+
+A per-task simulator clone (`xcrun simctl clone`) inherits the
+**entire `~/Library`** of the template, including `UserDefaults`,
+keychain entries, and app containers written by previous runs.
+That's exactly what you want for the warm-template fast path
+(#47/#58) — the priming work survives — but it occasionally bites
+when a test depends on first-launch behaviour:
+
+```
+✗ CloudSyncStatusCenterGraceTests.firstLaunchAlertFiresAfterGraceEnds()
+   → expected alert flag to be unset, was true
+```
+
+…because the template was used interactively for development and
+wrote `UserDefaults` keys that the clone now also has.
+
+Reset the per-task clone to a freshly-erased state before the run
+with `--erase-clone`:
+
+```sh
+vch test add-paywall --erase-clone
+vch run  add-paywall --erase-clone
+vch build add-paywall --erase-clone
+```
+
+`--erase-clone` chains `simctl shutdown` → `simctl erase` (erase
+rejects booted devices), so it also collapses any leftover boot
+state. Costs ~10–20 s — off by default to keep the fast path fast.
+Drop the flag once the test passes; daily runs don't need it.
+
+If you find yourself reaching for `--erase-clone` constantly,
+consider keeping a development-only template separate from the
+warm template that vch clones from. The warm template should be
+treated as immutable — only `vch sim warm-template create` /
+`remove` should ever touch it.
+
 ## Commands
 
 | Command | What it does |
@@ -377,9 +414,9 @@ and runnable with whatever runtimes you have installed).
 | `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
 | `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`, `'visionOS 2.5'`) pins the simulator runtime. By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`); `--verbose` mirrors xcodebuild's full output. The full firehose is always tee'd to `<wt>/.vch/last-build.log`. |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. Same scheme auto-pick + `--runtime` rules as `vch build`. By default prints only a concise summary (one line per suite, failing tests expanded with file:line and assertion message); `--verbose` mirrors xcodebuild's full output to the terminal. The full firehose is always tee'd to `<wt>/.vch/last-test.log`. Counts come from the xcresult bundle so swift-testing (`@Suite`/`@Test`/`#expect`) targets are reported correctly. `--rerun` replays the prior invocation verbatim; `--rerun-failed` re-runs only the tests that failed last time (uses the recorded xcresult). |
-| `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`, `'visionOS 2.5'`) pins the simulator runtime. `--erase-clone` runs `simctl shutdown && simctl erase` on the per-task clone first (off by default; see "Resetting per-task simulator state" cookbook). By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`); `--verbose` mirrors xcodebuild's full output. The full firehose is always tee'd to `<wt>/.vch/last-build.log`. |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. Same scheme auto-pick + `--runtime` rules as `vch build`. `--erase-clone` resets the per-task clone before running (useful when a test depends on first-launch defaults; see cookbook). By default prints only a concise summary (one line per suite, failing tests expanded with file:line and assertion message); `--verbose` mirrors xcodebuild's full output to the terminal. The full firehose is always tee'd to `<wt>/.vch/last-test.log`. Counts come from the xcresult bundle so swift-testing (`@Suite`/`@Test`/`#expect`) targets are reported correctly. `--rerun` replays the prior invocation verbatim; `--rerun-failed` re-runs only the tests that failed last time (uses the recorded xcresult). |
+| `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `--erase-clone` resets the per-task clone before installing (off by default). `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
 | `vch logs <name> [--test\|--build]` | Print the full xcodebuild log from the task's most recent run. Defaults to `--test`; pass `--build` for the build firehose. Logs are overwritten on each run. |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
 | `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (#47, #58). A warm template is a primed-then-shutdown simulator that subsequent per-task `vch test` clones inherit caches from, cutting first-sim-spin-up (iOS measured: ~30 s → ~9 s; watchOS: ~31 s → ~23 s). Works for iOS, watchOS, tvOS, and visionOS. `create <device> --runtime "iOS 26.4"` (or `"watchOS 11.5"`, `"tvOS 18.0"`, `"visionOS 2.5"`) creates one; `list [--json]` shows what exists; `remove <device> --runtime "..."` deletes one. **Lifetime is decoupled from any task** — `vch remove` and `vch doctor --clean` never touch warm templates; you create and delete them yourself. `vch test --device "<device>" --runtime "..."` automatically picks the matching warm template when one exists. |
