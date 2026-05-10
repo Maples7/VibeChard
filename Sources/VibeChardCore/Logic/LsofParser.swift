@@ -40,6 +40,14 @@ public enum LsofParser {
     /// `n` line is inside `worktreePath`. `selfPID` is filtered so vch
     /// itself never appears in the list (it's about to fork lsof
     /// inside the worktree's own ancestry on some setups).
+    ///
+    /// Sample-path selection: we prefer a *strict subpath* of the
+    /// worktree over the worktree directory itself. A `cwd` entry
+    /// for a `cd`'d shell shows up as `n<worktreePath>` (no suffix),
+    /// which conveys nothing the user can act on. If the same PID
+    /// also has a deeper `n<worktreePath>/Sources/Foo.swift`, that
+    /// deeper path is far more useful as the diagnostic. Among
+    /// strict subpaths, first wins (insertion order). (#75)
     public static func parse(
         fieldOutput: String,
         worktreePath: String,
@@ -69,8 +77,22 @@ public enum LsofParser {
             case "n":
                 // A `n` line without a preceding `p` is malformed; ignore.
                 guard let currentPID = pid, currentPID != selfPID else { continue }
-                if seen[currentPID] != nil { continue }
-                if value == worktreePath || value.hasPrefix(prefix) {
+                let isInside = value == worktreePath || value.hasPrefix(prefix)
+                guard isInside else { continue }
+                let isStrictSubpath = value != worktreePath
+                if let existing = seen[currentPID] {
+                    // Already recorded. Only replace if the existing
+                    // sample is the worktree root itself and the new
+                    // value is a strict subpath — that gives the user
+                    // something concrete to grep `lsof -p <pid>` for.
+                    if existing.samplePath == worktreePath, isStrictSubpath {
+                        seen[currentPID] = WorktreeHolder(
+                            pid: currentPID,
+                            command: existing.command,
+                            samplePath: value
+                        )
+                    }
+                } else {
                     seen[currentPID] = WorktreeHolder(
                         pid: currentPID,
                         command: command ?? "(unknown)",
