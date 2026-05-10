@@ -123,4 +123,63 @@ final class LsofParserTests: XCTestCase {
         XCTAssertEqual(holders.first?.samplePath,
                        "/repos/Demo-alpha/Sources/main.swift")
     }
+
+    /// (#75) When a single PID has both a worktree-root entry (e.g. a
+    /// shell's `cwd` showing up as `n/repos/Demo-alpha`) and a deeper
+    /// subpath, the deeper subpath is what the user can actually
+    /// grep for. Prefer it.
+    func testPrefersStrictSubpathOverWorktreeRootForSamePID() {
+        let output = """
+        p1234
+        czsh
+        n/repos/Demo-alpha
+        n/repos/Demo-alpha/Sources/main.swift
+        """
+        let holders = LsofParser.parse(
+            fieldOutput: output,
+            worktreePath: "/repos/Demo-alpha",
+            selfPID: 99
+        )
+        XCTAssertEqual(holders.count, 1)
+        XCTAssertEqual(holders.first?.samplePath,
+                       "/repos/Demo-alpha/Sources/main.swift")
+    }
+
+    /// (#75) The promotion rule must also work when the worktree-root
+    /// entry comes *after* a subpath: the subpath wins (no downgrade).
+    func testKeepsStrictSubpathWhenWorktreeRootArrivesLater() {
+        let output = """
+        p1234
+        czsh
+        n/repos/Demo-alpha/Sources/main.swift
+        n/repos/Demo-alpha
+        """
+        let holders = LsofParser.parse(
+            fieldOutput: output,
+            worktreePath: "/repos/Demo-alpha",
+            selfPID: 99
+        )
+        XCTAssertEqual(holders.count, 1)
+        XCTAssertEqual(holders.first?.samplePath,
+                       "/repos/Demo-alpha/Sources/main.swift")
+    }
+
+    /// (#75) When a PID has *only* a worktree-root entry (e.g. a
+    /// `cd`'d shell with no open files in the tree), we still report
+    /// it — the user can still close that shell tab — but the path
+    /// will be the worktree root.
+    func testReportsWorktreeRootWhenNoSubpathExists() {
+        let output = """
+        p1234
+        czsh
+        n/repos/Demo-alpha
+        """
+        let holders = LsofParser.parse(
+            fieldOutput: output,
+            worktreePath: "/repos/Demo-alpha",
+            selfPID: 99
+        )
+        XCTAssertEqual(holders.count, 1)
+        XCTAssertEqual(holders.first?.samplePath, "/repos/Demo-alpha")
+    }
 }

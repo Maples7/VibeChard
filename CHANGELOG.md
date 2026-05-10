@@ -34,6 +34,19 @@ The English README is the source of truth; localized READMEs may lag.
   it's not.
 
 ### Changed
+- `vch rm` now classifies held-open processes into *interactive*
+  (editors, shells — may have unsaved buffers) and *background*
+  (`sourcekit-lsp`, `Code Helper (Plugin)`, `mdworker_shared`, etc.
+  — release file handles asynchronously after the editor closes)
+  when the worktree is busy (#75). The diagnostic groups them into
+  separate sections, drops the misleading "close the editor" hint
+  when no interactive holder is involved, and tells the user
+  `--force` is safe when `git status` in the worktree is clean and
+  only background helpers remain. Holder rows now render the sample
+  path relative to the worktree (`./Sources/Foo.swift`) instead of
+  repeating the absolute prefix on every line, and a shell `cwd`
+  matching the worktree root displays as `(cwd)`. The gate itself
+  is unchanged — `--force` is still the explicit override.
 - The "build/test status unknown — see full log" trailing line now
   also prints the path to `<wt>/.vch/last-build.log` /
   `last-test.log` (#69). Previously the path was only emitted in
