@@ -80,4 +80,39 @@ public enum RerunPlanner {
     private static func isSelectorFlagBare(_ arg: String) -> Bool {
         arg == "-only-testing" || arg == "-skip-testing"
     }
+
+    /// Repair a `testIdentifierString` so it round-trips through
+    /// `xcodebuild -only-testing:` (#64).
+    ///
+    /// Background: under some Xcode 16 swift-testing configurations
+    /// xcresulttool emits `Suite/Case()` (two segments) instead of
+    /// the documented `Target/Suite/Case()` (three). Feeding the
+    /// short form back to xcodebuild fails because the first
+    /// segment is parsed as the test-target name, which doesn't
+    /// exist (e.g. `Tests in the target "CloudSyncStatusCenterGraceTests"
+    /// can't be run because "CloudSyncStatusCenterGraceTests" isn't a
+    /// member of the specified test plan or scheme.`).
+    ///
+    /// Rule:
+    ///   • `targetName` empty  → return raw (no info to repair with).
+    ///   • `raw` empty         → return raw.
+    ///   • first segment of `raw` matches `targetName` exactly
+    ///                         → return raw (already prefixed).
+    ///   • otherwise           → prepend `targetName + "/"`.
+    ///
+    /// The check is deliberately exact-match: an identifier whose
+    /// first segment looks like a target name but isn't this one
+    /// (e.g. when xcodebuild's test plan ships multiple test
+    /// targets) is left alone — that case is rare and over-eager
+    /// rewriting would risk double-prefixing legitimate three-segment
+    /// identifiers.
+    public static func normalizeIdentifier(_ raw: String, targetName: String) -> String {
+        guard !raw.isEmpty, !targetName.isEmpty else { return raw }
+        let firstSegment = raw.split(separator: "/", maxSplits: 1,
+                                      omittingEmptySubsequences: false).first
+        if firstSegment.map(String.init) == targetName {
+            return raw
+        }
+        return "\(targetName)/\(raw)"
+    }
 }

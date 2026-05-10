@@ -142,4 +142,73 @@ final class RerunPlannerTests: XCTestCase {
             "-only-testing:T/A/test1"
         ])
     }
+
+    // MARK: - normalizeIdentifier (#64)
+
+    func testNormalizeIdentifierPrependsTargetWhenMissing() {
+        // The bug: xcresulttool emits `Suite/Case()` (two segments)
+        // for swift-testing under some Xcode 16 setups, but
+        // `xcodebuild -only-testing:` requires
+        // `Target/Suite/Case()`. The repair must restore the prefix.
+        let out = RerunPlanner.normalizeIdentifier(
+            "CloudSyncStatusCenterGraceTests/persistsAcrossRestart()",
+            targetName: "BeanLedgerTests"
+        )
+        XCTAssertEqual(
+            out,
+            "BeanLedgerTests/CloudSyncStatusCenterGraceTests/persistsAcrossRestart()"
+        )
+    }
+
+    func testNormalizeIdentifierLeavesProperlyPrefixedAlone() {
+        // Already three-segment with the matching target — must not
+        // double-prefix.
+        let out = RerunPlanner.normalizeIdentifier(
+            "BeanLedgerTests/Suite/case()",
+            targetName: "BeanLedgerTests"
+        )
+        XCTAssertEqual(out, "BeanLedgerTests/Suite/case()")
+    }
+
+    func testNormalizeIdentifierLeavesXCTestSelectorAlone() {
+        // XCTest pattern: `Target/ClassName/testMethod`. First
+        // segment matches the target, leave alone.
+        let out = RerunPlanner.normalizeIdentifier(
+            "MyAppTests/MyClassTests/testFoo",
+            targetName: "MyAppTests"
+        )
+        XCTAssertEqual(out, "MyAppTests/MyClassTests/testFoo")
+    }
+
+    func testNormalizeIdentifierPrependsWhenFirstSegmentDiffers() {
+        // Defensive: the rule is "first segment must match the
+        // target name exactly, otherwise prepend". The case where
+        // xcresulttool hands us a three-segment id whose first
+        // segment isn't `targetName` shouldn't happen in practice
+        // (each failure JSON entry carries its own `targetName`),
+        // but if it does we still prepend rather than guessing
+        // — better to fail noisily on a malformed `-only-testing:`
+        // arg than to silently drop the failure from the rerun.
+        let out = RerunPlanner.normalizeIdentifier(
+            "OtherTarget/Suite/case()",
+            targetName: "MyTargetTests"
+        )
+        XCTAssertEqual(out, "MyTargetTests/OtherTarget/Suite/case()")
+    }
+
+    func testNormalizeIdentifierEmptyRawReturnsRaw() {
+        XCTAssertEqual(
+            RerunPlanner.normalizeIdentifier("", targetName: "T"),
+            ""
+        )
+    }
+
+    func testNormalizeIdentifierEmptyTargetReturnsRaw() {
+        // Without a known target name there's nothing to repair
+        // with — pass through verbatim.
+        XCTAssertEqual(
+            RerunPlanner.normalizeIdentifier("Suite/case()", targetName: ""),
+            "Suite/case()"
+        )
+    }
 }

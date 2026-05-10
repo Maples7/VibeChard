@@ -273,4 +273,91 @@ final class XcresultSummaryTests: XCTestCase {
         let summary = try XcresultSummary.parse(data(json))
         XCTAssertTrue(summary.failures.isEmpty)
     }
+
+    // MARK: - rerunIdentifier (#64)
+
+    func testFailureCarriesTargetNameForRerunRepair() throws {
+        // The Failure must surface targetName so callers (and
+        // `rerunIdentifier`) can repair short-form testIdentifiers.
+        let json = """
+        {
+            "title": "Test", "startTime": 0, "finishTime": 1,
+            "result": "Failed",
+            "totalTestCount": 1, "passedTests": 0, "failedTests": 1,
+            "skippedTests": 0, "expectedFailures": 0,
+            "environmentDescription": "x", "topInsights": [],
+            "statistics": [], "devicesAndConfigurations": [],
+            "testFailures": [{
+                "testName": "testFoo",
+                "targetName": "BeanLedgerTests",
+                "failureText": "boom",
+                "testIdentifier": 0,
+                "testIdentifierString": "BeanLedgerTests/Suite/testFoo"
+            }]
+        }
+        """
+        let summary = try XcresultSummary.parse(data(json))
+        XCTAssertEqual(summary.failures[0].targetName, "BeanLedgerTests")
+    }
+
+    func testRerunIdentifierRepairsShortFormSwiftTesting() {
+        // Short form `Suite/Case()` (#64). xcodebuild rejects this
+        // verbatim because it parses `Suite` as the test target.
+        // `rerunIdentifier` must repair it to
+        // `Target/Suite/Case()`.
+        let f = XcresultSummary.Failure(
+            suite: "CloudSyncStatusCenterGraceTests",
+            testCase: "persistsAcrossRestart()",
+            message: "Issue recorded",
+            testIdentifier: "CloudSyncStatusCenterGraceTests/persistsAcrossRestart()",
+            targetName: "BeanLedgerTests"
+        )
+        XCTAssertEqual(
+            f.rerunIdentifier(),
+            "BeanLedgerTests/CloudSyncStatusCenterGraceTests/persistsAcrossRestart()"
+        )
+    }
+
+    func testRerunIdentifierLeavesProperlyPrefixedAlone() {
+        let f = XcresultSummary.Failure(
+            suite: "MoneyTradeModelTests",
+            testCase: "testFinalBaseAmountFastPath()",
+            message: "x",
+            testIdentifier: "BeanLedgerTests/MoneyTradeModelTests/testFinalBaseAmountFastPath()",
+            targetName: "BeanLedgerTests"
+        )
+        XCTAssertEqual(
+            f.rerunIdentifier(),
+            "BeanLedgerTests/MoneyTradeModelTests/testFinalBaseAmountFastPath()"
+        )
+    }
+
+    func testRerunIdentifierReturnsNilWhenMissing() {
+        // No `testIdentifier` (e.g. very old xcresulttool) → nil so
+        // the caller skips this failure when assembling rerun args.
+        let f = XcresultSummary.Failure(
+            suite: "FooTests",
+            testCase: "testFoo",
+            message: "x",
+            testIdentifier: nil,
+            targetName: "FooTests"
+        )
+        XCTAssertNil(f.rerunIdentifier())
+    }
+
+    func testRerunIdentifierRespectsExplicitOverride() {
+        // Override wins over `self.targetName`. Useful when the
+        // caller has a more authoritative source for the target.
+        let f = XcresultSummary.Failure(
+            suite: "Suite",
+            testCase: "case()",
+            message: "x",
+            testIdentifier: "Suite/case()",
+            targetName: ""
+        )
+        XCTAssertEqual(
+            f.rerunIdentifier(targetName: "ExplicitTarget"),
+            "ExplicitTarget/Suite/case()"
+        )
+    }
 }

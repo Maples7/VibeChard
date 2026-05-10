@@ -324,7 +324,13 @@ struct TestCommand: ParsableCommand {
                 if rerunFailed {
                     let bundlePath = workspace.resultBundlePath(for: task)
                     let summary = (try? DiskXcresultReader().summary(at: bundlePath))
-                    let ids = (summary?.failures ?? []).compactMap { $0.testIdentifier }
+                    // #64: prefer `rerunIdentifier(targetName:)` over
+                    // the raw `testIdentifier` so short-form
+                    // identifiers (`Suite/Case()` instead of
+                    // `Target/Suite/Case()`) get the test-target
+                    // prefix prepended before they reach
+                    // `xcodebuild -only-testing:`.
+                    let ids = (summary?.failures ?? []).compactMap { $0.rerunIdentifier() }
                     if ids.isEmpty {
                         throw VibeChardError.testNoPriorFailures(taskName: task.raw)
                     }

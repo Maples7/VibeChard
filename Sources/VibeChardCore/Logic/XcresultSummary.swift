@@ -46,18 +46,48 @@ public struct XcresultSummary: Equatable, Sendable {
         /// `-only-testing:<id>`. Reused by `vch test --rerun-failed`
         /// (#46). nil only when the JSON omits it (very old
         /// xcresulttool).
+        ///
+        /// **Caveat (#64)**: under some Xcode 16 swift-testing
+        /// configurations, `testIdentifierString` arrives as
+        /// `Suite/Case()` (two segments) rather than the documented
+        /// `Target/Suite/Case()` (three). Feeding the raw two-segment
+        /// form back to `xcodebuild -only-testing:` makes xcodebuild
+        /// parse `Suite` as the test target, which doesn't exist.
+        /// Use `rerunIdentifier(targetName:)` (or rely on
+        /// `RerunPlanner.normalizeIdentifier`) instead of the raw
+        /// field when constructing rerun args.
         public let testIdentifier: String?
+        /// `targetName` from the JSON — the test bundle target
+        /// (e.g. `BeanLedgerTests`). Exposed so callers can repair
+        /// short-form `testIdentifier`s for `-only-testing:` (#64).
+        /// Empty string when the JSON omits it.
+        public let targetName: String
 
         public init(
             suite: String,
             testCase: String,
             message: String,
-            testIdentifier: String?
+            testIdentifier: String?,
+            targetName: String = ""
         ) {
             self.suite = suite
             self.testCase = testCase
             self.message = message
             self.testIdentifier = testIdentifier
+            self.targetName = targetName
+        }
+
+        /// Returns a `testIdentifier` value that's safe to feed into
+        /// `xcodebuild -only-testing:` (#64). When the raw identifier
+        /// is missing the test-target prefix — i.e. `Suite/Case()`
+        /// instead of `Target/Suite/Case()` — prepend `targetName/`
+        /// using the explicit override (or `self.targetName` when no
+        /// override is given). Returns nil iff `testIdentifier` is
+        /// nil; the caller decides what to do (typically: skip).
+        public func rerunIdentifier(targetName override: String? = nil) -> String? {
+            guard let raw = testIdentifier else { return nil }
+            let target = override ?? targetName
+            return RerunPlanner.normalizeIdentifier(raw, targetName: target)
         }
     }
 
@@ -184,7 +214,8 @@ public struct XcresultSummary: Equatable, Sendable {
             suite: suiteLabel,
             testCase: testName,
             message: failureText,
-            testIdentifier: identifier
+            testIdentifier: identifier,
+            targetName: target
         )
     }
 
