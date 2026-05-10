@@ -183,302 +183,46 @@ vch exec task-a -- xcodebuild test \
 
 ## Cookbook
 
-組み込みコマンドにするほどではないが、よく出てくるパターンをまとめておきます。
+組み込みコマンドではないが、よく聞かれる使い方 —— WIP 中のタスクから
+分岐する、テストの一部だけを実行する、長期タスクを最新に保つ、
+`vch land` で生成物を残す、warm シミュレーターテンプレートで初回起動を
+スキップする、タスクごとのシミュレーター状態をリセットする、テンプレート
+が Booted で詰まったときの対処、マージ済みタスクの一括削除など。
 
-### 未コミット WIP から新タスクを枝分かれする
-
-`agent/foo` の作業途中で、`agent/foo-experiment` を foo の **現在の
-未コミット状態**（コミット済み履歴だけではなく）から起こしたいケース。
-`vch new --base agent/foo` はコミット済み履歴しか持っていけないので、
-未コミットの diff と未追跡ファイルは stash 経由で運びます：
-
-```sh
-cd "$(vch path foo)"
-git stash push --include-untracked -m "fork-checkpoint"
-
-vch new foo-experiment --base agent/foo
-
-cd "$(vch path foo-experiment)"
-git stash apply              # apply（pop ではなく）— stash エントリは残す
-
-cd "$(vch path foo)"
-git stash pop                # foo 側を元の状態に復帰
-```
-
-`apply` + `pop` の組み合わせで、同じ checkpoint を両方の worktree
-に着地させられます。foo 側を元に戻す必要がない場合は最後の行を
-`git stash drop` に置き換えてください。
-
-なぜ `vch fork` にしないか：「staged + unstaged + 未追跡 + 選択的に
-ignore されたファイルを原子的に移送する」操作には git 由来のプリ
-ミティブが存在しないからです。詳細は
-[#27](https://github.com/Maples7/VibeChard/issues/27)。上のレシピは
-十分に安定した手動代替で、組み込みコマンドにする価値はないと
-判断しました。
-
-### テストの一部だけを走らせる
-
-`vch test` は `xcodebuild test` の薄いラッパなので、よく使う
-`-only-testing` / `-skip-testing` をそのまま透過できます — 区切り
-リテラル `--` で vch 自身のオプションと分離してください（そう
-しないと ArgumentParser が vch のフラグとして解釈しようとします）。
-`-only-testing` がハイフン 1 つなのは、これが `xcodebuild` 側の
-フラグだからです（vch のフラグではありません）：
-
-```sh
-# 1 つのテストクラスだけ実行:
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass'
-
-# 1 つの Swift Testing 関数だけ実行:
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass/myFunc()'
-
-# 重い suite を 1 つだけスキップ:
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -skip-testing 'MyAppTests/SlowSuite'
-```
-
-失敗が出た後は `vch test foo --rerun-failed` を使うと、記録された
-xcresult から失敗した test ID を取り出して該当ケースだけを再実行
-します — 識別子を手動で貼り直す必要はありません。
-
-### 長期タスクを最新に保つ
-
-`agent/<name>` が長く生きてベースブランチが先へ進んだ場合、
-`vch sync <name>` が記録されたベースの upstream を fetch し、
-タスクブランチをその上に rebase します — メイン worktree には
-一切触れません：
-
-```sh
-vch sync foo                          # fetch + rebase
-vch sync foo --dry-run                # ahead/behind と計画をプレビュー
-vch sync foo --merge                  # git merge --no-ff に切り替え
-                                      # （agent/foo を共同作業者が見える場所に push 済みのときだけ）
-vch sync foo --onto origin/release-2  # 一度だけベースを差し替え
-vch sync foo --no-fetch               # オフライン、既に fetch 済みの ref で動く
-```
-
-デフォルトは「rebase、強制 push なし、autostash なし」— vch があな
-たの作業を書き換えたり隠したりすることはありません。git が拒否
-した場合（未コミット変更、コンフリクト）、動作はきれいに中断する
-ので、タスク worktree に入って手動で仕上げます。成功時は
-`state.json` に `lastSync` ブロックが書き込まれます
-（`vch state <name>` で確認できます）。
-
-### `vch land` 時に生成された成果物を残す
-
-`vch land` は**コミット済み**の内容しかマージ先ブランチへ運びませ
-ん。タスク worktree 内で git に追跡されていないもの — 未コミット
-変更、untracked ファイル、`.gitignore` で除外されたもの（再生成
-された画像、ビルド成果物、キャッシュなど）— は **マージに含まれ
-ず**、land 成功後にデフォルトで走る `vch rm` が worktree ごと
-それらを削除します。
-
-ハマるのは特定の形のワークフローです：タスク worktree 内のスク
-リプトが、リポジトリで意図的に `.gitignore` 済みの成果物を再生成
-し、新しい成果物を確認したあと `vch land` を走らせ、後になって
-やっと「再生成したファイルがマージを跨いで来ていない」「メイン
-には古いままのものしか映っていない」と気付く、というパターンです。
-
-その成果物をマージ先ブランチの worktree に持ってきたい場合は、
-コピーが終わるまで vch に worktree を消させないでください：
-
-```sh
-vch land foo --keep                              # マージするが agent-foo/ は残す
-rsync -a "$(vch path foo)/docs/images/" \
-      docs/images/                               # 本当に必要なものだけコピー
-vch rm foo                                       # 終わってから片付ける
-```
-
-コピーは `cp -R` でも `tar -c | tar -x` でも `git lfs migrate` で
-も、案件に合うものを選んでください。vch は「どの成果物を運ぶ
-**べき**か」「どう運ぶべきか」をあえて決め打ちしません — それは
-プロジェクトが何を、なぜ ignore しているかに完全に依存するから
-です。
-
-### warm シミュレーターテンプレートで初回起動の待ち時間を省く
-
-新しくクローンしたシミュレーターに対して `vch test` を最初に走ら
-せたとき、ウォールクロックの約 30 秒は `simctl create` と初回起動
-のキャッシュ準備に費やされます。**ビルド本体ではありません**。同
-じマシン上で同じ `(device, runtime)` の組に対して複数の agent を
-並列で立ち上げると、タスクごとにこの代金を毎回払うことになりま
-す。「warm テンプレート」はその代金を一度だけ前払いして、マシン
-全体で共有するものです。
-
-```sh
-# 一度だけ準備（実際に使う device / runtime のペアごとに一回）：
-vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
-
-# 以降、同じ runtime を pin しているタスクは初回 `vch test` の度に
-# 約 21 秒節約できます — タスク用クローンが暖まったキャッシュを
-# 引き継ぐためです。
-vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
-vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
-
-# 現在キャッシュ中のテンプレートを確認：
-vch sim warm-template list
-
-# 不要になったらディスクを解放：
-vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
-```
-
-同じレシピは **watchOS / tvOS / visionOS** でも使えます（#58）。
-device 名と runtime ラベルを差し替えるだけです：
-
-```sh
-vch sim warm-template create "Apple Watch Series 10 (46mm)" --runtime "watchOS 11.5"
-vch sim warm-template create "Apple TV 4K (3rd generation)" --runtime "tvOS 18.0"
-vch sim warm-template create "Apple Vision Pro"             --runtime "visionOS 2.5"
-```
-
-warm テンプレートのライフタイムは**どのタスクとも切り離されて**
-います。`vch remove` も `vch doctor --clean` も warm テンプレート
-には触れません — 作るのもあなた、消すのもあなたです。`vch doctor`
-は stale や booted の異常状態を見つけられるよう一覧表示はします
-が、自動クリーンは絶対にしません（自動クリーンは 30 秒分の準備
-作業を黙って消す行為になるからです）。`--runtime` は必須です。
-同じ device でも runtime が違えば別の warm テンプレートになるた
-め、pin がないと vch には一意に特定できません。
-
-各プラットフォームの実測値（中央値）：
-
-| プラットフォーム | cold path | warm path | 節約 |
-|---|---|---|---|
-| iOS（iPhone 16 + iOS 26.4、N=5） | 30.75 秒 | 9.41 秒  | 21.35 秒（69.4 %）|
-| watchOS（Apple Watch Series 10 (46mm) + watchOS 11.5、N=3） | 31.0 秒 | 23.3 秒 | 7.7 秒（24.9 %）|
-
-watchOS の初回起動は iOS よりキャッシュ準備の量が少ないので、絶
-対値の節約は小さくなります — それでも 2 秒のノイズフロアよりは
-十分大きく、無駄ではありません。tvOS と visionOS も同程度のオー
-ダーになる見込みです（SPIKE 手順は PR #58 にあるので、対応
-runtime を入れていれば自分で再現できます）。
-
-### タスクシミュレーター状態のリセット
-
-タスク専用のシミュレータークローン（`xcrun simctl clone`）はテンプレー
-トの**`~/Library` 一式**を受け継ぎます。以前の実行が書き込んだ
-`UserDefaults`、keychain、app コンテナも含みます。これは warm テン
-プレートのファストパス（#47/#58）が狙った振る舞い — キャッシュ
-準備を再利用してコストを倍そうとしています。ただし、テストが「初
-回起動」の振る舞いに依存しているところだけトラブルを起こします：
-
-```
-✗ CloudSyncStatusCenterGraceTests.firstLaunchAlertFiresAfterGraceEnds()
-   → expected alert flag to be unset, was true
-```
-
-…テンプレートを対話的に使って `UserDefaults` キーを書き込んだた
-め、クローンにそのキーが踏踬されるためです。
-
-実行前に `--erase-clone` でタスククローンをクリーン状態にリセットします：
-
-```sh
-vch test add-paywall --erase-clone
-vch run  add-paywall --erase-clone
-vch build add-paywall --erase-clone
-```
-
-`--erase-clone` は `simctl shutdown` → `simctl erase` をチェーン（
-erase はブート中のデバイスを拒否します）し、以前のブート
-状態もあわせて衰退させます。コストは約 10–20 秒 — デフォルトで
-は OFF にして高速パスを保ちます。テストが通りたら flag を外して
-OK — 日常の実行では不要です。
-
-`--erase-clone` に頼りっぱなしになると感じたら、vch がクローンの
-起点にする warm テンプレートとは別に「開発専用」テンプレートを
-作ることを検討してください。warm テンプレートは不変として扱
-うべきで、`vch sim warm-template create` / `remove` 以外が手を出
-すべきではありません。
-
-### `simctl clone` がテンプレートを「Booted」と言うとき
-
-引き継がれた状態の双子のような失敗モードとして、**warm テンプ
-レートが起動中**で `simctl clone` がそもそも拒否するパターンが
-あります：
-
-```
-simulator template 'iPhone 16' (12345678…) is currently Booted —
-`xcrun simctl clone` refuses to clone a booted device.
-```
-
-たいていは `Simulator.app`（または Xcode の UI テストセッション）
-で warm テンプレートを開いたまま閉じ忘れた、というケースです。
-`xcrun simctl shutdown <UDID>` を 1 秒走らせれば直ります。
-
-毎回ターミナルに切り替えるのが面倒なら、`vch build` / `vch test`
-/ `vch run` のオプトイン flag `--shutdown-template` がテンプレー
-トをシャットダウンしてクローンを再試行してくれます：
-
-```sh
-vch test add-paywall --shutdown-template
-```
-
-flag は意図的に**デフォルト OFF** です：warm テンプレートはアク
-ティブな vch タスク全体で共有されている資源で、ハードルール #9
-の通り vch は共有資源を勝手に触りません。別タスクの `vch run`
-が同じテンプレートを使っている最中に自動シャットダウンすると、
-そちらを巻き込んで落としてしまいます。flag を明示することで、
-1 回ごとに自分で判断できます。
-
-### マージ済みタスクをまとめて掜除する
-
-何回か `vch land`（もしくは普段使っている GitHub / GitLab の upstream
-マージ）を重ねると、「どれがまだ作業中の worktree で、どれがも
-う掜除していいタスクか」が見えにくくなります。`vch list` は
-デフォルトで BUILD 列しか見せず、「そのタスクのブランチがもう
-ベースに追いついているか」は教えてくれません。
-
-補完関係にある 2 つのツール（#67）：
-
-```sh
-vch list --git-status              # 受動的なシグナル：表に MERGED 列が増える
-vch prune                          # dry-run：安全に掜除できるタスクを列挙
-vch prune --rm                     # 実際に掜除を適用
-```
-
-`vch prune` は**ベースに完全にマージ済み**のブランチだけを触ります。
-デフォルトでは未コミット変更を含む worktree（`--allow-dirty` で上書
-き）や、エディタ / シェルにファイルを掴まれている worktree
-（`--force` で上書き）はスキップします。flag の語彙は `vch rm` と
-ミラーしているので、2 つのコマンドは同じ意味で動きます。
-
-もっと受動的に、いつもの一覧の中でマージ状態を見たいだけなら、
-`vch list` に `--git-status` を足すだけでよく、新しい `MERGED` 列が
-`yes` / `no` / `-`（不明）を表示します。`vch list --json` では同じ
-値が `git.mergedIntoBase` に入ります。
+→ 詳細は **[docs/cookbook.md](docs/cookbook.md)** を参照（英語単一ソース、
+[AGENTS.md ルール #10](AGENTS.md) を参照）。
 
 ## コマンド一覧
 
-| コマンド | 役割 |
+| コマンド | 何をするか |
 |---|---|
-| `vch new <name>` | `../<repo>-<name>` に worktree を作成、ブランチは `agent/<name>`。`--exec "<cmd>"` で worktree 内で直接コマンド実行（例: AI エージェント）。`--copy-untracked` は未追跡かつ無視されていないファイル（`.env` / `.vscode/settings.json` など）もまとめてコピーします。`--seed-spm-from <task>` は APFS の COW で別の vch タスクの SwiftPM bare-mirror キャッシュをクローンして、このタスクの初回ビルドで依存ライブラリのネットワークフェッチをスキップします（APFS 限定。コピー元タスクは事前に一度はビルドしておく必要があります）。`--cd` は機械可読コントラクト：stdout には worktree の絶対パスのみを出力し、ステータスやヒントは stderr へ流れます。fish / nushell など `vch shellenv` を使えないシェルから `cd "$(vch new --cd foo)"` 形式でラップするための入口。`--exec` とは排他。 |
-| `vch list` | 現在のワークスペース下のすべてのタスクを一覧。`--json` で機械可読出力。`-v`/`--verbose` で `BASE` と `PATH` 列を追加。`--git-status` で `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` 列を追加（worktree ごとに `git rev-list` + `git status` を 1 回ずつ追加実行）。 |
-| `vch state <name>` | タスクの `.vch/state.json` を整形して表示。`--json` で生ファイル内容を出力。`--field <dotted>` で単一のスカラー値（例：`simulator.udid`）だけを出力——スクリプトで `$(vch state foo --field simulator.udid)` として使うため。 |
-| `vch path <name>` | タスク worktree の絶対パスを出力。 |
-| `vch open [<name>] [--with <ide>]` | worktree を IDE で開く。`*.xcworkspace` / `*.xcodeproj` / `Package.swift` を自動検出（プロジェクトファイルは Xcode、それ以外は VS Code）。`--with` は `xcode`、`code`/`vscode`、`cursor`、または任意のアプリ名（`open -a` に渡す）に対応。`VCH_OPEN_DEFAULT` でデフォルトを上書き可能。`<name>` 省略時は `$PWD` のある worktree を使う。 |
-| `vch <name>` | `vch exec <name> -- $SHELL` のシュガー。隔離環境変数 + `.vch/bin` PATH シムが有効なシェルが立ち上がる。 |
-| `vch exec <name> -- <cmd...>` | タスク worktree 内で任意のコマンドを実行（隔離有効）。 |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | タスクの worktree に対して `xcodebuild build` を実行。`-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。共有スキームが一つだけのプロジェクトでは `--scheme` を省略可能（`xcodebuild -list -json` で自動検出）。一度記録されたスキームは以降の呼び出しで再利用。`--runtime 'iOS 26.4'`（または `'watchOS 11.5'` / `'tvOS 18.0'` / `'visionOS 2.5'`）は同名デバイステンプレートが複数ランタイムと共存する場合にランタイムをピン留めします。`--erase-clone` はテンプレートから受け継いだ UserDefaults / app container をビルド前に `simctl shutdown && simctl erase` でリセットします（デフォルト OFF、cookbook「タスクシミュレーター状態のリセット」参照）。`--shutdown-template` は `simctl clone` が warm テンプレートの Booted 状態を拒否したときにテンプレートをシャットダウンしてクローンを再試行します（デフォルト OFF、cookbook「`simctl clone` がテンプレートをBootedと言うとき」参照）。デフォルトでは簡潔なサマリ（`✓ build succeeded in 12.4s   (3 warnings)`）のみを表示。`--verbose` で xcodebuild の出力をそのまま端末に流し込む。完全なログは常に `<wt>/.vch/last-build.log` に tee される。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。初回 `--device` 時にシミュレーターを遅延クローンし以降は再利用。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じ。`--erase-clone` はテスト前にクローン状態をリセット（例えば「初回起動」依存のテストがテンプレートへの対話的デバッグで書き込まれた `UserDefaults` に干渉されたときに使う。cookbook 参照）。`--shutdown-template` は Booted の warm テンプレートをシャットダウンしてクローンを再試行します（cookbook 参照）。デフォルトでは簡潔なサマリ（スイートごとに 1 行、失敗テストは file:line とアサーションメッセージとともに展開）のみを表示。`--verbose` で xcodebuild の出力をそのまま端末に流し込む。完全なログは常に `<wt>/.vch/last-test.log` に tee される。テスト数は xcresult バンドルから読み出すため swift-testing（`@Suite`/`@Test`/`#expect`）ターゲットでも正確にカウントされる。`--rerun` は直前の呼び出しをそのまま再実行；`--rerun-failed` は記録された xcresult から失敗したテスト ID のみを `-only-testing:` で再実行。 |
-| `vch run   <name> [flags] [-- launch-args]` | タスクに紐づいたシミュレータークローン上でアプリをビルド・インストール・起動。スキームの自動検出と `--runtime` の振る舞いは `vch build` と同じで、`PRODUCT_BUNDLE_IDENTIFIER` は `xcodebuild -showBuildSettings -json` から自動解決。`--erase-clone` はインストール前にクローン状態をリセット（デフォルト OFF）。`--shutdown-template` は Booted の warm テンプレートをシャットダウンしてクローンを再試行します（デフォルト OFF、cookbook 参照）。`--` 以降の引数はそのまま `simctl launch` に転送されます（例：`vch run alpha -- -UsePreviewSampleData`）。必要に応じてクローンをブートし `Simulator.app` を開きます。 |
-| `vch logs <name> [--test\|--build]` | タスク直近の `vch test` または `vch build` の xcodebuild フルログを表示。デフォルトは `--test`、`--build` でビルドのフルログ。ログは毎回上書きされる。 |
-| `vch sim {clone,erase,shutdown,info} <name>` | タスクのシミュレータークローンを明示的に管理。 |
-| `vch sim warm-template {create,list,remove}` | 共有の *warm* シミュレーターテンプレートを管理（#47、#58）。warm テンプレートとは「booted-once-then-shutdown」で初回起動キャッシュを暖めたシミュレーターで、その後の `vch test` 用タスククローンがそのキャッシュを継承します（iOS 実測：約 30 秒 → 約 9 秒、watchOS：約 31 秒 → 約 23 秒）。iOS / watchOS / tvOS / visionOS に対応。`create <device> --runtime "iOS 26.4"`（または `"watchOS 11.5"` / `"tvOS 18.0"` / `"visionOS 2.5"`）で作成、`list [--json]` で確認、`remove <device> --runtime "..."` で削除。**ライフタイムはどのタスクとも切り離されています** — `vch remove` も `vch doctor --clean` も warm テンプレートには触れず、自分で管理します。`vch test --device "<device>" --runtime "..."` は一致する warm テンプレートが存在すれば自動的に選びます。 |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | `agent/<name>` をベースブランチ（`vch new` 時にメイン worktree がいたブランチ、`state.json` に記録済み）にマージして worktree を削除。デフォルトは `--no-ff`。デフォルトのコミットメッセージは `Merge agent/<name>: <最新の非マージコミットのサブジェクト>`。以下の場合マージを拒否：空マージ、メイン worktree がターゲットブランチと違う、メインの未コミットパスがタスクブランチの diff と重複（`--allow-dirty` で制御）。`--keep` で自動 rm をスキップ、`--dry-run` で計画を表示だけし何も変更しない。自動 rm が成功した場合は、タスク用の simulator clone も削除される（`vch rm` のデフォルトと同じ）。`--keep-sim` で clone を残す。`--push` は解決済みの `--into` ブランチを追跡している remote（`branch.<into>.remote`、未設定なら `origin` にフォールバック）に push する。`--push-to <remote>` は明示的に remote を指定する上書き。どちらのフラグもなければ `vch land` はネットワークに一切触れない。push が失敗してもマージは**ロールバックされない** — 失敗内容は stderr に warning として出る。**コミット済み**の内容しか持ち越されません — 未コミット変更、untracked ファイル、`.gitignore` で除外された成果物は worktree と一緒に削除されます（`--keep` + 手動コピー；cookbook の「`vch land` 時に生成された成果物を残す」を参照）。 |
-| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 記録されたベースブランチの upstream を fetch し、`agent/<name>` を rebase で取り込む。`--merge` で `git merge --no-ff` に切り替え（タスクブランチが共同作業者から見える場所に push 済みのときのみ推奨）。`--onto <ref>` でベースを上書き、`--no-fetch` で fetch をスキップ、`--allow-dirty` で dirty worktree チェックを git 側に委ねる、`--dry-run` は ahead/behind と計画戦略を表示するだけで何も書かない。git 操作はすべてタスク worktree 内で行い、メイン worktree には触れない。成功時に `lastSync` を記録する。 |
-| `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | worktree、ブランチ、（デフォルトで）シミュレータークローンを削除。`--allow-dirty` で未コミット変更を許容、`--force` で「エディタ/シェルがファイルを掴んでいる」チェックを上書き（#65）、`--allow-unmerged` で未マージのブランチを強制削除。 |
-| `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | ブランチがベースに完全にマージされているタスクをすべて一覧表示（デフォルト）、または削除（`--rm`）します。dirty な worktree（`--allow-dirty` で上書き）やエディタ等に掴まれている worktree（`--force` で上書き）はスキップします。`--keep-sim` は掜除される各タスクのシミュレータークローンを保持（デフォルトは削除）。掜除されるタスクは 1 行ずつ、スキップされたタスクは理由と一緒に stderr へ出力されます。 |
-| `vch repair` | `git worktree list` の実状態に合わせて `.vch/state.json` を再同期。 |
-| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | タスクの `DerivedData` + `ModuleCache` を削除（デフォルト）。`--swiftpm` で SwiftPM クローンディレクトリも、`--logs` で `.vch/last-test.log` も、`--all` で全部を削除。`.agent-build/` または `.vch/` 以下のファイルを開いているプロセス（インデックス中の Xcode など）があれば拒否。`--dry-run` は削除予定の一覧を表示して何も触らずに返る。 |
-| `vch doctor [--clean] [--json]` | 孤児シミュレータークローン、古いステートバインディング、破損 `state.json` を検出。検出時は非ゼロ終了。 |
-| `vch doctor --bug-report [--out <path>] [--json]` | ローカルでサニタイズ済みの診断バンドル tarball を作成。全タスクの `state.json` + `last-test.log`、porcelain の worktree 一覧、`sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` の出力を同梱。`$HOME` パスは置換済み。ネットワークには一切接続しない。デフォルト出力は `./vch-bug-report-<UTC タイムスタンプ>.tgz`。 |
-| `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` のシェルヘルパーを出力（bash/zsh）。 |
-| `vch completions install [--shell <s>]` | `zsh` / `bash` / `fish` の補完スクリプトをインストール（`$SHELL` から自動検出）。`--print` でプレビュー、`--force` で上書き。 |
-| `vch version` | バージョンとツールチェイン情報を出力（`--json` で機械可読）。 |
+| `vch new <name>` | worktree と `agent/<name>` ブランチを作成（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--cd`）。 |
+| `vch list` | ワークスペース内の全タスクを一覧表示（`--json`、`-v`、`--git-status`）。 |
+| `vch state <name>` | タスクの `.vch/state.json` を表示（`--json`、`--field <dotted>`）。 |
+| `vch path <name>` | タスクの worktree の絶対パスを表示。 |
+| `vch open [<name>]` | worktree を IDE で開く（`--with xcode`/`code`/`cursor`/…）。 |
+| `vch <name>` | worktree のシェルに入る。分離環境と PATH shim が有効。 |
+| `vch exec <name> -- <cmd...>` | タスクの worktree 内で任意コマンドを実行（分離有効）。 |
+| `vch build <name>` | `xcodebuild build` を実行し `-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入（`--scheme`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--verbose`）。 |
+| `vch test <name>` | `xcodebuild test` を実行し `-resultBundlePath` を注入。シミュレーターは遅延クローン（`--device`、`--runtime`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
+| `vch run <name>` | タスクのシミュレータークローン上でビルド・インストール・起動（`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
+| `vch logs <name>` | タスク直近のビルド/テストの完全な xcodebuild ログを表示（`--test`/`--build`）。 |
+| `vch sim {clone,erase,shutdown,info} <name>` | タスク用シミュレータークローンを明示的に管理。 |
+| `vch sim warm-template {create,list,remove}` | 共有の *warm* シミュレーターテンプレートを管理（iOS / watchOS / tvOS / visionOS、[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
+| `vch land <name>` | `agent/<name>` を base にマージして後始末（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
+| `vch sync <name>` | base の upstream を fetch してタスクブランチを rebase（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |
+| `vch remove <name>` | worktree、ブランチ、シミュレータークローンを削除（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
+| `vch prune` | base に完全マージ済みのタスクを一覧／削除（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
+| `vch repair` | `git worktree list` の実状に合わせて `.vch/state.json` を再同期。 |
+| `vch clean <name>` | タスクの DerivedData / ModuleCache を削除（`--swiftpm`、`--logs`、`--all`、`--dry-run`）。 |
+| `vch doctor` | 孤児シミュレータークローン、不正バインディング、壊れた `state.json` を検出（`--clean`、`--bug-report`、`--json`）。 |
+| `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` の shell 補助関数を出力（bash/zsh）。 |
+| `vch completions install` | `zsh` / `bash` / `fish` の補完スクリプトをインストール（`--shell`、`--print`、`--force`）。 |
+| `vch version` | バージョンとツールチェーン情報を表示（`--json` で機械可読）。 |
 
-`<name>` を取るすべてのコマンドはワークスペース内のタスクから補完されます——補完スクリプトを入れて `<TAB>` を押してください。
+`<name>` を受け取るコマンドは現在のワークスペースから補完されます ——
+補完スクリプトをインストールして `<TAB>` を押すだけ。完全な flag リファレ
+ンスは **[docs/commands.md](docs/commands.md)** を参照。
 
 ## 隔離の仕組み
 <p align="center">

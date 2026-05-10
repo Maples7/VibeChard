@@ -199,301 +199,44 @@ vch exec task-a -- xcodebuild test \
 ## Cookbook
 
 Patterns that aren't a built-in command but come up enough to write
-down.
+down — branching off mid-WIP work, running a test subset, keeping a
+long-running task current, preserving generated artifacts on land,
+warm-template fast path, resetting per-task sim state, the Booted
+template trap, and pruning merged tasks.
 
-### Branching off mid-WIP work
-
-You're partway through `agent/foo` and want to spawn
-`agent/foo-experiment` from foo's **current uncommitted state**, not
-just its committed history. `vch new --base agent/foo` only carries
-committed history; the uncommitted diff (and any untracked files)
-needs the stash dance:
-
-```sh
-cd "$(vch path foo)"
-git stash push --include-untracked -m "fork-checkpoint"
-
-vch new foo-experiment --base agent/foo
-
-cd "$(vch path foo-experiment)"
-git stash apply              # apply, don't pop — leaves the entry intact
-
-cd "$(vch path foo)"
-git stash pop                # restore foo's WIP
-```
-
-`apply` + `pop` lets one checkpoint land in both worktrees. If you
-don't care about restoring foo, drop the final `git stash pop` and
-use `git stash drop` instead.
-
-This isn't a `vch fork` because the atomic "transfer staged +
-unstaged + untracked + selectively-ignored" operation has no native
-git primitive — see [#27](https://github.com/Maples7/VibeChard/issues/27)
-for the full discussion. The recipe above is the stable manual
-fallback.
-
-### Running a subset of tests
-
-`vch test` is a thin wrapper around `xcodebuild test`, so the usual
-`-only-testing` / `-skip-testing` flags work — pass them after a
-literal `--` so ArgumentParser doesn't try to interpret them as vch
-options. Note the single dash on `-only-testing` (it's the
-`xcodebuild` flag, not a vch flag):
-
-```sh
-# Only one test class:
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass'
-
-# Only one Swift Testing function:
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass/myFunc()'
-
-# Skip a slow suite:
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -skip-testing 'MyAppTests/SlowSuite'
-```
-
-Once you have a failing run, `vch test foo --rerun-failed` replays
-only the failed cases without re-typing the identifier — vch reads
-them out of the recorded xcresult bundle.
-
-### Keeping a long-running task current
-
-If `agent/<name>` lives long enough that its base branch has moved
-on, `vch sync <name>` fetches the recorded base's upstream and
-rebases the task branch onto it — without touching your main
-worktree:
-
-```sh
-vch sync foo                          # fetch + rebase
-vch sync foo --dry-run                # preview ahead/behind + plan
-vch sync foo --merge                  # use git merge --no-ff instead
-                                      # (only if you've pushed agent/foo)
-vch sync foo --onto origin/release-2  # one-off retarget
-vch sync foo --no-fetch               # offline, against already-fetched refs
-```
-
-The default policy is "rebase, no force, no autostash" — vch never
-rewrites or hides your work. If git refuses (uncommitted changes,
-conflicts), the operation aborts cleanly and you finish the rebase
-inside the task worktree by hand. Successful runs record a `lastSync`
-block in `state.json` (visible via `vch state <name>`).
-
-### Preserving generated artifacts when landing
-
-`vch land` only carries **committed** content into the destination
-branch. Anything in the task worktree that isn't tracked by git —
-uncommitted changes, untracked files, and anything excluded by
-`.gitignore` (regenerated images, build outputs, caches) — is **not**
-part of the merge, and on a successful land the default `vch rm` step
-deletes the worktree along with all of that.
-
-This bites a specific shape of workflow: a script in the task worktree
-regenerates artifacts that are deliberately `.gitignore`d in the repo.
-You confirm the new artifacts look good, run `vch land`, and only
-afterwards realise the regenerated files never made it across the
-merge — the new artifacts went away with the worktree, and main is
-still showing the old ones.
-
-If you need those artifacts on the destination branch's worktree, ask
-vch not to delete the worktree until you've copied them out:
-
-```sh
-vch land foo --keep                              # merge but keep agent-foo/
-rsync -a "$(vch path foo)/docs/images/" \
-      docs/images/                               # copy what you actually want
-vch rm foo                                       # then clean up
-```
-
-Pick whichever copy tool fits — `cp -R`, `tar -c | tar -x`, `git lfs
-migrate`, etc. vch deliberately doesn't take a side on which artifacts
-"should" be copied or how, because the answer depends on what your
-project ignores and why.
-
-### Skipping the first-boot delay with warm simulator templates
-
-The first time you run `vch test` against a freshly-cloned simulator,
-~30 s of that wallclock is `simctl create` + first-boot cache
-priming, *not* your build. If you spin up multiple agents in parallel
-on the same `(device, runtime)` pair, you pay that cost once per
-task. A "warm template" pre-pays it once for the whole machine.
-
-```sh
-# One-time setup (per device/runtime pair you actually use):
-vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
-
-# Now every task that pins that runtime saves ~21 s on its first
-# `vch test` — the per-task clone inherits the primed caches.
-vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
-vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
-
-# Inspect what's currently cached:
-vch sim warm-template list
-
-# Free the disk back when you don't need it any more:
-vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
-```
-
-The same recipe works on **watchOS, tvOS, and visionOS** (#58); just
-swap the device name and runtime label:
-
-```sh
-vch sim warm-template create "Apple Watch Series 10 (46mm)" --runtime "watchOS 11.5"
-vch sim warm-template create "Apple TV 4K (3rd generation)" --runtime "tvOS 18.0"
-vch sim warm-template create "Apple Vision Pro"             --runtime "visionOS 2.5"
-```
-
-Lifetime is **decoupled** from any task. `vch remove` and
-`vch doctor --clean` never touch warm templates — you create them,
-you delete them. `vch doctor` lists them so you can spot stale or
-booted ones, but never auto-cleans (a clean would silently destroy
-the priming work). The `--runtime` argument is mandatory because
-different runtimes for the same device produce different warm
-templates; without a pin, vch would have nothing unambiguous to look
-up.
-
-Empirical savings vary by platform — measured medians:
-
-| Platform | Cold path | Warm path | Savings |
-|---|---|---|---|
-| iOS (iPhone 16 + iOS 26.4, N=5)              | 30.75 s | 9.41 s  | 21.35 s (69.4 %) |
-| watchOS (Apple Watch Series 10 (46mm) + watchOS 11.5, N=3) | 31.0 s  | 23.3 s  | 7.7 s (24.9 %)   |
-
-watchOS first-boot does less cache priming work than iOS, so the
-absolute win is smaller — but still well above the 2 s noise floor
-that would have made the optimisation pointless. tvOS and visionOS
-should be in the same ballpark (the SPIKE methodology is in PR #58
-and runnable with whatever runtimes you have installed).
-
-### Resetting per-task simulator state
-
-A per-task simulator clone (`xcrun simctl clone`) inherits the
-**entire `~/Library`** of the template, including `UserDefaults`,
-keychain entries, and app containers written by previous runs.
-That's exactly what you want for the warm-template fast path
-(#47/#58) — the priming work survives — but it occasionally bites
-when a test depends on first-launch behaviour:
-
-```
-✗ CloudSyncStatusCenterGraceTests.firstLaunchAlertFiresAfterGraceEnds()
-   → expected alert flag to be unset, was true
-```
-
-…because the template was used interactively for development and
-wrote `UserDefaults` keys that the clone now also has.
-
-Reset the per-task clone to a freshly-erased state before the run
-with `--erase-clone`:
-
-```sh
-vch test add-paywall --erase-clone
-vch run  add-paywall --erase-clone
-vch build add-paywall --erase-clone
-```
-
-`--erase-clone` chains `simctl shutdown` → `simctl erase` (erase
-rejects booted devices), so it also collapses any leftover boot
-state. Costs ~10–20 s — off by default to keep the fast path fast.
-Drop the flag once the test passes; daily runs don't need it.
-
-If you find yourself reaching for `--erase-clone` constantly,
-consider keeping a development-only template separate from the
-warm template that vch clones from. The warm template should be
-treated as immutable — only `vch sim warm-template create` /
-`remove` should ever touch it.
-
-### When `simctl clone` says the template is "Booted"
-
-The companion failure mode to inherited state is when **the warm
-template is currently running** and `simctl clone` refuses
-outright:
-
-```
-simulator template 'iPhone 16' (12345678…) is currently Booted —
-`xcrun simctl clone` refuses to clone a booted device.
-```
-
-This usually means you opened the warm template from
-`Simulator.app` (or an Xcode UI test session) earlier and forgot
-to shut it down. The fix is `xcrun simctl shutdown <UDID>`, which
-takes a second.
-
-If you don't want to context-switch into a terminal every time,
-`vch build` / `vch test` / `vch run` accept an opt-in
-`--shutdown-template` flag that does the shutdown and retries the
-clone for you:
-
-```sh
-vch test add-paywall --shutdown-template
-```
-
-The flag is **off by default** on purpose: warm templates are
-shared across all your active vch tasks (per hard rule #9, vch
-never auto-touches a shared resource). If another task's
-`vch run` is currently driving the same template, an automatic
-shutdown would yank it out from under that task. With the flag
-explicit you decide once per invocation.
-
-### Cleaning up tasks whose branches have already merged
-
-After a few `vch land`s (or upstream merges via your usual GitHub /
-GitLab flow), it's easy to lose track of which leftover worktrees
-are still doing real work and which are just rusting out. `vch list`
-alone shows the BUILD column, but not whether the task's branch is
-still ahead of its base.
-
-Two complementary tools (#67):
-
-```sh
-vch list --git-status              # passive signal: MERGED column
-vch prune                          # dry-run: list every safe-to-remove task
-vch prune --rm                     # actually remove them
-```
-
-`vch prune` only touches tasks whose branch is **fully merged**
-into its recorded base. By default it also skips tasks with
-uncommitted changes (override with `--allow-dirty`) and tasks where
-an editor / shell still has files open inside the worktree
-(override with `--force`). The flag vocabulary mirrors `vch rm` so
-the two commands behave the same way.
-
-If you'd rather see the merged-state passively next to the rest of
-your task list, just add `--git-status` to your usual `vch list` —
-the new `MERGED` column reads `yes` / `no` / `-` (unknown). The
-same value lands in `git.mergedIntoBase` under `vch list --json`.
+→ See **[docs/cookbook.md](docs/cookbook.md)** for the full set.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `vch new <name>` | Create worktree at `../<repo>-<name>` on branch `agent/<name>`. `--exec "<cmd>"` runs a command inside it (e.g. an AI agent). `--copy-untracked` also copies git-untracked, non-ignored files (e.g. `.env`, `.vscode/settings.json`) from the main worktree. `--seed-spm-from <task>` COW-clones a sibling vch task's SwiftPM bare-mirror cache so this task's first build skips the dependency network fetch (APFS only; source task must already have built once). `--cd` opts into the machine-readable contract: stdout prints **only** the absolute worktree path, all status/hints go to stderr — for fish/nushell wrappers like `cd "$(vch new --cd foo)"`. Mutually exclusive with `--exec`. |
-| `vch list` | List all tasks in the current workspace. `--json` for machine output; `-v`/`--verbose` adds `BASE` + `PATH` columns; `--git-status` adds `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` columns (one extra `git rev-list` + `git status` per worktree). |
-| `vch state <name>` | Pretty-print `.vch/state.json` for a task. `--json` for the raw file contents. `--field <dotted>` prints just one scalar (e.g. `simulator.udid`) — designed for `$(vch state foo --field simulator.udid)` in scripts. |
+| `vch new <name>` | Create worktree + `agent/<name>` branch (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--cd`). |
+| `vch list` | List tasks in the workspace (`--json`, `-v`, `--git-status`). |
+| `vch state <name>` | Print `.vch/state.json` for a task (`--json`, `--field <dotted>`). |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
-| `vch open [<name>] [--with <ide>]` | Open the worktree in an IDE. Auto-detects `*.xcworkspace` / `*.xcodeproj` / `Package.swift` (Xcode for project files, VS Code otherwise). `--with` accepts `xcode`, `code`/`vscode`, `cursor`, or any app name (passed to `open -a`). Override default with `VCH_OPEN_DEFAULT`. With no `<name>`, uses the worktree containing `$PWD`. |
-| `vch <name>` | Sugar for `vch exec <name> -- $SHELL` — drops you into a shell with isolation env vars + `.vch/bin` PATH shim active. |
+| `vch open [<name>]` | Open the worktree in an IDE (`--with xcode`/`code`/`cursor`/…). |
+| `vch <name>` | Drop into a shell inside the worktree with isolation active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | `xcodebuild build` against the task's worktree, with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected. `--scheme` is optional when the project has exactly one shared scheme (auto-detected via `xcodebuild -list -json`); once recorded, vch reuses it on subsequent calls. `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`, `'visionOS 2.5'`) pins the simulator runtime. `--erase-clone` runs `simctl shutdown && simctl erase` on the per-task clone first (off by default; see "Resetting per-task simulator state" cookbook). `--shutdown-template` shuts the warm template down and retries when `simctl clone` refuses because the template is Booted (off by default; see "When simctl clone says the template is Booted" cookbook). By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`); `--verbose` mirrors xcodebuild's full output. The full firehose is always tee'd to `<wt>/.vch/last-build.log`. |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` against the task's worktree, with `-resultBundlePath` injected; lazy-clones a simulator on first `--device` and reuses it after. Same scheme auto-pick + `--runtime` rules as `vch build`. `--erase-clone` resets the per-task clone before running (useful when a test depends on first-launch defaults; see cookbook). `--shutdown-template` shuts a Booted warm template down and retries the clone (see cookbook). By default prints only a concise summary (one line per suite, failing tests expanded with file:line and assertion message); `--verbose` mirrors xcodebuild's full output to the terminal. The full firehose is always tee'd to `<wt>/.vch/last-test.log`. Counts come from the xcresult bundle so swift-testing (`@Suite`/`@Test`/`#expect`) targets are reported correctly. `--rerun` replays the prior invocation verbatim; `--rerun-failed` re-runs only the tests that failed last time (uses the recorded xcresult). |
-| `vch run   <name> [flags] [-- launch-args]` | Build, install, and launch the task's app on its bound simulator clone. Same scheme auto-pick + `--runtime` rules as `vch build`. `--erase-clone` resets the per-task clone before installing (off by default). `--shutdown-template` shuts a Booted warm template down and retries the clone (off by default; see cookbook). `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via `xcodebuild -showBuildSettings -json`. Everything after `--` is forwarded verbatim to `simctl launch` — e.g. `vch run alpha -- -UsePreviewSampleData`. Boots the clone and opens `Simulator.app` if needed. |
-| `vch logs <name> [--test\|--build]` | Print the full xcodebuild log from the task's most recent run. Defaults to `--test`; pass `--build` for the build firehose. Logs are overwritten on each run. |
+| `vch build <name>` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected (`--scheme`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--verbose`). |
+| `vch test <name>` | `xcodebuild test` with `-resultBundlePath` injected; lazy sim clone (`--device`, `--runtime`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`). |
+| `vch run <name>` | Build, install, launch on the task's sim clone (`--erase-clone`, `--shutdown-template`, `-- launch-args`). |
+| `vch logs <name>` | Print the most recent build/test xcodebuild log (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
-| `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (#47, #58). A warm template is a primed-then-shutdown simulator that subsequent per-task `vch test` clones inherit caches from, cutting first-sim-spin-up (iOS measured: ~30 s → ~9 s; watchOS: ~31 s → ~23 s). Works for iOS, watchOS, tvOS, and visionOS. `create <device> --runtime "iOS 26.4"` (or `"watchOS 11.5"`, `"tvOS 18.0"`, `"visionOS 2.5"`) creates one; `list [--json]` shows what exists; `remove <device> --runtime "..."` deletes one. **Lifetime is decoupled from any task** — `vch remove` and `vch doctor --clean` never touch warm templates; you create and delete them yourself. `vch test --device "<device>" --runtime "..."` automatically picks the matching warm template when one exists. |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | Merge `agent/<name>` back into its base branch (the branch the main worktree was on at `vch new`, recorded in `state.json`) and remove the worktree. Default strategy `--no-ff`. Default message `Merge agent/<name>: <last non-merge subject>`. Refuses on a no-op merge, on a wrong main branch, and when the main worktree has uncommitted changes whose paths intersect the task branch's diff (use `--allow-dirty` to override). `--keep` skips the auto-rm; `--dry-run` prints the plan without modifying anything. After a successful auto-rm, vch also deletes the per-task simulator clone (mirroring `vch rm`'s default); pass `--keep-sim` to retain it. `--push` pushes the resolved `--into` branch to its tracked remote (`branch.<into>.remote`, falling back to `origin`); `--push-to <remote>` overrides with an explicit remote. Without either flag `vch land` never contacts a remote. If the post-merge push fails the merge is **not** rolled back — the failure is surfaced as a stderr warning. Only **committed** content is carried over — uncommitted changes, untracked files, and `.gitignore`d artifacts in the worktree are lost when the worktree is removed (use `--keep` + manual copy; see the "Preserving generated artifacts" cookbook recipe). |
-| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | Fetch the recorded base branch's upstream and rebase `agent/<name>` onto it. `--merge` switches to `git merge --no-ff` (use only when the task branch has been pushed somewhere a coworker reads from). `--onto <ref>` overrides the base; `--no-fetch` skips the network call; `--allow-dirty` defers the dirty-worktree check to git itself; `--dry-run` prints ahead/behind counts and the planned strategy without writing. All git work runs inside the task worktree, so the main worktree is never touched. Records `lastSync` on success. |
-| `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | Delete the worktree, branch, and (by default) simulator clone. `--allow-dirty` permits uncommitted changes; `--force` overrides the held-open-files check (e.g. an editor still open inside the worktree, #65); `--allow-unmerged` force-deletes a branch that isn't fully merged. |
-| `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | List (default) or remove (`--rm`) every task whose branch is already fully merged into its base. Skips dirty worktrees (`--allow-dirty` overrides) and worktrees with open holders (`--force` overrides). `--keep-sim` retains the per-task simulator clone (default: delete). One pruned task per row; the rest are reported on stderr with the reason they were skipped. |
+| `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (iOS/watchOS/tvOS/visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47)/[#58](https://github.com/Maples7/VibeChard/issues/58)). |
+| `vch land <name>` | Merge `agent/<name>` back into its base and clean up (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
+| `vch sync <name>` | Fetch the base's upstream and rebase the task branch onto it (`--onto`, `--merge`, `--no-fetch`, `--dry-run`). |
+| `vch remove <name>` | Delete the worktree, branch, and sim clone (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
+| `vch prune` | List or remove tasks whose branch is fully merged into its base (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
-| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | Delete the task's `DerivedData` + `ModuleCache` (default). Add `--swiftpm` to also drop the SwiftPM clone dir, `--logs` to drop `.vch/last-test.log`, `--all` for everything. Refuses if any process still has a file open inside `.agent-build/` or `.vch/` (e.g. an Xcode that's actively indexing); `--dry-run` lists what would be removed. |
-| `vch doctor [--clean] [--json]` | Detect orphan simulator clones, stale state bindings, and corrupt `state.json`s. Exits non-zero on any finding. |
-| `vch doctor --bug-report [--out <path>] [--json]` | Bundle a redacted local diagnostics tarball: every task's `state.json` + `last-test.log`, the porcelain worktree list, and `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` output. `$HOME` paths are scrubbed. No network. Default output: `./vch-bug-report-<UTC-stamp>.tgz`. |
+| `vch clean <name>` | Delete the task's DerivedData / ModuleCache (`--swiftpm`, `--logs`, `--all`, `--dry-run`). |
+| `vch doctor` | Detect orphan sim clones, stale state, corrupt `state.json` (`--clean`, `--bug-report`, `--json`). |
 | `vch shellenv` | Emit `vch_cd` / `vch_new` / `vch_clean` shell helpers (bash/zsh). |
-| `vch completions install [--shell <s>]` | Install the completion script for `zsh` / `bash` / `fish` (auto-detected from `$SHELL`). `--print` previews; `--force` overwrites. |
+| `vch completions install` | Install the shell completion script (`--shell`, `--print`, `--force`). |
 | `vch version` | Print version + toolchain info (`--json` for machine-readable). |
 
 All commands that take a `<name>` complete it from the current
-workspace — install completions and hit `<TAB>`.
+workspace — install completions and hit `<TAB>`. For the full flag
+reference see **[docs/commands.md](docs/commands.md)**.
 
 ## How isolation works
 

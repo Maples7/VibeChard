@@ -17,8 +17,9 @@ struct LandCommand: ParsableCommand {
             generated assets, caches) — are NOT carried into the destination \
             branch, and are lost when the worktree is removed. Pass --keep \
             to preserve the worktree if you need to copy any of those out \
-            first; see the "Preserving generated artifacts" recipe in the \
-            README cookbook.
+            first; see the "Preserving generated artifacts when landing" \
+            recipe at \
+            https://github.com/Maples7/VibeChard/blob/master/docs/cookbook.md#preserving-generated-artifacts-when-landing.
             """
     )
 

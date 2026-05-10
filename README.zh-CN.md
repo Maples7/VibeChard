@@ -182,272 +182,45 @@ vch exec task-a -- xcodebuild test \
 
 ## Cookbook
 
-不够格做成命令、但又频繁出现的场景，记在这里。
+不属于内置命令，但常常被问到的一些用法 —— 比如基于一个 WIP 中的任务再开
+分支、只跑一部分测试、给长跑任务做基线同步、`vch land` 时保留生成的产物、
+warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板被 Booted 卡住时
+的处理、清理已合并任务等等。
 
-### 从未提交的 WIP 上分叉新任务
-
-`agent/foo` 做到一半，想再开一条 `agent/foo-experiment` 从 foo 的
-**当前未提交状态**（不只是已提交历史）出发。`vch new --base agent/foo`
-只能带上已提交的 commit；未提交的 diff 和未跟踪文件得靠 stash：
-
-```sh
-cd "$(vch path foo)"
-git stash push --include-untracked -m "fork-checkpoint"
-
-vch new foo-experiment --base agent/foo
-
-cd "$(vch path foo-experiment)"
-git stash apply              # 用 apply 不要用 pop —— stash 条目保留
-
-cd "$(vch path foo)"
-git stash pop                # foo 恢复到原状态
-```
-
-`apply` + `pop` 的组合让同一份 checkpoint 落到两个 worktree。如果不
-需要把 WIP 还原回 foo，把最后一行换成 `git stash drop` 即可。
-
-为什么不做成 `vch fork`：「原子地把 staged + unstaged + 未跟踪 +
-按规则忽略的文件搬过去」在 git 里没有原生原语，详见
-[#27](https://github.com/Maples7/VibeChard/issues/27)。上面这套手动
-脚本足够稳，不值得加内置命令。
-
-### 跑某个子集的测试
-
-`vch test` 是 `xcodebuild test` 的薄包装，因此常用的
-`-only-testing` / `-skip-testing` 直接透传即可 —— 用字面量 `--` 把它
-们和 vch 自己的选项隔开，避免 ArgumentParser 当成 vch 的 flag 解析。
-注意 `-only-testing` 是单破折号（这是 `xcodebuild` 的 flag，不是 vch
-的 flag）：
-
-```sh
-# 只跑某一个测试类：
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass'
-
-# 只跑某一个 Swift Testing 函数：
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass/myFunc()'
-
-# 跳过某个慢的 suite：
-vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -skip-testing 'MyAppTests/SlowSuite'
-```
-
-一旦有失败用例，`vch test foo --rerun-failed` 会从记录的 xcresult
-bundle 取出失败的测试 ID 自动只重跑这些用例，不用手动复制粘贴。
-
-### 让长期任务保持最新
-
-如果 `agent/<name>` 跑得够久，base 分支已经向前推进了，
-`vch sync <name>` 会拉取记录中 base 分支的 upstream，并把任务分支
-rebase 到上面 —— 全程不碰你的主 worktree：
-
-```sh
-vch sync foo                          # fetch + rebase
-vch sync foo --dry-run                # 预览 ahead/behind 与计划
-vch sync foo --merge                  # 改用 git merge --no-ff
-                                      # （仅当 agent/foo 已被推到协作者会读的地方）
-vch sync foo --onto origin/release-2  # 一次性换基准
-vch sync foo --no-fetch               # 离线，仅靠已经 fetch 过的 ref 工作
-```
-
-默认策略是 「rebase、不强推、不 autostash」 —— vch 永远不会重写或
-藏匿你的工作。如果 git 拒绝（未提交改动、冲突），操作会干净地中止，
-你可以进入任务 worktree 手动收尾。成功的 `vch sync` 会在
-`state.json` 写入 `lastSync` 块（`vch state <name>` 可见）。
-
-### `vch land` 时保留生成的产物
-
-`vch land` 只把**已 commit** 的内容带进目标分支。任务 worktree 里
-git 不跟踪的内容 —— 未提交改动、untracked 文件、被 `.gitignore`
-排除掉的内容（重新生成的图片、构建产物、缓存等等）—— **不会**
-进入这次合并；而成功 land 之后默认的 `vch rm` 会把 worktree 连同
-这些东西一起删掉。
-
-这种坑会咬住一类特定的工作流：任务 worktree 里的某个脚本会重新
-生成一批被 `.gitignore` 故意排除的产物，你确认了新产物没问题就
-跑了 `vch land`，事后才发现这些重新生成的文件根本没跨过合并
-—— 它们随 worktree 一起没了，主分支看到的还是旧版本。
-
-如果你需要把这些产物搬到目标分支的 worktree 里，先告诉 vch
-不要立刻删 worktree，等你拷贝完再删：
-
-```sh
-vch land foo --keep                              # 合并但保留 agent-foo/
-rsync -a "$(vch path foo)/docs/images/" \
-      docs/images/                               # 把你真正需要的部分拷过来
-vch rm foo                                       # 然后再清理
-```
-
-至于用 `cp -R` / `tar -c | tar -x` / `git lfs migrate` 还是别的
-工具搬，看你项目情况自己挑 —— vch 故意不去裁判 「哪些产物**应该**
-被搬」「应该怎么搬」，因为答案完全取决于你的项目为什么 ignore
-那些文件。
-
-### 用 warm 模板省掉首次启动模拟器的等待
-
-第一次对一个新克隆的模拟器跑 `vch test` 时，墙钟里大约 30 秒
-是 `simctl create` + 首次启动的缓存预热，**不是**你的 build 本身。
-如果你在同一台机器上对同一组 `(device, runtime)` 并行跑多个
-agent，每个任务都会再付一次这笔钱。"warm 模板" 就是把这笔钱
-预先付一次，让全机所有任务共享。
-
-```sh
-# 一次性准备（每对你实际用到的 device / runtime 跑一次）：
-vch sim warm-template create "iPhone 16" --runtime "iOS 26.4"
-
-# 之后每个 pin 了同一 runtime 的任务，第一次 `vch test` 都会少花
-# 大约 21 秒 —— 单任务克隆会继承已经预热好的缓存。
-vch test add-paywall  --device "iPhone 16" --runtime "iOS 26.4"
-vch test fix-crash    --device "iPhone 16" --runtime "iOS 26.4"
-
-# 看一下当前缓存了哪些：
-vch sim warm-template list
-
-# 不再需要的时候释放磁盘：
-vch sim warm-template remove "iPhone 16" --runtime "iOS 26.4"
-```
-
-同样的写法在 **watchOS、tvOS、visionOS** 上也能用（#58），把
-device 名字和 runtime label 换掉就行：
-
-```sh
-vch sim warm-template create "Apple Watch Series 10 (46mm)" --runtime "watchOS 11.5"
-vch sim warm-template create "Apple TV 4K (3rd generation)" --runtime "tvOS 18.0"
-vch sim warm-template create "Apple Vision Pro"             --runtime "visionOS 2.5"
-```
-
-warm 模板的生命周期**和任何任务都解耦**。`vch remove` 和
-`vch doctor --clean` 永远不会动 warm 模板 —— 你创建，你删除。
-`vch doctor` 会列出它们方便你发现 stale 或被启动的异常状态，
-但绝不会自动清理（自动清理会悄悄抹掉 30 多秒的预热成果）。
-`--runtime` 是必填的，因为同一个 device 不同 runtime 是不同的
-warm 模板；不 pin 的话 vch 没办法精确查找。
-
-各平台实测节省（中位数）：
-
-| 平台 | cold path | warm path | 节省 |
-|---|---|---|---|
-| iOS（iPhone 16 + iOS 26.4，N=5） | 30.75 s | 9.41 s  | 21.35 s（69.4%）|
-| watchOS（Apple Watch Series 10 (46mm) + watchOS 11.5，N=3） | 31.0 s | 23.3 s | 7.7 s（24.9%）|
-
-watchOS 首次启动的缓存预热工作比 iOS 少，所以绝对收益小一些 ——
-但仍然远高于 2 秒的噪声底线，不是白干。tvOS 和 visionOS 收益
-量级估计也差不多（SPIKE 方法在 PR #58 里，你装了对应 runtime
-就能自己跑一遍）。
-
-### 重置任务模拟器状态
-
-任务专用模拟器克隆（`xcrun simctl clone`）会继承模板的**整个
-`~/Library`**，包括之前跑过的 `UserDefaults`、keychain 、app
-容器。这正是 warm 模板快路径（#47/#58）要的 —— 缓存预热工作
-能被复用。但偶尔会咬人：当某个测试依赖「首次启动」行为时：
-
-```
-✗ CloudSyncStatusCenterGraceTests.firstLaunchAlertFiresAfterGraceEnds()
-   → expected alert flag to be unset, was true
-```
-
-…原因是模板被你交互式用过，之前写进 `UserDefaults` 的键现在也出现在了克隆里。
-
-在跑之前用 `--erase-clone` 把任务克隆重置回干净状态：
-
-```sh
-vch test add-paywall --erase-clone
-vch run  add-paywall --erase-clone
-vch build add-paywall --erase-clone
-```
-
-`--erase-clone` 是「先 `simctl shutdown`、再 `simctl erase`」（erase
-拒绝处理启动中的设备），顺便也会清掉以前的启动残状。成本大
-约 10–20 秒 —— 默认关，以免拖慢快路径。测试过了就可以拿掉这个 flag，日常跑不需要。
-
-如果发现自己一直在依赖 `--erase-clone`，考虑用一个独立的「开发专用」
-模板，跟 vch 克隆起点的 warm 模板分开。warm 模板应该被当作
-不可变的 —— 只有 `vch sim warm-template create` / `remove`
-才应该去动。
-
-### 当 `simctl clone` 抱怨模板正在 "Booted" 时
-
-跟「继承状态」配套出现的另一种失败模式是 **warm 模板正在运行
-中**，`simctl clone` 直接拒绝克隆：
-
-```
-simulator template 'iPhone 16' (12345678…) is currently Booted —
-`xcrun simctl clone` refuses to clone a booted device.
-```
-
-通常是因为你之前从 `Simulator.app`（或某个 Xcode UI 测试会话）
-打开了 warm 模板，又忘了关掉。修复办法是 `xcrun simctl shutdown
-<UDID>`，一秒钟的事。
-
-如果你不想每次都切回终端去敲，`vch build` / `vch test` /
-`vch run` 提供一个可选的 `--shutdown-template` flag，会替你把
-模板关掉再重试 clone：
-
-```sh
-vch test add-paywall --shutdown-template
-```
-
-这个 flag 是**默认关闭**的，且是有意为之：warm 模板在所有正在
-进行的 vch 任务之间共享，按硬性规则 #9，vch 不会自动去碰共享
-资源。如果另一个任务的 `vch run` 正在用同一份模板，自动 shutdown
-会把那个任务一起拽下来。flag 显式之后，每次调用都由你自己拍板。
-
-### 清理已经合并完成的任务
-
-几次 `vch land`（或者你平时走 GitHub / GitLab 走的 upstream 合并）
-之后，很容易搞不清楚：哪些遗留 worktree 还在干活，哪些只是占着
-位置生锈。`vch list` 默认只展示 BUILD 列，不会告诉你「这个分支
-是不是已经追上 base 了」。
-
-两个互补的工具（#67）：
-
-```sh
-vch list --git-status              # 被动信号：表格里多一列 MERGED
-vch prune                          # dry-run：列出可以安全清理的任务
-vch prune --rm                     # 真正执行清理
-```
-
-`vch prune` 只会动那些**完全合并**进 base 的分支。默认还会跳过
-带未提交改动的 worktree（用 `--allow-dirty` 覆盖）以及还有编辑器
-/shell 占用文件的 worktree（用 `--force` 覆盖）。flag 用词跟
-`vch rm` 对齐，两个命令的语义一致。
-
-如果你只是想被动地在任务列表里看一眼合并状态，给 `vch list` 加上
-`--git-status` 就行 —— 新增的 `MERGED` 列会显示 `yes` / `no` /
-`-`（未知）。`vch list --json` 里对应字段是 `git.mergedIntoBase`。
+→ 完整内容见 **[docs/cookbook.md](docs/cookbook.md)**（英文单一来源，
+详见 [AGENTS.md 规则 #10](AGENTS.md)）。
 
 ## 命令一览
 
 | 命令 | 作用 |
 |---|---|
-| `vch new <name>` | 在 `../<repo>-<name>` 创建 worktree，分支为 `agent/<name>`。`--exec "<cmd>"` 在 worktree 内直接跑命令（比如 AI agent）。`--copy-untracked` 会连同未跟踪、未被忽略的文件（如 `.env`、`.vscode/settings.json`）一起拷过来。`--seed-spm-from <task>` 用 APFS COW 把同 repo 下另一个 vch task 的 SwiftPM bare-mirror 缓存克隆过来，让这个 task 第一次 build 时跳过依赖网络拉取（仅 APFS；源 task 必须先 build 过一次）。`--cd` 启用机器可读契约：stdout 只输出 worktree 绝对路径，状态和提示一律走 stderr —— 给 fish / nushell 这类用不了 `vch shellenv` 的 shell 写 `cd "$(vch new --cd foo)"` 这种 wrapper。跟 `--exec` 互斥。 |
-| `vch list` | 列出当前工作区下所有任务。`--json` 输出机器可读格式；`-v`/`--verbose` 增加 `BASE` 与 `PATH` 列；`--git-status` 增加 `AHEAD/BEHIND` + `DIRTY` + `MERGED` + `LAST COMMIT` 列（每个 worktree 多跑一次 `git rev-list` + `git status`）。 |
-| `vch state <name>` | 漂亮打印任务的 `.vch/state.json`。`--json` 输出原始文件内容。`--field <dotted>` 只输出单个字段值（如 `simulator.udid`），方便在脚本里 `$(vch state foo --field simulator.udid)` 这样取。 |
+| `vch new <name>` | 创建 worktree + `agent/<name>` 分支（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--cd`）。 |
+| `vch list` | 列出工作区下所有任务（`--json`、`-v`、`--git-status`）。 |
+| `vch state <name>` | 打印任务的 `.vch/state.json`（`--json`、`--field <dotted>`）。 |
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |
-| `vch open [<name>] [--with <ide>]` | 在 IDE 中打开 worktree。自动识别 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（项目文件用 Xcode，否则用 VS Code）。`--with` 支持 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名（透传给 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆盖默认值。不传 `<name>` 时使用 `$PWD` 所在的 worktree。 |
-| `vch <name>` | `vch exec <name> -- $SHELL` 的语法糖——开一个 shell，隔离环境变量 + `.vch/bin` PATH shim 已就绪。 |
+| `vch open [<name>]` | 在 IDE 中打开 worktree（`--with xcode`/`code`/`cursor`/…）。 |
+| `vch <name>` | 进入 worktree shell，隔离环境与 PATH shim 已就绪。 |
 | `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 对任务的 worktree 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。当项目只有一个共享 scheme 时，`--scheme` 可省（通过 `xcodebuild -list -json` 自动识别）；记录后会在后续调用里复用。`--runtime 'iOS 26.4'`（或 `'watchOS 11.5'`、`'tvOS 18.0'`、`'visionOS 2.5'`）用来在多个同名设备模板（不同 runtime）共存时锁定要用的 runtime。`--erase-clone` 跳过从模板继承的 UserDefaults / app container 状态，在 build 前先 `simctl shutdown && simctl erase`（默认关；详见 cookbook「重置任务模拟器状态」）。`--shutdown-template` 在 `simctl clone` 因 warm 模板正在 Booted 而被拒时，先关掉模板再重试 clone（默认关；详见 cookbook「当 simctl clone 抱怨模板正在 Booted 时」）。默认只输出精简摘要（`✓ build succeeded in 12.4s   (3 warnings)`）；`--verbose` 把 xcodebuild 完整输出直通到终端。完整 firehose 始终 tee 到 `<wt>/.vch/last-build.log`。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 时懒克隆模拟器，后续复用。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`。`--erase-clone` 在测试前重置克隆状态——例如“首次启动”相关的测试被之前交互式调试写进去的 `UserDefaults` 干扰时（详见 cookbook）。`--shutdown-template` 会先关掉正在 Booted 的 warm 模板再重试 clone（详见 cookbook）。默认输出只显示精简摘要（每个 suite 一行，失败测试连同 file:line 与断言消息内联展开）；`--verbose` 把 xcodebuild 完整输出直通到终端。完整 firehose 始终 tee 到 `<wt>/.vch/last-test.log`。计数从 xcresult bundle 读取，因此 swift-testing（`@Suite`/`@Test`/`#expect`）目标也会被正确统计。`--rerun` 原样重放上一次调用；`--rerun-failed` 从记录的 xcresult 提取失败的测试 ID，用 `-only-testing:` 仅重跑那些失败用例。 |
-| `vch run   <name> [flags] [-- launch-args]` | 在任务的模拟器克隆上构建、安装并启动 App。`--scheme` 自动识别与 `--runtime` 行为同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 通过 `xcodebuild -showBuildSettings -json` 自动解析。`--erase-clone` 在安装前重置克隆状态（默认关）。`--shutdown-template` 在 warm 模板正在 Booted 时先关掉模板再重试 clone（默认关；详见 cookbook）。`--` 之后的参数原样转发给 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要会自动启动模拟器并打开 `Simulator.app`。 |
-| `vch logs <name> [--test\|--build]` | 打印任务最近一次 `vch test` 或 `vch build` 的完整 xcodebuild 日志。默认 `--test`；传 `--build` 看构建 firehose。日志每次运行时覆盖。 |
+| `vch build <name>` | 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`（`--scheme`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--verbose`）。 |
+| `vch test <name>` | 跑 `xcodebuild test`，注入 `-resultBundlePath`，懒克隆模拟器（`--device`、`--runtime`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
+| `vch run <name>` | 在任务的模拟器克隆上构建、安装并启动 App（`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
+| `vch logs <name>` | 打印任务最近一次构建/测试的完整 xcodebuild 日志（`--test`/`--build`）。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆。 |
-| `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模拟器模板（#47、#58）。warm 模板是一个被「booted-once-then-shutdown」预热好的模拟器，后续 `vch test` 单任务克隆会继承它的缓存（iOS 实测：约 30 s → 约 9 s；watchOS：约 31 s → 约 23 s）。支持 iOS、watchOS、tvOS、visionOS。`create <device> --runtime "iOS 26.4"`（或 `"watchOS 11.5"`、`"tvOS 18.0"`、`"visionOS 2.5"`）创建；`list [--json]` 查看；`remove <device> --runtime "..."` 删除。**生命周期与任何任务都解耦** —— `vch remove` 和 `vch doctor --clean` 都不会动 warm 模板，需要你自己管。`vch test --device "<device>" --runtime "..."` 在匹配的 warm 模板存在时会自动选用。 |
-| `vch land <name> [--into <branch>] [--no-ff\|--ff-only\|--squash] [--message MSG] [--keep] [--keep-sim] [--allow-dirty] [--dry-run] [--push\|--push-to <remote>]` | 将 `agent/<name>` 合回基准分支（在 `vch new` 时记录于 `state.json` 的主 worktree 分支）并删除 worktree。默认 `--no-ff`；默认提交消息 `Merge agent/<name>: <最近一个非合并提交的标题>`。下列情况下拒绝合并：空合并、主 worktree 不在目标分支上、主 worktree 中与任务分支 diff 重叠的路径未提交（可用 `--allow-dirty` 跳过）。`--keep` 跳过自动 rm；`--dry-run` 只打印计划不动任何东西。自动 rm 成功后还会删除该任务的 simulator clone（与 `vch rm` 默认一致）；用 `--keep-sim` 保留 clone。`--push` 把解析后的 `--into` 分支推到其追踪的 remote（`branch.<into>.remote`，没有时回落到 `origin`）；`--push-to <remote>` 显式覆盖 remote。两个标志都没传时 `vch land` 绝不联网。push 失败不会回滚 merge —— 失败信息以 stderr warning 输出。只有**已 commit** 的内容会被搬过去 —— 未提交改动、untracked 文件、被 `.gitignore` 排除的产物会随 worktree 一起被删（用 `--keep` + 手动拷贝；详见 cookbook 「`vch land` 时保留生成的产物」）。 |
-| `vch sync <name> [--onto <ref>] [--rebase\|--merge] [--no-fetch] [--allow-dirty] [--dry-run] [-q]` | 拉取记录的基准分支的 upstream，并把 `agent/<name>` rebase 到其上。`--merge` 改用 `git merge --no-ff`（仅当任务分支已经被推到协作者会读的地方时再用）。`--onto <ref>` 覆盖基准；`--no-fetch` 跳过网络；`--allow-dirty` 把脏 worktree 检查交给 git 自己决定；`--dry-run` 只打印 ahead/behind 与计划策略，不写任何东西。所有 git 操作都在任务 worktree 内执行，绝不动主 worktree。成功后写入 `lastSync`。 |
-| `vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]` | 删除 worktree、分支以及（默认会删的）模拟器克隆。`--allow-dirty` 允许未提交改动；`--force` 跳过 “文件被编辑器/shell 占用” 的检查（#65）；`--allow-unmerged` 强删未合并的分支。 |
-| `vch prune [--rm] [--allow-dirty] [--force] [--keep-sim] [--json]` | 列出（默认）或删除（`--rm`）所有「分支已经完全合并进 base」的任务。会跳过脏 worktree（`--allow-dirty` 可覆盖）和被占用的 worktree（`--force` 可覆盖）；`--keep-sim` 保留每个被删任务的模拟器克隆（默认会删）。会被清理的任务每行一个，被跳过的任务连同跳过原因写到 stderr。 |
+| `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模拟器模板（iOS / watchOS / tvOS / visionOS，[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
+| `vch land <name>` | 把 `agent/<name>` 合并回 base 并清理（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
+| `vch sync <name>` | 拉取 base 的 upstream 并把任务分支 rebase 上去（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |
+| `vch remove <name>` | 删除 worktree、分支和模拟器克隆（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
+| `vch prune` | 列出或删除已完全合并进 base 的任务（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
 | `vch repair` | 用 `git worktree list` 的实际状态重新对齐 `.vch/state.json`。 |
-| `vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]` | 清理任务的 `DerivedData` + `ModuleCache`（默认）。`--swiftpm` 还会删 SwiftPM 克隆目录，`--logs` 删 `.vch/last-test.log`，`--all` 表示全删。如果有进程还在用 `.agent-build/` 或 `.vch/` 内的文件（比如 Xcode 正在索引）会拒绝；`--dry-run` 只列要删的内容不真删。 |
-| `vch doctor [--clean] [--json]` | 检测孤儿模拟器克隆、失效绑定、损坏的 `state.json`。有发现就退出非零。 |
-| `vch doctor --bug-report [--out <path>] [--json]` | 在本地打包一份脱敏诊断 tarball：每个任务的 `state.json` + `last-test.log`、porcelain worktree 列表、以及 `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` / `swift --version` 的输出。`$HOME` 路径会被替换。不联网。默认输出 `./vch-bug-report-<UTC 时间戳>.tgz`。 |
+| `vch clean <name>` | 删除任务的 DerivedData / ModuleCache（`--swiftpm`、`--logs`、`--all`、`--dry-run`）。 |
+| `vch doctor` | 检测孤儿模拟器克隆、失效绑定、损坏的 `state.json`（`--clean`、`--bug-report`、`--json`）。 |
 | `vch shellenv` | 输出 `vch_cd` / `vch_new` / `vch_clean` shell 助手函数（bash/zsh）。 |
-| `vch completions install [--shell <s>]` | 安装 `zsh` / `bash` / `fish` 的补全脚本（默认从 `$SHELL` 自动识别）。`--print` 预览；`--force` 覆盖已有文件。 |
+| `vch completions install` | 安装 shell 补全脚本（`--shell`、`--print`、`--force`）。 |
 | `vch version` | 打印版本与工具链信息（`--json` 为机器可读格式）。 |
 
-所有接受 `<name>` 的命令都会从当前工作区拿任务名做补全——装好补全脚本，按 `<TAB>` 即可。
+所有接受 `<name>` 的命令都会从当前工作区拿任务名做补全——装好补全脚本按
+ `<TAB>` 即可。完整 flag 参考见
+**[docs/commands.md](docs/commands.md)**。
 
 ## 隔离的工作机制
 
