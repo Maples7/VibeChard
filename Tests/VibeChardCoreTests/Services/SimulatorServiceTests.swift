@@ -553,11 +553,138 @@ final class SimulatorServiceTests: XCTestCase {
             XCTAssertTrue(requestedName.contains("iOS 26.4"))
         }
     }
+
+    // MARK: - #66: simctl clone refuses booted templates
+
+    /// `simctl clone` returns "Unable to clone device in current state:
+    /// Booted" with a non-zero exit when the source template is
+    /// running. By default vch must lift that into a typed
+    /// `simulatorTemplateBooted` error so callers (and the user) get
+    /// an actionable message and an opt-in flag — not a raw
+    /// `externalCommandFailed` blob.
+    func testEnsureCloneRaisesTypedErrorWhenTemplateIsBooted() throws {
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [
+                device("TPL-BOOTED", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-18-2",
+                       .init(major: 18, minor: 2)),
+            ]
+        )
+        simctl.cloneThrows = .externalCommandFailed(
+            cmd: "xcrun simctl clone TPL-BOOTED iPhone 16-vch-alpha",
+            exitCode: 149,
+            stderr: "An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError.149, code=149):\nUnable to clone device in current state: Booted"
+        )
+
+        XCTAssertThrowsError(
+            try service.ensureClone(
+                task: try TaskName("alpha"),
+                requestedDevice: "iPhone 16"
+            )
+        ) { err in
+            guard case let VibeChardError.simulatorTemplateBooted(name, udid) = err else {
+                return XCTFail("expected simulatorTemplateBooted, got \(err)")
+            }
+            XCTAssertEqual(name, "iPhone 16")
+            XCTAssertEqual(udid, "TPL-BOOTED")
+        }
+        // We must NOT have shut anything down without opt-in: the
+        // template is shared across tasks (hard rule #9). The user
+        // sees the typed error and decides.
+        XCTAssertEqual(simctl.shutdownCalls, [])
+    }
+
+    /// With `shutdownTemplate: true`, vch shuts the template down and
+    /// retries the clone. Modelled with a `FakeSimctl` subclass that
+    /// drops `cloneThrows` from the `shutdown(udid:)` side-effect, so
+    /// the second `clone` call succeeds.
+    func testEnsureCloneRetriesAfterShutdownWhenOptIn() throws {
+        final class OneShotShutdownFake: FakeSimctl, @unchecked Sendable {
+            override func shutdown(udid: String) throws {
+                cloneThrows = nil
+                try super.shutdown(udid: udid)
+            }
+        }
+
+        let oneShot = OneShotShutdownFake()
+        oneShot.devices = [
+            device("TPL-BOOTED", "iPhone 16",
+                   "com.apple.CoreSimulator.SimRuntime.iOS-18-2",
+                   .init(major: 18, minor: 2)),
+        ]
+        oneShot.cloneReturnsUDID = "CLONE-RETRY"
+        oneShot.cloneThrows = .externalCommandFailed(
+            cmd: "xcrun simctl clone TPL-BOOTED iPhone 16-vch-alpha",
+            exitCode: 149,
+            stderr: "Unable to clone device in current state: Booted"
+        )
+
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try emptyState("alpha").jsonData())
+        let svc = SimulatorService(workspace: workspace, simctl: oneShot, fs: fs)
+
+        let resolved = try svc.ensureClone(
+            task: task,
+            requestedDevice: "iPhone 16",
+            shutdownTemplate: true
+        )
+        XCTAssertEqual(resolved?.udid, "CLONE-RETRY")
+        // Exactly one shutdown call, on the *template* UDID — not the
+        // clone's (which doesn't exist yet at the time we shut down).
+        XCTAssertEqual(oneShot.shutdownCalls, ["TPL-BOOTED"])
+        // FakeSimctl.clone throws *before* appending to cloneCalls, so
+        // the first failing attempt isn't recorded — only the
+        // post-shutdown retry is. The shutdown call above is the
+        // proof that the retry path actually fired.
+        XCTAssertEqual(oneShot.cloneCalls.count, 1)
+        XCTAssertEqual(oneShot.cloneCalls.first?.source, "TPL-BOOTED")
+        XCTAssertEqual(oneShot.cloneCalls.first?.newName, "iPhone 16-vch-alpha")
+    }
+
+    /// A clone failure that is NOT the booted-template message is left
+    /// alone — we only branch on the exact substring, every other
+    /// failure mode keeps the raw `externalCommandFailed` envelope.
+    func testEnsureCloneDoesNotRewriteUnrelatedCloneFailures() throws {
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [
+                device("TPL-NEW", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-18-2",
+                       .init(major: 18, minor: 2)),
+            ]
+        )
+        simctl.cloneThrows = .externalCommandFailed(
+            cmd: "xcrun simctl clone TPL-NEW iPhone 16-vch-alpha",
+            exitCode: 1,
+            stderr: "Some unrelated failure that has nothing to do with Booted templates"
+        )
+        XCTAssertThrowsError(
+            try service.ensureClone(
+                task: try TaskName("alpha"),
+                requestedDevice: "iPhone 16",
+                shutdownTemplate: true   // would still NOT trigger the retry path
+            )
+        ) { err in
+            guard case VibeChardError.externalCommandFailed = err else {
+                return XCTFail("expected externalCommandFailed, got \(err)")
+            }
+        }
+        XCTAssertEqual(simctl.shutdownCalls, [])
+    }
 }
 
 // MARK: - test double
 
-final class FakeSimctl: SimctlClient, @unchecked Sendable {
+class FakeSimctl: SimctlClient, @unchecked Sendable {
     var devices: [SimDevice] = []
     /// Used by `allDevices()`. Defaults to `devices` (so existing tests
     /// don't have to set both); set explicitly when you need them to

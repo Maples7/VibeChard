@@ -20,6 +20,15 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case stateFileMissing(path: String)
     case simulatorTemplateNotFound(name: String)
     case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
+    /// `xcrun simctl clone` refused because the source template is in
+    /// the `Booted` state. The user (or some other tool — Simulator.app,
+    /// Xcode UI tests, an explicit `simctl boot`) booted the template
+    /// and never shut it down. The fix is `simctl shutdown <udid>`,
+    /// which is fast and reversible. vch refuses to do this
+    /// automatically per hard rule #9 (the user owns the lifecycle of
+    /// any shared resource — and the warm template is shared across
+    /// tasks); the user must opt in with `--shutdown-template`. (#66)
+    case simulatorTemplateBooted(name: String, udid: String)
     /// `vch remove` refused because at least one process still holds
     /// a file inside the worktree. Each `WorktreeHolder` is rendered
     /// `pid:command (samplePath)`. Bypass with `--allow-dirty`. (#10)
@@ -147,6 +156,9 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "no available simulator template named '\(name)' (try `xcrun simctl list devices available`)"
         case let .simulatorAlreadyBound(task, current, requested):
             return "task '\(task)' is already bound to simulator '\(current)' — refusing to clone '\(requested)' (use `vch sim erase` or remove the task first)"
+        case let .simulatorTemplateBooted(name, udid):
+            let prefix = String(udid.prefix(8))
+            return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it)"
         case let .worktreeBusy(path, holders):
             let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
             let body = lines.joined(separator: "\n")

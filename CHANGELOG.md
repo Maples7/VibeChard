@@ -45,6 +45,18 @@ The English README is the source of truth; localized READMEs may lag.
   `--force`.
 
 ### Fixed
+- `vch build/test/run` now raises a typed, actionable error when
+  `simctl clone` refuses to clone a Booted warm template, instead
+  of bubbling up the raw `Unable to clone device in current state:
+  Booted` stderr blob (#66). The new message names the offending
+  template, prints its UDID for copy-paste into `xcrun simctl
+  shutdown`, and points at the matching opt-in flag
+  `--shutdown-template`. The flag is off by default per hard rule
+  #9 — the warm template is shared across tasks, so vch never
+  shuts it down without an explicit user opt-in. Typical trigger:
+  the user launched the warm template from `Simulator.app` (or an
+  Xcode UI test session) and forgot to shut it down; the next
+  `vch build` in a fresh task explodes mid-clone.
 - `vch test --rerun-failed` now repairs short-form swift-testing
   identifiers before feeding them back to `xcodebuild` (#64).
   Under some Xcode 16 swift-testing setups, xcresulttool emits

@@ -21,6 +21,7 @@ private enum BuildOrTest {
         runtime: String?,
         noSim: Bool,
         eraseClone: Bool = false,
+        shutdownTemplate: Bool = false,
         verbose: Bool = false,
         extraArgs: [String]
     ) throws {
@@ -74,7 +75,8 @@ private enum BuildOrTest {
             task: task,
             requestedDevice: device,
             requestedRuntime: runtime,
-            noSim: noSim
+            noSim: noSim,
+            shutdownTemplate: shutdownTemplate
         )
         if let resolved {
             if resolved.createdNow {
@@ -230,6 +232,9 @@ struct BuildCommand: ParsableCommand {
     @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before building. Wipes UserDefaults, app containers, and other state inherited from the template (#68). Adds ~10–20s; off by default.")
     var eraseClone: Bool = false
 
+    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default per hard rule #9: vch never auto-touches shared resources without an opt-in (#66).")
+    var shutdownTemplate: Bool = false
+
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-build.log (see `vch logs <name> --build`).")
     var verbose: Bool = false
 
@@ -248,6 +253,7 @@ struct BuildCommand: ParsableCommand {
                 runtime: runtime,
                 noSim: noSim,
                 eraseClone: eraseClone,
+                shutdownTemplate: shutdownTemplate,
                 verbose: verbose,
                 extraArgs: extraArgs
             )
@@ -300,6 +306,9 @@ struct TestCommand: ParsableCommand {
 
     @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before testing. Wipes UserDefaults, app containers, and other state inherited from the template — useful when a test depends on first-launch defaults but the template was used interactively (#68). Adds ~10–20s; off by default.")
     var eraseClone: Bool = false
+
+    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default per hard rule #9: vch never auto-touches shared resources without an opt-in (#66).")
+    var shutdownTemplate: Bool = false
 
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-test.log (see `vch logs <name>`).")
     var verbose: Bool = false
@@ -376,6 +385,7 @@ struct TestCommand: ParsableCommand {
                 runtime: runtime,
                 noSim: noSim,
                 eraseClone: eraseClone,
+                shutdownTemplate: shutdownTemplate,
                 verbose: verbose,
                 extraArgs: effectiveExtraArgs
             )
