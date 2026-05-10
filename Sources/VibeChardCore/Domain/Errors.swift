@@ -160,9 +160,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
             let prefix = String(udid.prefix(8))
             return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it)"
         case let .worktreeBusy(path, holders):
-            let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
-            let body = lines.joined(separator: "\n")
-            return "worktree is held open by \(holders.count) process\(holders.count == 1 ? "" : "es") at \(path) — close the editor / shell or pass --force:\n\(body)"
+            return Self.renderWorktreeBusy(path: path, holders: holders)
         case let .logFileMissing(path, hint):
             return "no log file at \(path) — \(hint)"
         case let .landMainNotOnInto(currentBranch, want):
@@ -229,5 +227,85 @@ public enum VibeChardError: Error, CustomStringConvertible {
         case let .invalidRuntime(label):
             return "could not parse runtime '\(label)' — accepted forms are '<platform> X.Y' (e.g. 'iOS 26.4', 'watchOS 11.5', 'visionOS 2.5'), '<platform>-X-Y' (e.g. 'iOS-26-4'), or the full SimRuntime identifier (e.g. 'com.apple.CoreSimulator.SimRuntime.iOS-26-4')"
         }
+    }
+
+    // MARK: - worktreeBusy rendering (#75)
+
+    /// Render a `worktreeBusy` diagnostic, classifying holders into
+    /// background (LSPs, indexers, helper farm) vs interactive
+    /// (editors, shells) so the user can see at a glance which
+    /// processes — if any — actually need their attention.
+    ///
+    /// Three shapes:
+    ///   • all background → single section + "wait or `--force`
+    ///     (safe if `git status` is clean)" hint;
+    ///   • all interactive → single section + "review before forcing"
+    ///     hint;
+    ///   • mixed → two grouped sections so the user can quickly tell
+    ///     which holders are real editors vs background helpers.
+    ///
+    /// Each row is rendered as `<pid>  <command>  (<path>)`. When the
+    /// `samplePath` equals the worktree root (typical for a `cd`'d
+    /// shell or a helper holding the directory itself), it is shown
+    /// as `(cwd)`; strict subpaths are shown relative to the worktree
+    /// so they don't dominate the line. (#75)
+    static func renderWorktreeBusy(
+        path: String,
+        holders: [WorktreeHolder]
+    ) -> String {
+        let classified = HolderClassifier.classify(holders)
+        let background  = classified.filter { $0.1 == .background }.map(\.0)
+        let interactive = classified.filter { $0.1 == .interactive }.map(\.0)
+        let count       = holders.count
+        let nounSuffix  = count == 1 ? "" : "es"
+
+        var sections: [String] = []
+        sections.append("worktree is held open by \(count) process\(nounSuffix) at \(path):")
+
+        if !background.isEmpty, !interactive.isEmpty {
+            sections.append("  interactive (review before forcing — may have unsaved buffers):")
+            sections.append(renderHolderRows(interactive, worktreePath: path, indent: "    "))
+            sections.append("  background (will release on their own):")
+            sections.append(renderHolderRows(background, worktreePath: path, indent: "    "))
+        } else {
+            sections.append(renderHolderRows(holders, worktreePath: path, indent: "  "))
+        }
+
+        let hint: String
+        if interactive.isEmpty {
+            hint = "all holders are background helpers (LSPs, indexers, IDE plugin hosts) that release file handles asynchronously after the editor window closes — usually within seconds. Wait a moment and retry, or pass --force (safe to force when `git status` in the worktree is clean)."
+        } else if background.isEmpty {
+            hint = "close the listed editor / shell, or pass --force if you've reviewed the holders and confirmed nothing has unsaved work."
+        } else {
+            hint = "close the interactive editor / shell, or — if `git status` in the worktree is clean and you've confirmed no unsaved buffers — pass --force to override."
+        }
+        sections.append(hint)
+
+        return sections.joined(separator: "\n")
+    }
+
+    /// Render holder rows one-per-line. `samplePath` becomes `(cwd)`
+    /// when it equals the worktree path, otherwise it's shown as a
+    /// path relative to the worktree (with a leading `./`).
+    private static func renderHolderRows(
+        _ holders: [WorktreeHolder],
+        worktreePath: String,
+        indent: String
+    ) -> String {
+        let prefix = worktreePath.hasSuffix("/") ? worktreePath : worktreePath + "/"
+        return holders.map { h -> String in
+            let pathLabel: String
+            if h.samplePath == worktreePath {
+                pathLabel = "(cwd)"
+            } else if h.samplePath.hasPrefix(prefix) {
+                pathLabel = "./" + String(h.samplePath.dropFirst(prefix.count))
+            } else {
+                // Defensive: shouldn't happen because LsofParser only
+                // records paths inside the worktree, but if it does,
+                // surface the full path rather than misrender.
+                pathLabel = h.samplePath
+            }
+            return "\(indent)\(h.pid)  \(h.command)  \(pathLabel)"
+        }.joined(separator: "\n")
     }
 }
