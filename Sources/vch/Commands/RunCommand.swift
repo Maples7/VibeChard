@@ -46,6 +46,9 @@ struct RunCommand: ParsableCommand {
     @Option(name: .long, help: "Pin the simulator runtime (e.g. 'iOS 26.4', 'watchOS 11.5', 'visionOS 2.5', or the full SimRuntime identifier). Useful when multiple runtimes share the same device name.")
     var runtime: String?
 
+    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before installing. Wipes UserDefaults, app containers, and other state inherited from the template (#68). Adds ~10–20s; off by default.")
+    var eraseClone: Bool = false
+
     @Argument(parsing: .postTerminator,
               help: "Args forwarded verbatim to `simctl launch` (i.e. to the app's `main`).")
     var launchArgs: [String] = []
@@ -58,6 +61,7 @@ struct RunCommand: ParsableCommand {
                 configuration: configuration,
                 device: device,
                 runtime: runtime,
+                eraseClone: eraseClone,
                 launchArgs: launchArgs
             )
         }
@@ -69,6 +73,7 @@ struct RunCommand: ParsableCommand {
         configuration: String?,
         device: String?,
         runtime: String?,
+        eraseClone: Bool = false,
         launchArgs: [String]
     ) throws {
         let task = try TaskName(taskName)
@@ -136,6 +141,17 @@ struct RunCommand: ParsableCommand {
             CLIBridge.eprintln(
                 "→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))"
             )
+        }
+        // #68: opt-in `--erase-clone` wipes accumulated state
+        // (UserDefaults, app containers, keychain) before this
+        // run. Useful when the template was used interactively
+        // and the app's first-launch behavior depends on a clean
+        // defaults domain.
+        if eraseClone {
+            CLIBridge.eprintln(
+                "→ erasing simulator '\(resolved.name)' (--erase-clone)"
+            )
+            try simulator.eraseClone(udid: resolved.udid)
         }
         CLIBridge.eprintln(
             "→ booting simulator '\(resolved.name)'\(formatRuntime(resolved.runtime)) …"

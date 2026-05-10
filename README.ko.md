@@ -353,7 +353,42 @@ watchOS 의 첫 부팅은 iOS 보다 캐시 워밍 작업이 적기 때문에 �
 크니 의미는 있습니다. tvOS 와 visionOS 도 비슷한 자릿수가 될 것
 으로 보입니다 (SPIKE 방법은 PR #58 에 있으니, 해당 runtime 이
 설치되어 있다면 직접 재현 가능합니다).
+### 태스크 시뮬레이터 상태 리셋
 
+태스크 전용 시뮬레이터 클론(`xcrun simctl clone`)은 템플릿의
+**`~/Library` 전체**를 상속합니다. 이전 실행이 쓴 `UserDefaults`,
+keychain, app container 까지 다 포함됩니다. 이것이 바로 warm 템플릿
+빠른 경로(#47/#58)가 노리는 동작 — 캐시 워밍 작업을 계속 재사용
+해 시간을 아끼는 겁니다. 그런데 가끔 테스트가 '첫 실행' 동작에
+의존하면 문제가 됩니다:
+
+```
+✗ CloudSyncStatusCenterGraceTests.firstLaunchAlertFiresAfterGraceEnds()
+   → expected alert flag to be unset, was true
+```
+
+…템플릿을 대화적 디버그로 사용해 `UserDefaults` 키가 쓰였고,
+클론이 그 키를 상속했기 때문입니다.
+
+실행 전에 `--erase-clone` 으로 태스크 클론을 리셋하세요:
+
+```sh
+vch test add-paywall --erase-clone
+vch run  add-paywall --erase-clone
+vch build add-paywall --erase-clone
+```
+
+`--erase-clone` 은 `simctl shutdown` → `simctl erase` 를 체이닝합니다
+(erase 는 부팅된 디바이스를 거부). 따라서 이전 부팅 잔존 상태도
+함께 정리됩니다. 비용은 약 10–20 초 — 속도를 우선하기 위해 기본값
+은 꺼져 있습니다. 테스트가 통과되면 flag 를 빼면 됩니다 — 일상
+실행에는 필요하지 않습니다.
+
+`--erase-clone` 를 계속 의존하게 되면, vch 가 클론의 출발점으로
+삼는 warm 템플릿과는 별도로 '개발 전용' 템플릿을 두는 것을
+고려하세요. warm 템플릿은 불변으로 다루어야 하며,
+`vch sim warm-template create` / `remove` 만 해당 템플릿을 건드려야
+합니다.
 ## 명령어
 
 | 명령어 | 동작 |
@@ -365,9 +400,9 @@ watchOS 의 첫 부팅은 iOS 보다 캐시 워밍 작업이 적기 때문에 �
 | `vch open [<name>] [--with <ide>]` | worktree 를 IDE 로 열기. `*.xcworkspace` / `*.xcodeproj` / `Package.swift` 자동 감지(프로젝트 파일은 Xcode, 그 외엔 VS Code). `--with` 는 `xcode`, `code`/`vscode`, `cursor` 또는 임의의 앱 이름(`open -a` 로 전달). 기본값은 `VCH_OPEN_DEFAULT` 로 덮어쓰기 가능. `<name>` 생략 시 `$PWD` 가 속한 worktree 사용. |
 | `vch <name>` | `vch exec <name> -- $SHELL` 의 단축형 — 격리 환경 변수 + `.vch/bin` PATH shim 이 활성화된 셸 진입. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내에서 임의의 명령 실행 (격리 활성). |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` (또는 `'watchOS 11.5'` / `'tvOS 18.0'` / `'visionOS 2.5'`) 는 동일 디바이스 템플릿이 여러 런타임과 공존할 때 런타임을 고정. 기본값은 간결한 요약(`✓ build succeeded in 12.4s   (3 warnings)`)만 출력하고, `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-build.log` 로 tee 됨. |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. 기본값은 간결한 요약(스위트당 한 줄, 실패 테스트는 file:line과 단언 메시지를 함께 인라인 표시)만 출력하고 `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-test.log` 로 tee 됨. 카운트는 xcresult 번들에서 읽으므로 swift-testing(`@Suite`/`@Test`/`#expect`) 타깃도 정확하게 집계됨. `--rerun` 은 직전 호출을 그대로 재실행하고, `--rerun-failed` 는 기록된 xcresult 에서 실패한 테스트 ID 만 `-only-testing:` 으로 재실행. |
-| `vch run   <name> [flags] [-- launch-args]` | 작업에 묶인 시뮬레이터 클론 위에서 앱을 빌드/설치/실행. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일하며, `PRODUCT_BUNDLE_IDENTIFIER` 는 `xcodebuild -showBuildSettings -json` 에서 자동 해석됨. `--` 이후의 인자는 그대로 `simctl launch` 로 전달됨(예: `vch run alpha -- -UsePreviewSampleData`). 필요하면 클론을 부팅하고 `Simulator.app` 을 엽니다. |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | 작업 worktree 에 대해 `xcodebuild build` 실행. `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 공유 스키임이 딱 하나인 프로젝트에서는 `--scheme` 생략 가능(`xcodebuild -list -json` 으로 자동 감지). 한번 기록된 스키임은 이후 호출에서 재사용. `--runtime 'iOS 26.4'` (또는 `'watchOS 11.5'` / `'tvOS 18.0'` / `'visionOS 2.5'`) 는 동일 디바이스 템플릿이 여러 런타임과 공존할 때 런타임을 고정. `--erase-clone` 은 템플릿에서 상속된 UserDefaults / app container 를 빌드 전에 `simctl shutdown && simctl erase` 로 리셋합니다(기본 꺼짐; cookbook「태스크 시붬레이터 상태 리셋」 참고). 기본값은 간결한 요약(`✓ build succeeded in 12.4s   (3 warnings)`)만 출력하고, `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-build.log` 로 tee 됨. |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | `xcodebuild test` 실행, `-resultBundlePath` 주입. 첫 `--device` 시 시뮬레이터를 지연 클론하고 이후 재사용. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일. `--erase-clone` 은 테스트 전에 클론 상태를 리셋—— 예를 들어 '첫 실행' 의존 테스트가 템플릿에 대표적 디버깅으로 기록된 `UserDefaults` 에 방해받을 때에 사용(cookbook 참고). 기본값은 간결한 요약(스위트당 한 줄, 실패 테스트는 file:line과 단언 메시지를 함께 인라인 표시)만 출력하고 `--verbose` 는 xcodebuild 의 전체 출력을 터미널에 그대로 흘려보냄. 전체 로그는 항상 `<wt>/.vch/last-test.log` 로 tee 됨. 카운트는 xcresult 번들에서 읽으므로 swift-testing(`@Suite`/`@Test`/`#expect`) 타깃도 정확하게 집계됨. `--rerun` 은 직전 호출을 그대로 재실행하고, `--rerun-failed` 는 기록된 xcresult 에서 실패한 테스트 ID 만 `-only-testing:` 으로 재실행. |
+| `vch run   <name> [flags] [-- launch-args]` | 작업에 묶인 시뮬레이터 클론 위에서 앱을 빌드/설치/실행. 스키임 자동 감지와 `--runtime` 동작은 `vch build` 와 동일하며, `PRODUCT_BUNDLE_IDENTIFIER` 는 `xcodebuild -showBuildSettings -json` 에서 자동 해석됨. `--erase-clone` 은 설치 전에 클론 상태를 리셋(기본 꺼짐). `--` 이후의 인자는 그대로 `simctl launch` 로 전달됨(예: `vch run alpha -- -UsePreviewSampleData`). 필요하면 클론을 부팅하고 `Simulator.app` 을 엽니다. |
 | `vch logs <name> [--test\|--build]` | 태스크의 가장 최근 `vch test` 또는 `vch build` 의 전체 xcodebuild 로그를 출력. 기본값은 `--test`; `--build` 를 넘기면 빌드 firehose 를 출력. 로그는 매 실행마다 덮어쓰여짐. |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업의 시뮬레이터 클론을 명시적으로 관리. |
 | `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿을 관리 (#47, #58). warm 템플릿은 "booted-once-then-shutdown" 으로 첫 부팅 캐시를 워밍해 둔 시뮬레이터로, 이후의 `vch test` 태스크 클론들이 그 캐시를 상속합니다 (iOS 실측: 약 30 초 → 약 9 초; watchOS: 약 31 초 → 약 23 초). iOS / watchOS / tvOS / visionOS 지원. `create <device> --runtime "iOS 26.4"` (또는 `"watchOS 11.5"` / `"tvOS 18.0"` / `"visionOS 2.5"`) 으로 생성, `list [--json]` 으로 확인, `remove <device> --runtime "..."` 로 삭제. **라이프사이클은 어떤 태스크와도 분리되어 있어** — `vch remove` 와 `vch doctor --clean` 모두 warm 템플릿을 건드리지 않으며 본인이 관리합니다. `vch test --device "<device>" --runtime "..."` 는 일치하는 warm 템플릿이 있으면 자동으로 선택합니다. |
