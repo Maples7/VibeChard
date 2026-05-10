@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-11
+
 ### Added
 - `vch prune` — list (and optionally remove) every task whose branch
   is already fully merged into its base (#67). Default is dry-run;
