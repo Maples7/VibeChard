@@ -216,6 +216,33 @@ ignore されたファイルを原子的に移送する」操作には git 由�
 十分に安定した手動代替で、組み込みコマンドにする価値はないと
 判断しました。
 
+### テストの一部だけを走らせる
+
+`vch test` は `xcodebuild test` の薄いラッパなので、よく使う
+`-only-testing` / `-skip-testing` をそのまま透過できます — 区切り
+リテラル `--` で vch 自身のオプションと分離してください（そう
+しないと ArgumentParser が vch のフラグとして解釈しようとします）。
+`-only-testing` がハイフン 1 つなのは、これが `xcodebuild` 側の
+フラグだからです（vch のフラグではありません）：
+
+```sh
+# 1 つのテストクラスだけ実行:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass'
+
+# 1 つの Swift Testing 関数だけ実行:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass/myFunc()'
+
+# 重い suite を 1 つだけスキップ:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -skip-testing 'MyAppTests/SlowSuite'
+```
+
+失敗が出た後は `vch test foo --rerun-failed` を使うと、記録された
+xcresult から失敗した test ID を取り出して該当ケースだけを再実行
+します — 識別子を手動で貼り直す必要はありません。
+
 ### 長期タスクを最新に保つ
 
 `agent/<name>` が長く生きてベースブランチが先へ進んだ場合、

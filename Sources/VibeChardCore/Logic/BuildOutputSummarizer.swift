@@ -97,7 +97,11 @@ public final class BuildOutputSummarizer {
     /// Render the human-readable summary printed when `--verbose` is
     /// off. Pass the wall-clock duration measured by `PlanLauncher`
     /// since xcodebuild doesn't emit a build-duration line on stdout.
-    public func render(durationSeconds: Double, colorize: Bool) -> String {
+    /// `logPath` (#69) is the path to the tee'd `last-build.log`.
+    /// When non-nil and the run ends in `.unknown`, the renderer
+    /// appends a `→ log: <path>` line so the user can tail the
+    /// firehose without scrolling back to the launch banner.
+    public func render(durationSeconds: Double, colorize: Bool, logPath: String? = nil) -> String {
         var out: [String] = []
 
         // On failure, list the errors first (the user's eye lands on
@@ -134,6 +138,12 @@ public final class BuildOutputSummarizer {
             head = "? build status unknown — see full log"
         }
         out.append(head)
+        // #69: when the status is unknown, the launch banner's
+        // `→ log:` line has long scrolled off — repeat the path on
+        // the trailing line so the hint is actionable.
+        if status == .unknown, let path = logPath, !path.isEmpty {
+            out.append("   → log: \(path)")
+        }
         return out.joined(separator: "\n")
     }
 

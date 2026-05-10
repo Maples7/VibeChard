@@ -170,6 +170,27 @@ final class BuildOutputSummarizerTests: XCTestCase {
         XCTAssertTrue(out.contains("? build status unknown"))
     }
 
+    func testUnknownStatusAppendsLogPathHint() {
+        // #69: same fix as the test renderer — surface the log path
+        // so the "see full log" hint is actionable without scrolling
+        // back to the launch banner.
+        let s = BuildOutputSummarizer()
+        let out = s.render(durationSeconds: 2.0, colorize: false,
+                           logPath: "/tmp/x/.vch/last-build.log")
+        XCTAssertTrue(out.contains("? build status unknown"))
+        XCTAssertTrue(out.contains("→ log: /tmp/x/.vch/last-build.log"),
+                      "unknown build branch must surface the log path; got: \(out)")
+    }
+
+    func testKnownBuildStatusDoesNotAppendLogPathHint() {
+        let s = BuildOutputSummarizer()
+        s.feed("** BUILD SUCCEEDED **")
+        let out = s.render(durationSeconds: 1.0, colorize: false,
+                           logPath: "/tmp/x/.vch/last-build.log")
+        XCTAssertFalse(out.contains("→ log:"),
+                       "log path must not be appended on succeeded builds")
+    }
+
     func testCapsErrorListAtTwenty() {
         let s = BuildOutputSummarizer()
         for i in 1...25 {

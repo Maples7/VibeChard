@@ -211,6 +211,31 @@ git stash pop                # foo 恢复到原状态
 [#27](https://github.com/Maples7/VibeChard/issues/27)。上面这套手动
 脚本足够稳，不值得加内置命令。
 
+### 跑某个子集的测试
+
+`vch test` 是 `xcodebuild test` 的薄包装，因此常用的
+`-only-testing` / `-skip-testing` 直接透传即可 —— 用字面量 `--` 把它
+们和 vch 自己的选项隔开，避免 ArgumentParser 当成 vch 的 flag 解析。
+注意 `-only-testing` 是单破折号（这是 `xcodebuild` 的 flag，不是 vch
+的 flag）：
+
+```sh
+# 只跑某一个测试类：
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass'
+
+# 只跑某一个 Swift Testing 函数：
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass/myFunc()'
+
+# 跳过某个慢的 suite：
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -skip-testing 'MyAppTests/SlowSuite'
+```
+
+一旦有失败用例，`vch test foo --rerun-failed` 会从记录的 xcresult
+bundle 取出失败的测试 ID 自动只重跑这些用例，不用手动复制粘贴。
+
 ### 让长期任务保持最新
 
 如果 `agent/<name>` 跑得够久，base 分支已经向前推进了，

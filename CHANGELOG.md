@@ -8,6 +8,20 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Added
+- `vch test --help` and the README cookbook now ship a worked
+  `-only-testing` / `-skip-testing` example (#70). The flag is an
+  `xcodebuild` flag (single dash, after a literal `--`), and the
+  most common first-time mistake was passing `--only-testing` as
+  if it were a vch option.
+
+### Changed
+- The "build/test status unknown — see full log" trailing line now
+  also prints the path to `<wt>/.vch/last-build.log` /
+  `last-test.log` (#69). Previously the path was only emitted in
+  the launch banner, which had typically scrolled off by the time
+  the unknown-status line landed.
+
 ## [0.4.0] - 2026-05-09
 
 ### Added
