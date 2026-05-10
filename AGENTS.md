@@ -67,6 +67,16 @@ tree wins.**
     rather than letting it silently drift. Pure typo / link / formatting
     fixes are exempt.
 
+    **Scope: README mainline only.** Extension reference docs under
+    `docs/` (e.g. `docs/cookbook.md`, `docs/commands.md`) are
+    English-only — the single source of truth lives in English and
+    is not mirrored to other locales. The 5-locale READMEs may link
+    *to* `docs/...`; the link itself counts as a substantive change
+    and must be present in all 5 READMEs, but the target document
+    does not need a translated counterpart. The point of this carve-out
+    is to keep README a high-quality first-impression artefact in 5
+    languages without paying a 5× tax on every advanced-recipe edit.
+
 ## Engineering discipline
 
 These are workflow expectations, not project policies. They live here

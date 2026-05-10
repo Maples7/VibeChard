@@ -47,6 +47,16 @@ The English README is the source of truth; localized READMEs may lag.
   repeating the absolute prefix on every line, and a shell `cwd`
   matching the worktree root displays as `(cwd)`. The gate itself
   is unchanged — `--force` is still the explicit override.
+- README split into a short mainline and two new English-only
+  reference docs. The Cookbook section moved to
+  [`docs/cookbook.md`](docs/cookbook.md), and the per-command flag
+  prose moved to [`docs/commands.md`](docs/commands.md). The README
+  Commands table is now a one-line summary per command with the
+  noteworthy flags in parentheses; full flag detail lives in
+  `docs/commands.md`. The 5 READMEs went from ~3013 total lines to
+  ~1797. `vch land --help` updated to point at the new cookbook URL
+  on GitHub instead of "the README cookbook". No CLI behavior
+  changes.
 - The "build/test status unknown — see full log" trailing line now
   also prints the path to `<wt>/.vch/last-build.log` /
   `last-test.log` (#69). Previously the path was only emitted in
@@ -63,6 +73,14 @@ The English README is the source of truth; localized READMEs may lag.
   instead of `--allow-dirty`. Scripts that previously used
   `--allow-dirty` solely to silence the holders error need to add
   `--force`.
+
+### Docs
+- AGENTS.md rule #10 (multi-language README sync) narrowed.
+  Substantive README changes still mirror to all 5 locales, but
+  extension reference docs under `docs/` (e.g. `docs/cookbook.md`,
+  `docs/commands.md`) are now explicitly English-only — single
+  source of truth, no translated counterparts. Locale READMEs
+  link to the English `docs/...` documents directly.
 
 ### Fixed
 - `vch build/test/run` now raises a typed, actionable error when
