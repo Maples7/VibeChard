@@ -32,6 +32,7 @@ public extension VibeChardError {
              .stateFileMissing,
              .simulatorTemplateNotFound,
              .simulatorAlreadyBound,
+             .simulatorTemplateBooted,
              .warmTemplateAlreadyExists,
              .worktreeBusy,
              .logFileMissing,

@@ -365,6 +365,33 @@ vch build add-paywall --erase-clone
 不可變的 —— 只有 `vch sim warm-template create` / `remove`
 才應該去動。
 
+### 當 `simctl clone` 抱怨模板正在 "Booted" 時
+
+跟「繼承狀態」配套出現的另一種失敗模式是 **warm 模板正在執行
+中**，`simctl clone` 直接拒絕複製：
+
+```
+simulator template 'iPhone 16' (12345678…) is currently Booted —
+`xcrun simctl clone` refuses to clone a booted device.
+```
+
+通常是因為你之前從 `Simulator.app`（或某個 Xcode UI 測試 session）
+打開了 warm 模板，又忘了關掉。修復方式是 `xcrun simctl shutdown
+<UDID>`，一秒鐘的事。
+
+如果你不想每次都切回終端機去敲，`vch build` / `vch test` /
+`vch run` 提供一個可選的 `--shutdown-template` flag，會替你把
+模板關掉再重試 clone：
+
+```sh
+vch test add-paywall --shutdown-template
+```
+
+這個 flag 是**預設關閉**的，且是有意為之：warm 模板在所有正在
+進行的 vch 任務之間共享，依硬性規則 #9，vch 不會自動去碰共享
+資源。如果另一個任務的 `vch run` 正在用同一份模板，自動 shutdown
+會把那個任務一起拉下來。flag 顯式之後，每次呼叫都由你自己拍板。
+
 ## 指令一覽
 
 | 指令 | 作用 |
@@ -376,9 +403,9 @@ vch build add-paywall --erase-clone
 | `vch open [<name>] [--with <ide>]` | 在 IDE 中開啟 worktree。自動偵測 `*.xcworkspace` / `*.xcodeproj` / `Package.swift`（專案檔走 Xcode，其他走 VS Code）。`--with` 支援 `xcode`、`code`/`vscode`、`cursor`，或任意 app 名稱（透傳給 `open -a`）。可用 `VCH_OPEN_DEFAULT` 覆寫預設值。未指定 `<name>` 時使用 `$PWD` 所在的 worktree。 |
 | `vch <name>` | `vch exec <name> -- $SHELL` 的語法糖——開一個 shell，隔離環境變數 + `.vch/bin` PATH shim 已就緒。 |
 | `vch exec <name> -- <cmd...>` | 在任務 worktree 內執行任意指令，隔離已生效。 |
-| `vch build <name> [flags] [-- xcodebuild-extras]` | 對任務的 worktree 執行 `xcodebuild build`，自動注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。當專案只有一個共用 scheme 時，`--scheme` 可省（透過 `xcodebuild -list -json` 自動識別）；記錄後會在後續呼叫裡重複使用。`--runtime 'iOS 26.4'`（或 `'watchOS 11.5'`、`'tvOS 18.0'`、`'visionOS 2.5'`）用來在多個同名裝置模板（不同 runtime）並存時鎖定要用的 runtime。`--erase-clone` 跳過從模板繼承的 UserDefaults / app container 狀態，在 build 前先 `simctl shutdown && simctl erase`（預設關；詳見 cookbook「重置任務模擬器狀態」）。預設只輸出精簡摘要（`✓ build succeeded in 12.4s   (3 warnings)`）；`--verbose` 會把 xcodebuild 完整輸出直通到終端。完整 firehose 一律 tee 到 `<wt>/.vch/last-build.log`。 |
-| `vch test  <name> [flags] [-- xcodebuild-extras]` | 執行 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 時延遲複製模擬器，後續重複使用。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`。`--erase-clone` 在測試前重置複本狀態——例如「首次啟動」相關的測試被之前互動式除錯寫進去的 `UserDefaults` 干擾時（詳見 cookbook）。預設只輸出精簡摘要（每個 suite 一行，失敗測試會展開檔案:行號與斷言訊息）；`--verbose` 會把 xcodebuild 完整輸出直通到終端。完整 firehose 一律 tee 到 `<wt>/.vch/last-test.log`。計數從 xcresult bundle 讀取，因此 swift-testing（`@Suite`/`@Test`/`#expect`）目標也會被正確統計。`--rerun` 原樣重放上一次呼叫；`--rerun-failed` 從紀錄的 xcresult 取出失敗的測試 ID，用 `-only-testing:` 只重跑那些失敗案例。 |
-| `vch run   <name> [flags] [-- launch-args]` | 在任務的模擬器複本上建置、安裝並啟動 App。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 透過 `xcodebuild -showBuildSettings -json` 自動解析。`--erase-clone` 在安裝前重置複本狀態（預設關）。`--` 之後的參數原樣轉發給 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要會自動啟動模擬器並打開 `Simulator.app`。 |
+| `vch build <name> [flags] [-- xcodebuild-extras]` | 對任務的 worktree 執行 `xcodebuild build`，自動注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`。當專案只有一個共用 scheme 時，`--scheme` 可省（透過 `xcodebuild -list -json` 自動識別）；記錄後會在後續呼叫裡重複使用。`--runtime 'iOS 26.4'`（或 `'watchOS 11.5'`、`'tvOS 18.0'`、`'visionOS 2.5'`）用來在多個同名裝置模板（不同 runtime）並存時鎖定要用的 runtime。`--erase-clone` 跳過從模板繼承的 UserDefaults / app container 狀態，在 build 前先 `simctl shutdown && simctl erase`（預設關；詳見 cookbook「重置任務模擬器狀態」）。`--shutdown-template` 在 `simctl clone` 因 warm 模板正在 Booted 而被拒時，先關掉模板再重試 clone（預設關；詳見 cookbook「當 simctl clone 抱怨模板正在 Booted 時」）。預設只輸出精簡摘要（`✓ build succeeded in 12.4s   (3 warnings)`）；`--verbose` 會把 xcodebuild 完整輸出直通到終端。完整 firehose 一律 tee 到 `<wt>/.vch/last-build.log`。 |
+| `vch test  <name> [flags] [-- xcodebuild-extras]` | 執行 `xcodebuild test`，注入 `-resultBundlePath`；首次 `--device` 時延遲複製模擬器，後續重複使用。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`。`--erase-clone` 在測試前重置複本狀態——例如「首次啟動」相關的測試被之前互動式除錯寫進去的 `UserDefaults` 干擾時（詳見 cookbook）。`--shutdown-template` 會先關掉正在 Booted 的 warm 模板再重試 clone（詳見 cookbook）。預設只輸出精簡摘要（每個 suite 一行，失敗測試會展開檔案:行號與斷言訊息）；`--verbose` 會把 xcodebuild 完整輸出直通到終端。完整 firehose 一律 tee 到 `<wt>/.vch/last-test.log`。計數從 xcresult bundle 讀取，因此 swift-testing（`@Suite`/`@Test`/`#expect`）目標也會被正確統計。`--rerun` 原樣重放上一次呼叫；`--rerun-failed` 從紀錄的 xcresult 取出失敗的測試 ID，用 `-only-testing:` 只重跑那些失敗案例。 |
+| `vch run   <name> [flags] [-- launch-args]` | 在任務的模擬器複本上建置、安裝並啟動 App。`--scheme` 自動識別與 `--runtime` 行為同 `vch build`，`PRODUCT_BUNDLE_IDENTIFIER` 透過 `xcodebuild -showBuildSettings -json` 自動解析。`--erase-clone` 在安裝前重置複本狀態（預設關）。`--shutdown-template` 在 warm 模板正在 Booted 時先關掉模板再重試 clone（預設關；詳見 cookbook）。`--` 之後的參數原樣轉發給 `simctl launch`，例如 `vch run alpha -- -UsePreviewSampleData`。如有需要會自動啟動模擬器並打開 `Simulator.app`。 |
 | `vch logs <name> [--test\|--build]` | 印出任務最近一次 `vch test` 或 `vch build` 的完整 xcodebuild log。預設 `--test`；傳 `--build` 看建置 firehose。log 每次執行時會覆寫。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 顯式管理任務的模擬器副本。 |
 | `vch sim warm-template {create,list,remove}` | 管理共用的 *warm* 模擬器模板（#47、#58）。warm 模板是一個被「booted-once-then-shutdown」預熱好的模擬器，後續 `vch test` 單任務克隆會繼承它的快取（iOS 實測：約 30 s → 約 9 s；watchOS：約 31 s → 約 23 s）。支援 iOS、watchOS、tvOS、visionOS。`create <device> --runtime "iOS 26.4"`（或 `"watchOS 11.5"`、`"tvOS 18.0"`、`"visionOS 2.5"`）建立；`list [--json]` 查看；`remove <device> --runtime "..."` 刪除。**生命週期與任何任務都解耦** —— `vch remove` 和 `vch doctor --clean` 都不會動 warm 模板，要你自己管。`vch test --device "<device>" --runtime "..."` 在匹配的 warm 模板存在時會自動選用。 |

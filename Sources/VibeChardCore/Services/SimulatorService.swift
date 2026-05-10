@@ -60,7 +60,8 @@ public struct SimulatorService: Sendable {
     public func ensureClone(
         task: TaskName,
         requestedDevice: String?,
-        requestedRuntime: String? = nil
+        requestedRuntime: String? = nil,
+        shutdownTemplate: Bool = false
     ) throws -> Resolved? {
         let statePath = workspace.statePath(for: task)
         guard fs.fileExists(at: statePath) else {
@@ -137,7 +138,11 @@ public struct SimulatorService: Sendable {
             sourceKind = .appleTemplate
         }
         let cloneName = cloneDisplayName(originalName: requested, task: task)
-        let newUDID = try simctl.clone(sourceUDID: template.udid, newName: cloneName)
+        let newUDID = try cloneTemplate(
+            template: template,
+            cloneName: cloneName,
+            shutdownTemplate: shutdownTemplate
+        )
 
         let record = TaskState.SimulatorRecord(
             cloneUDID: newUDID,
@@ -153,6 +158,42 @@ public struct SimulatorService: Sendable {
         return Resolved(udid: record.cloneUDID, name: record.name,
                         createdNow: true,
                         runtime: template.runtimeVersion)
+    }
+
+    /// Wrap `simctl.clone` with optional auto-shutdown of the source
+    /// template when it's currently `Booted`.
+    ///
+    /// Background: `simctl clone` refuses to clone a booted device with
+    /// `Unable to clone device in current state: Booted`. The template
+    /// gets booted any time the user opens the simulator UI (warm
+    /// templates by design encourage you to launch your app there)
+    /// and forgets to shut it down afterwards. The first `vch build`
+    /// in a new task then explodes with a stderr blob and the user
+    /// has to copy-paste a UDID into a `simctl shutdown` command.
+    ///
+    /// vch refuses to shut the template down by default: per hard
+    /// rule #9, the user owns the lifecycle of any *shared* resource,
+    /// and a warm template is shared across tasks. The opt-in flag
+    /// `--shutdown-template` lets the caller delegate that policy
+    /// decision once per invocation. (#66)
+    private func cloneTemplate(
+        template: SimDevice,
+        cloneName: String,
+        shutdownTemplate: Bool
+    ) throws -> String {
+        do {
+            return try simctl.clone(sourceUDID: template.udid, newName: cloneName)
+        } catch let VibeChardError.externalCommandFailed(_, _, stderr)
+        where SimctlCloneErrors.isTemplateBooted(stderr: stderr) {
+            guard shutdownTemplate else {
+                throw VibeChardError.simulatorTemplateBooted(
+                    name: template.name,
+                    udid: template.udid
+                )
+            }
+            try simctl.shutdown(udid: template.udid)
+            return try simctl.clone(sourceUDID: template.udid, newName: cloneName)
+        }
     }
 
     /// `xcrun simctl bootstatus -b` — boots the device if shutdown,

@@ -49,6 +49,9 @@ struct RunCommand: ParsableCommand {
     @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before installing. Wipes UserDefaults, app containers, and other state inherited from the template (#68). Adds ~10–20s; off by default.")
     var eraseClone: Bool = false
 
+    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default per hard rule #9: vch never auto-touches shared resources without an opt-in (#66).")
+    var shutdownTemplate: Bool = false
+
     @Argument(parsing: .postTerminator,
               help: "Args forwarded verbatim to `simctl launch` (i.e. to the app's `main`).")
     var launchArgs: [String] = []
@@ -62,6 +65,7 @@ struct RunCommand: ParsableCommand {
                 device: device,
                 runtime: runtime,
                 eraseClone: eraseClone,
+                shutdownTemplate: shutdownTemplate,
                 launchArgs: launchArgs
             )
         }
@@ -74,6 +78,7 @@ struct RunCommand: ParsableCommand {
         device: String?,
         runtime: String?,
         eraseClone: Bool = false,
+        shutdownTemplate: Bool = false,
         launchArgs: [String]
     ) throws {
         let task = try TaskName(taskName)
@@ -129,7 +134,8 @@ struct RunCommand: ParsableCommand {
             task: task,
             requestedDevice: device,
             requestedRuntime: runtime,
-            noSim: false
+            noSim: false,
+            shutdownTemplate: shutdownTemplate
         ) else {
             // Defensive: should be unreachable given DiskSimctlClient
             // is always wired in. Treat as a usage error so callers
