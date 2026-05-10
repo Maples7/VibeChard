@@ -119,7 +119,7 @@ private enum BuildOrTest {
             // does the same — keeps the trailing ✓/✗ line easy to
             // grep even in verbose mode).
             let colorize = ANSI.defaultEnabledForStdout()
-            print(s.render(durationSeconds: result.durationSeconds, colorize: colorize))
+            print(s.render(durationSeconds: result.durationSeconds, colorize: colorize, logPath: logURL.path))
         case .test:
             // Test goes through the tee path so we can summarize at
             // the end (#9). The full log is always preserved at
@@ -151,9 +151,9 @@ private enum BuildOrTest {
             if (s.totalPassed + s.totalFailed) == 0,
                let x = xcresult,
                (x.totalPassed + x.totalFailed) > 0 {
-                print(XcresultRenderer.render(x, colorize: colorize))
+                print(XcresultRenderer.render(x, colorize: colorize, logPath: logURL.path))
             } else {
-                print(s.render(colorize: colorize))
+                print(s.render(colorize: colorize, logPath: logURL.path))
             }
         }
 
@@ -243,7 +243,23 @@ struct BuildCommand: ParsableCommand {
 struct TestCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "test",
-        abstract: "Run `xcodebuild test` inside a task's worktree with -resultBundlePath set."
+        abstract: "Run `xcodebuild test` inside a task's worktree with -resultBundlePath set.",
+        discussion: """
+            Pass extra `xcodebuild` flags after a literal `--`. The two most
+            common ones for narrowing a run:
+
+              # Run only one test class:
+              vch test mytask --scheme MyScheme --device 'iPhone 16' \\
+                -- -only-testing 'MyAppTests/MyClass'
+
+              # Run only one Swift Testing function:
+              vch test mytask --scheme MyScheme --device 'iPhone 16' \\
+                -- -only-testing 'MyAppTests/MyClass/myFunc()'
+
+            Note: the flag is `-only-testing` (single dash) because that's
+            the `xcodebuild` flag, and the `--` separator is required so
+            ArgumentParser doesn't try to interpret it as a vch option.
+            """
     )
 
     @Argument(help: "Task name to test.",

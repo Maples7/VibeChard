@@ -59,6 +59,30 @@ final class XcresultRendererTests: XCTestCase {
         XCTAssertTrue(out.contains("? test status unknown"))
     }
 
+    func testUnknownStatusAppendsLogPathHint() {
+        // #69: when xcodebuild dies before producing a parseable
+        // xcresult, the launch banner's `→ log:` line has scrolled
+        // off; the trailing summary needs to repeat the path so the
+        // user can copy-paste it.
+        let s = makeSummary(status: .unknown, passed: 0, failed: 0,
+                            durationSeconds: nil)
+        let out = XcresultRenderer.render(s, colorize: false,
+                                          logPath: "/tmp/x/.vch/last-test.log")
+        XCTAssertTrue(out.contains("? test status unknown"))
+        XCTAssertTrue(out.contains("→ log: /tmp/x/.vch/last-test.log"),
+                      "unknown branch must surface the log path; got: \(out)")
+    }
+
+    func testKnownStatusDoesNotAppendLogPathHint() {
+        // The hint is unknown-branch only — succeeded / failed runs
+        // already give the user enough to act on without a log dump.
+        let s = makeSummary(status: .succeeded, passed: 1, failed: 0)
+        let out = XcresultRenderer.render(s, colorize: false,
+                                          logPath: "/tmp/x/.vch/last-test.log")
+        XCTAssertFalse(out.contains("→ log:"),
+                       "log path must not be appended on succeeded runs")
+    }
+
     func testNoColorWhenDisabled() {
         let s = makeSummary(status: .succeeded, passed: 1, failed: 0)
         let out = XcresultRenderer.render(s, colorize: false)

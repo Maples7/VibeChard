@@ -218,6 +218,32 @@ ignore 파일을 원자적으로 옮기기" 는 git 에 native primitive 가 없
 위 레시피는 충분히 안정적인 수동 대안이라 내장 명령으로 만들 가치가
 없다고 판단했습니다.
 
+### 일부 테스트만 실행하기
+
+`vch test` 는 `xcodebuild test` 의 얇은 래퍼라서 자주 쓰는
+`-only-testing` / `-skip-testing` 플래그를 그대로 패스스루할 수
+있습니다 — 리터럴 `--` 로 vch 자체 옵션과 분리해 ArgumentParser 가
+vch 플래그로 해석하지 않도록 하세요. `-only-testing` 의 대시가 하나인
+이유는 이게 `xcodebuild` 의 플래그이기 때문입니다(vch 플래그가 아님):
+
+```sh
+# 테스트 클래스 하나만 실행:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass'
+
+# Swift Testing 함수 하나만 실행:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass/myFunc()'
+
+# 느린 suite 하나 건너뛰기:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -skip-testing 'MyAppTests/SlowSuite'
+```
+
+실패가 한 번 나오고 나면 `vch test foo --rerun-failed` 가 기록된
+xcresult 번들에서 실패한 테스트 ID 를 꺼내 그 케이스들만 재실행해
+줍니다 — 식별자를 다시 입력할 필요가 없습니다.
+
 ### 장기 태스크 최신 상태 유지
 
 `agent/<name>` 이 오래 살아남아 base 브랜치가 앞으로 나아간 경우,

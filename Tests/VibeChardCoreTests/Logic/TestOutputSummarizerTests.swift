@@ -246,4 +246,39 @@ final class TestOutputSummarizerTests: XCTestCase {
         let rendered = s.render(colorize: false)
         XCTAssertTrue(rendered.contains("unknown"))
     }
+
+    func testRenderUnknownStatusAppendsLogPathHint() {
+        // #69: when xcodebuild aborts before producing a parseable
+        // result bundle, the "see full log" hint must point the user
+        // at the file. Without the path it's hard to act on after the
+        // launch banner has scrolled off.
+        let s = TestOutputSummarizer()
+        let rendered = s.render(colorize: false,
+                                logPath: "/tmp/x/.vch/last-test.log")
+        XCTAssertTrue(rendered.contains("? test status unknown"))
+        XCTAssertTrue(rendered.contains("→ log: /tmp/x/.vch/last-test.log"),
+                      "unknown branch must surface the log path; got: \(rendered)")
+    }
+
+    func testRenderKnownStatusDoesNotAppendLogPathHint() {
+        let s = TestOutputSummarizer()
+        feed(s, """
+        Test Suite 'All tests' started at t
+        Test Suite 'B.xctest' started at t
+        Test Suite 'A' started at t
+        Test Case '-[B.A t1]' started.
+        Test Case '-[B.A t1]' passed (0.01 seconds).
+        Test Suite 'A' passed at t.
+        \t Executed 1 test, with 0 failures (0 unexpected) in 0.010 (0.010) seconds
+        Test Suite 'B.xctest' passed at t.
+        \t Executed 1 test, with 0 failures (0 unexpected) in 0.010 (0.010) seconds
+        Test Suite 'All tests' passed at t.
+        \t Executed 1 test, with 0 failures (0 unexpected) in 0.010 (0.011) seconds
+        ** TEST SUCCEEDED **
+        """)
+        let rendered = s.render(colorize: false,
+                                logPath: "/tmp/x/.vch/last-test.log")
+        XCTAssertFalse(rendered.contains("→ log:"),
+                       "log path must not be appended on succeeded runs")
+    }
 }

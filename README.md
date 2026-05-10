@@ -232,6 +232,32 @@ git primitive — see [#27](https://github.com/Maples7/VibeChard/issues/27)
 for the full discussion. The recipe above is the stable manual
 fallback.
 
+### Running a subset of tests
+
+`vch test` is a thin wrapper around `xcodebuild test`, so the usual
+`-only-testing` / `-skip-testing` flags work — pass them after a
+literal `--` so ArgumentParser doesn't try to interpret them as vch
+options. Note the single dash on `-only-testing` (it's the
+`xcodebuild` flag, not a vch flag):
+
+```sh
+# Only one test class:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass'
+
+# Only one Swift Testing function:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -only-testing 'MyAppTests/MyClass/myFunc()'
+
+# Skip a slow suite:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -skip-testing 'MyAppTests/SlowSuite'
+```
+
+Once you have a failing run, `vch test foo --rerun-failed` replays
+only the failed cases without re-typing the identifier — vch reads
+them out of the recorded xcresult bundle.
+
 ### Keeping a long-running task current
 
 If `agent/<name>` lives long enough that its base branch has moved
