@@ -150,7 +150,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
         case let .worktreeBusy(path, holders):
             let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
             let body = lines.joined(separator: "\n")
-            return "worktree is held open by \(holders.count) process\(holders.count == 1 ? "" : "es") at \(path) — close the editor / shell or pass --allow-dirty:\n\(body)"
+            return "worktree is held open by \(holders.count) process\(holders.count == 1 ? "" : "es") at \(path) — close the editor / shell or pass --force:\n\(body)"
         case let .logFileMissing(path, hint):
             return "no log file at \(path) — \(hint)"
         case let .landMainNotOnInto(currentBranch, want):
