@@ -95,6 +95,17 @@ because past sessions repeatedly rediscovered them the hard way.
    the current code. The 5-locale sync rule (#10 above) applies to
    any substantive update — but the rule above it is that README
    must not lie about what the binary does.
+5. **Branch + PR workflow, no direct pushes to `master`.** Every
+   change — code, docs, tests, CHANGELOG — ships through the standard
+   GitHub feature-branch flow. Create a topic branch (e.g.
+   `feat/<topic>`, `fix/<topic>`, `docs/<topic>`), push it, and open a
+   pull request for review and CI before merging. Direct commits
+   pushed to `master` are rejected by the remote; do not try to
+   work around the protection (no `--force`, no admin overrides, no
+   detour branches that fast-forward `master` locally). If you find
+   yourself on `master` with local commits, move them onto a new
+   branch (`git switch -c <branch>` then `git push -u origin <branch>`)
+   and open a PR.
 
 ## Architecture map
 
