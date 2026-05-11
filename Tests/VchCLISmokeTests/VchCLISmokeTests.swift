@@ -202,4 +202,78 @@ final class VchCLISmokeTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - #86: xcodebuild flag passthrough hint integration
+
+    /// End-to-end check for the #86 hint wiring. The unit suite in
+    /// `XcodebuildPassthroughHintTests` exercises the pure detector,
+    /// but the *integration* — gated on ArgumentParser's
+    /// `.validationFailure` exit code, emitted on stderr alongside
+    /// ArgumentParser's own error+usage, in that order — only really
+    /// lives in `VchCLI.main`. This smoke test forks the binary so
+    /// any regression in the wiring (e.g. someone reaches for
+    /// `exit(withError:)` and forgets to append the hint, or moves
+    /// the print to stdout) gets caught.
+    func testTestUnknownXcodebuildFlagPrintsHintOnStderr() throws {
+        // `--testPlan` is a known xcodebuild flag with no first-class
+        // vch equivalent, so the hint should point at the
+        // pass-through form.
+        let result = try runVch(["test", "any-task", "--testPlan", "MyPlan"])
+        XCTAssertEqual(
+            result.exitCode, 64,
+            "expected ArgumentParser validationFailure (64), got \(result.exitCode); stderr: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("Unknown option '--testPlan'"),
+            "expected ArgumentParser's own error on stderr; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("hint:"),
+            "expected the #86 hint line on stderr; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("-- -testPlan"),
+            "expected hint to suggest the pass-through form; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stdout.isEmpty,
+            "hint must go to stderr, not stdout; stdout: \(result.stdout)"
+        )
+    }
+
+    /// Single-dash form of a first-class flag (`-only-testing`) should
+    /// nudge the user toward the double-dash vch flag, NOT toward
+    /// the pass-through dance.
+    func testTestSingleDashFirstClassFlagPrintsFirstClassHint() throws {
+        let result = try runVch(["test", "any-task", "-only-testing", "Foo/Bar"])
+        XCTAssertEqual(
+            result.exitCode, 64,
+            "expected ArgumentParser validationFailure (64), got \(result.exitCode); stderr: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("hint:"),
+            "expected the #86 hint line on stderr; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("--only-testing"),
+            "expected hint to suggest the first-class vch flag; got: \(result.stderr)"
+        )
+        XCTAssertFalse(
+            result.stderr.contains("Pass it through after `--`"),
+            "first-class hint must NOT suggest the pass-through; got: \(result.stderr)"
+        )
+    }
+
+    /// Negative case: a valid `vch test` invocation that fails for a
+    /// *different* reason (missing positional) must not get the hint.
+    /// Guards against the gate (`hintForTestArgv`) becoming overly
+    /// eager.
+    func testTestMissingTaskNameDoesNotPrintHint() throws {
+        let result = try runVch(["test"])
+        XCTAssertNotEqual(result.exitCode, 0, "expected non-zero exit")
+        XCTAssertFalse(
+            result.stderr.contains("hint:"),
+            "missing-argument error must not trigger the xcodebuild hint; got: \(result.stderr)"
+        )
+    }
 }

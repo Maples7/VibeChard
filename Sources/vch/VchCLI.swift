@@ -58,6 +58,28 @@ struct VchCLI: ParsableCommand {
             var command = try parseAsRoot(effective)
             try command.run()
         } catch {
+            // #86: when ArgumentParser rejects a `vch test` invocation
+            // and the argv contains an obvious xcodebuild flag the
+            // user almost certainly meant to pass through (e.g.
+            // `-testPlan`, `-resultBundlePath`), append a hint
+            // pointing at the `vch test … -- -<flag> <value>` form.
+            // Gated on `validationFailure` so runtime errors thrown
+            // from a subcommand's `run()` (different exit code) don't
+            // also drag in the hint.
+            if effective.first == "test",
+               Self.exitCode(for: error) == .validationFailure,
+               let hint = XcodebuildPassthroughHint.hintForTestArgv(
+                Array(effective.dropFirst())
+               ) {
+                // Print ArgumentParser's own error+usage first (it's
+                // the concrete diagnostic), then our hint as the
+                // actionable trailer.
+                FileHandle.standardError.write(
+                    Data((Self.fullMessage(for: error) + "\n").utf8)
+                )
+                FileHandle.standardError.write(Data((hint + "\n").utf8))
+                Foundation.exit(Self.exitCode(for: error).rawValue)
+            }
             exit(withError: error)
         }
     }

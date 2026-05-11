@@ -218,7 +218,7 @@ template trap, and pruning merged tasks.
 | `vch <name>` | Drop into a shell inside the worktree with isolation active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
 | `vch build <name>` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected (`--scheme`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--verbose`). |
-| `vch test <name>` | `xcodebuild test` with `-resultBundlePath` injected; lazy sim clone (`--device`, `--runtime`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`). |
+| `vch test <name>` | `xcodebuild test` with `-resultBundlePath` injected; lazy sim clone (`--device`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`). |
 | `vch run <name>` | Build, install, launch on the task's sim clone (`--erase-clone`, `--shutdown-template`, `-- launch-args`). |
 | `vch logs <name>` | Print the most recent build/test xcodebuild log (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |

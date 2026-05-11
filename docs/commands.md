@@ -163,6 +163,12 @@ vch test <name> [flags] [-- xcodebuild-extras]
 `--device` and reuses it after.
 
 - Same scheme auto-pick + `--runtime` rules as `vch build`.
+- `--only-testing <id>` / `--skip-testing <id>` are first-class
+  ([#86](https://github.com/Maples7/VibeChard/issues/86)): repeatable
+  flags that translate to `xcodebuild -only-testing:<id>` /
+  `-skip-testing:<id>`. The pass-through after `--` is still there
+  for everything else (e.g. `-- -testPlan MyPlan`); see
+  [Running a subset of tests](cookbook.md#running-a-subset-of-tests).
 - `--erase-clone` resets the per-task clone before running (useful
   when a test depends on first-launch defaults; see
   [Resetting per-task simulator state](cookbook.md#resetting-per-task-simulator-state)).
