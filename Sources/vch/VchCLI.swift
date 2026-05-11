@@ -58,27 +58,51 @@ struct VchCLI: ParsableCommand {
             var command = try parseAsRoot(effective)
             try command.run()
         } catch {
-            // #86: when ArgumentParser rejects a `vch test` invocation
-            // and the argv contains an obvious xcodebuild flag the
-            // user almost certainly meant to pass through (e.g.
-            // `-testPlan`, `-resultBundlePath`), append a hint
-            // pointing at the `vch test … -- -<flag> <value>` form.
+            // #86 / #89: when ArgumentParser rejects a `vch <build|
+            // test|run>` invocation with `.validationFailure`, decide
+            // whether to append a hint pointing at the right pass-
+            // through invocation shape. Two layers, in priority order:
+            //
+            //   1. Specific (test-only, #86): argv contains a known
+            //      xcodebuild flag spelling (`-testPlan`,
+            //      `-resultBundlePath`, …) → suggest the canonical
+            //      single-dash xcodebuild form (or, for flags vch
+            //      has promoted to first-class, the double-dash vch
+            //      form).
+            //   2. Generic (#89): user wrote an option vch doesn't
+            //      know (`--extra`) and AP didn't propose a typo
+            //      correction → suggest the pass-through shape with
+            //      wording matching the downstream tool (xcodebuild
+            //      for build/test, the launched app for run).
+            //
             // Gated on `validationFailure` so runtime errors thrown
             // from a subcommand's `run()` (different exit code) don't
             // also drag in the hint.
-            if effective.first == "test",
-               Self.exitCode(for: error) == .validationFailure,
-               let hint = XcodebuildPassthroughHint.hintForTestArgv(
-                Array(effective.dropFirst())
-               ) {
-                // Print ArgumentParser's own error+usage first (it's
-                // the concrete diagnostic), then our hint as the
-                // actionable trailer.
-                FileHandle.standardError.write(
-                    Data((Self.fullMessage(for: error) + "\n").utf8)
-                )
-                FileHandle.standardError.write(Data((hint + "\n").utf8))
-                Foundation.exit(Self.exitCode(for: error).rawValue)
+            if Self.exitCode(for: error) == .validationFailure,
+               let commandToken = effective.first,
+               let downstream = XcodebuildPassthroughHint
+                .downstream(forCommand: commandToken) {
+                let argv = Array(effective.dropFirst())
+                let errorMessage = Self.fullMessage(for: error)
+                let specific: String? = commandToken == "test"
+                    ? XcodebuildPassthroughHint.hintForTestArgv(argv)
+                    : nil
+                let generic: String? = specific != nil ? nil
+                    : XcodebuildPassthroughHint.genericUnknownOptionHint(
+                        command: commandToken,
+                        errorMessage: errorMessage,
+                        downstream: downstream
+                    )
+                if let hint = specific ?? generic {
+                    // Print ArgumentParser's own error+usage first
+                    // (it's the concrete diagnostic), then our hint
+                    // as the actionable trailer.
+                    FileHandle.standardError.write(
+                        Data((errorMessage + "\n").utf8)
+                    )
+                    FileHandle.standardError.write(Data((hint + "\n").utf8))
+                    Foundation.exit(Self.exitCode(for: error).rawValue)
+                }
             }
             exit(withError: error)
         }

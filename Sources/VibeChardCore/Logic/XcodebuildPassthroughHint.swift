@@ -140,4 +140,94 @@ public enum XcodebuildPassthroughHint {
             vch test <name> [vch flags] \(vchForm) <value>
         """
     }
+
+    // MARK: - #89: generic unknown-option hint
+
+    /// What downstream tool consumes the `-- <extra-args>` tail of a
+    /// vch subcommand. Drives the wording of
+    /// `genericUnknownOptionHint` so the suggestion matches where
+    /// the user's bytes will actually end up.
+    public enum Downstream: String, Equatable {
+        /// `vch build` / `vch test` — args after `--` go to xcodebuild.
+        case xcodebuild
+        /// `vch run` — args after `--` are forwarded verbatim to
+        /// `simctl launch`, i.e. to the launched app's main().
+        case appLaunchArgs
+    }
+
+    /// Map a top-level vch subcommand token to the downstream that
+    /// consumes its `-- <extra-args>` tail. Returns `nil` for
+    /// subcommands that have no pass-through tail (e.g. `list`,
+    /// `state`) — those should never get the unknown-option hint
+    /// because there's no `--` plan for the user to be reaching for.
+    ///
+    /// Single source of truth; `VchCLI.main` reads this rather than
+    /// carrying its own copy (AGENTS.md discipline #6).
+    public static func downstream(forCommand command: String) -> Downstream? {
+        switch command {
+        case "build", "test": return .xcodebuild
+        case "run": return .appLaunchArgs
+        default: return nil
+        }
+    }
+
+    /// Generic fallback hint for the `vch <build|test|run>` error
+    /// path where the user wrote an option vch doesn't know
+    /// (e.g. `--extra`) and ArgumentParser rejected it with the
+    /// bare "Unknown option" diagnostic (#89).
+    ///
+    /// The #86-era `hintForTestArgv` only fires for a curated set of
+    /// real xcodebuild flag spellings (`-testPlan`, `-resultBundlePath`,
+    /// …). For everything else — a user-invented flag like `--extra`,
+    /// or any obscure xcodebuild flag not on the list — we still want
+    /// to nudge them toward the pass-through form rather than make
+    /// them re-read `--help`. That nudge is this function.
+    ///
+    /// Returns `nil` (no hint) when:
+    ///   • `errorMessage` doesn't contain `Unknown option '…'` —
+    ///     different validation failure, different problem, no
+    ///     pass-through nudge.
+    ///   • ArgumentParser already proposed a typo correction
+    ///     (`Did you mean '--scheme'?`). That's the higher-signal
+    ///     diagnostic and we don't want to compete with it.
+    ///   • The extracted token doesn't look like a flag (defensive
+    ///     guard against future error-message format changes).
+    public static func genericUnknownOptionHint(
+        command: String,
+        errorMessage: String,
+        downstream: Downstream
+    ) -> String? {
+        // AP's typo correction is the better diagnostic — defer to it.
+        if errorMessage.contains("Did you mean") { return nil }
+
+        // Extract the rejected token from the "Unknown option '<tok>'"
+        // diagnostic. We parse the message rather than scan argv
+        // because AP picks the offending token on its own (it may
+        // skip past tokens it recognizes); echoing AP's choice keeps
+        // the hint's `'<tok>'` byte-identical to the error line just
+        // above it.
+        guard let unknownRange = errorMessage.range(of: "Unknown option '") else {
+            return nil
+        }
+        let afterMarker = errorMessage[unknownRange.upperBound...]
+        guard let closingQuote = afterMarker.firstIndex(of: "'") else {
+            return nil
+        }
+        let token = String(afterMarker[afterMarker.startIndex..<closingQuote])
+        guard token.hasPrefix("-"), token.count > 1 else { return nil }
+
+        let canonical = canonicalize(token)
+        switch downstream {
+        case .xcodebuild:
+            return """
+            hint: '\(token)' is not a vch flag. To forward an argument to xcodebuild, pass it after `--`:
+                vch \(command) <name> [vch flags] -- \(canonical) <value>
+            """
+        case .appLaunchArgs:
+            return """
+            hint: '\(token)' is not a vch flag. To forward an argument to the launched app, pass it after `--`:
+                vch \(command) <name> [vch flags] -- \(canonical) <value>
+            """
+        }
+    }
 }
