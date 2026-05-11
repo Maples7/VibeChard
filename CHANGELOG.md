@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-11
+
 ### Fixed
 - `vch prune` and `vch clean` no longer error with the
   self-contradicting `invalid task name '<cmd>': '<cmd>' is a
