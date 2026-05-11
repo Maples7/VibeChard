@@ -8,6 +8,34 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Changed
+- New `VchCLISmokeTests` test target forks the real `vch` binary and
+  asserts both directions of the subcommand registry: every name in
+  `TaskName.reserved` dispatches to a real subcommand (forward
+  direction, the original #82 failure mode), and every subcommand
+  surfaced in `vch --help` is in `TaskName.reserved` (reverse
+  direction, the symmetric drift that would let a newly-added
+  subcommand silently get rewritten by the sugar dispatcher).
+  Catches the #82 class of regression at `swift test` time. Mirrors
+  the `ShimIntegrationTests` Process-based pattern; AGENTS.md hard
+  rule #5 (three Sources targets, fixed) is preserved — only the
+  test-target count grows.
+- Release workflow gains a per-subcommand `--help` smoke step that
+  exercises every tasks-less reserved name against the freshly-built
+  release binary, so a botched release artifact can't reach the user
+  even if `swift test` is somehow skipped.
+
+### Docs
+- AGENTS.md gains Engineering discipline #6 ("One list, one place")
+  and #7 ("No logic in `vch/`"). Both formalize the AGENTS.md
+  violations that produced the #82 regression: a parallel literal
+  copy of `TaskName.reserved` lived inside the `vch` executable
+  target, where Swift's `@testable import` restriction (combined
+  with hard rule #5 forbidding a third Sources target) made it
+  invisible to the unit test suite. The Architecture map's existing
+  "vch should never contain logic" paragraph now cross-references
+  discipline #7.
+
 ## [0.5.1] - 2026-05-11
 
 ### Fixed

@@ -65,5 +65,22 @@ let package = Package(
             name: "ShimIntegrationTests",
             dependencies: ["vch-xcodebuild-shim"]
         ),
+        // CLI smoke tests. Forks the real `vch` binary and asserts:
+        //   1. Every name registered as a top-level subcommand is also
+        //      in `TaskName.reserved` (reverse drift — a registered
+        //      command leaking into the sugar path because nobody added
+        //      it to the reserved set).
+        //   2. Every name in `TaskName.reserved` resolves to a real
+        //      subcommand (forward drift — `vch <name>` errors when it
+        //      should dispatch). This is the load-bearing #82 regression.
+        //   3. `vch <name> --help` exits 0 for every subcommand (catches
+        //      ArgumentParser configuration mistakes).
+        // Same Process-based pattern as ShimIntegrationTests; the vch
+        // executable target is declared as a dependency so SwiftPM
+        // builds it before the test bundle.
+        .testTarget(
+            name: "VchCLISmokeTests",
+            dependencies: ["vch", "VibeChardCore"]
+        ),
     ]
 )
