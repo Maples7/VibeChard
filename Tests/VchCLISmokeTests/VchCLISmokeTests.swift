@@ -276,4 +276,107 @@ final class VchCLISmokeTests: XCTestCase {
             "missing-argument error must not trigger the xcodebuild hint; got: \(result.stderr)"
         )
     }
+
+    // MARK: - #89: generic unknown-option hint integration
+
+    /// The motivating case from #89's body: the user invented
+    /// `--extra` because they were reaching for a pass-through knob
+    /// and didn't remember the `--` convention. Before #89, `vch
+    /// test --extra` died with only the bare "Unknown option" line.
+    /// After the fix, vch appends the actionable hint pointing at
+    /// the `vch test … -- -extra <value>` form. End-to-end check
+    /// since the unit suite can't see the AP error-message wiring.
+    func testTestInventedFlagPrintsGenericPassthroughHint() throws {
+        let result = try runVch(["test", "any-task", "--extra", "value"])
+        XCTAssertEqual(
+            result.exitCode, 64,
+            "expected ArgumentParser validationFailure (64); stderr: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("Unknown option '--extra'"),
+            "expected AP's own error on stderr; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("hint:"),
+            "expected the #89 generic hint line; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("xcodebuild"),
+            "expected hint to name xcodebuild for `vch test`; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("-- -extra <value>"),
+            "expected hint to show the canonical pass-through form; got: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stdout.isEmpty,
+            "hint must go to stderr, not stdout; stdout: \(result.stdout)"
+        )
+    }
+
+    /// `vch build` shares the same xcodebuild downstream as `vch
+    /// test`. An invented flag on it gets the same xcodebuild-themed
+    /// hint — confirms #89's "any command with a `--` tail" claim
+    /// for the build side.
+    func testBuildInventedFlagPrintsGenericPassthroughHint() throws {
+        let result = try runVch(["build", "any-task", "--extra", "value"])
+        XCTAssertEqual(result.exitCode, 64)
+        XCTAssertTrue(result.stderr.contains("Unknown option '--extra'"))
+        XCTAssertTrue(result.stderr.contains("hint:"))
+        XCTAssertTrue(result.stderr.contains("xcodebuild"))
+        XCTAssertTrue(
+            result.stderr.contains("vch build <name>"),
+            "expected hint to name the user's actual subcommand; got: \(result.stderr)"
+        )
+    }
+
+    /// `vch run`'s `-- <args>` tail is forwarded to `simctl launch`,
+    /// not xcodebuild. Suggesting xcodebuild on a run-time error
+    /// would actively mislead. Wording check: hint must mention the
+    /// launched app and must NOT mention xcodebuild.
+    func testRunInventedFlagPrintsAppLaunchHint() throws {
+        let result = try runVch(["run", "any-task", "--extra", "value"])
+        XCTAssertEqual(result.exitCode, 64)
+        XCTAssertTrue(result.stderr.contains("Unknown option '--extra'"))
+        XCTAssertTrue(result.stderr.contains("hint:"))
+        XCTAssertTrue(
+            result.stderr.contains("launched app"),
+            "expected hint to mention the launched app; got: \(result.stderr)"
+        )
+        XCTAssertFalse(
+            result.stderr.contains("xcodebuild"),
+            "run hint must NOT mention xcodebuild; got: \(result.stderr)"
+        )
+    }
+
+    /// AP's typo correction is a better diagnostic than our generic
+    /// nudge. When `--schem` triggers a "Did you mean '--scheme'?"
+    /// suggestion, we must defer to it rather than stacking a second
+    /// contradictory hint underneath.
+    func testTestTypoFallsThroughToArgumentParserSuggestion() throws {
+        let result = try runVch(["test", "foo", "--schem", "MyApp"])
+        XCTAssertEqual(result.exitCode, 64)
+        XCTAssertTrue(
+            result.stderr.contains("Did you mean '--scheme'?"),
+            "expected AP's typo suggestion; got: \(result.stderr)"
+        )
+        XCTAssertFalse(
+            result.stderr.contains("hint:"),
+            "our generic hint must defer to AP's typo suggestion; got: \(result.stderr)"
+        )
+    }
+
+    /// Subcommands with no `-- <extra-args>` tail (e.g. `list`) must
+    /// never get the hint — there's no pass-through plan for the
+    /// user to be reaching for. Guards against the `downstream`
+    /// lookup quietly broadening to every subcommand.
+    func testListInventedFlagDoesNotPrintHint() throws {
+        let result = try runVch(["list", "--bogus"])
+        XCTAssertEqual(result.exitCode, 64)
+        XCTAssertTrue(result.stderr.contains("Unknown option '--bogus'"))
+        XCTAssertFalse(
+            result.stderr.contains("hint:"),
+            "commands without a `--` tail must not get the pass-through hint; got: \(result.stderr)"
+        )
+    }
 }

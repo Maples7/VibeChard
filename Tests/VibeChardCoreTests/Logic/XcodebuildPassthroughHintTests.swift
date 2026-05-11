@@ -160,4 +160,148 @@ final class XcodebuildPassthroughHintTests: XCTestCase {
             )
         )
     }
+
+    // MARK: - #89: downstream lookup
+
+    func testDownstreamForKnownCommands() {
+        XCTAssertEqual(
+            XcodebuildPassthroughHint.downstream(forCommand: "build"),
+            .xcodebuild
+        )
+        XCTAssertEqual(
+            XcodebuildPassthroughHint.downstream(forCommand: "test"),
+            .xcodebuild
+        )
+        XCTAssertEqual(
+            XcodebuildPassthroughHint.downstream(forCommand: "run"),
+            .appLaunchArgs
+        )
+    }
+
+    /// Anything else — `list`, `state`, `path`, `new`, `version`, …
+    /// — has no `-- <extra-args>` tail and must not get the hint.
+    func testDownstreamForUnknownCommands() {
+        for cmd in ["list", "state", "path", "new", "exec", "logs", "version", ""] {
+            XCTAssertNil(
+                XcodebuildPassthroughHint.downstream(forCommand: cmd),
+                "'\(cmd)' should have no downstream"
+            )
+        }
+    }
+
+    // MARK: - #89: generic unknown-option hint
+
+    /// The motivating case from the issue body: user invents `--extra`
+    /// on `vch test`, AP rejects it with bare "Unknown option", we
+    /// nudge them at the `-- -extra <value>` shape.
+    func testGenericUnknownOptionFiresOnInventedFlag() {
+        let errorMessage = """
+            Error: Unknown option '--extra'
+            Usage: vch test [<options>] <name> -- [<extra-args> ...]
+              See 'vch test --help' for more information.
+            """
+        let hint = XcodebuildPassthroughHint.genericUnknownOptionHint(
+            command: "test",
+            errorMessage: errorMessage,
+            downstream: .xcodebuild
+        )
+        XCTAssertNotNil(hint)
+        XCTAssertTrue(hint!.contains("'--extra'"),
+                      "hint should echo the rejected token: \(hint!)")
+        XCTAssertTrue(hint!.contains("xcodebuild"),
+                      "xcodebuild downstream should be named: \(hint!)")
+        XCTAssertTrue(hint!.contains("-- -extra <value>"),
+                      "hint should show the canonical pass-through form: \(hint!)")
+        XCTAssertTrue(hint!.contains("vch test"),
+                      "hint should name the user's actual subcommand: \(hint!)")
+    }
+
+    /// `vch run`'s `-- <args>` tail is forwarded to `simctl launch`,
+    /// not xcodebuild. The wording must match — pointing the user at
+    /// xcodebuild for a run-time arg would actively mislead.
+    func testGenericUnknownOptionRunMentionsLaunchedApp() {
+        let errorMessage = "Error: Unknown option '--extra'\nUsage: vch run …"
+        let hint = XcodebuildPassthroughHint.genericUnknownOptionHint(
+            command: "run",
+            errorMessage: errorMessage,
+            downstream: .appLaunchArgs
+        )
+        XCTAssertNotNil(hint)
+        XCTAssertTrue(hint!.contains("launched app"),
+                      "appLaunchArgs downstream should be named: \(hint!)")
+        XCTAssertFalse(hint!.contains("xcodebuild"),
+                       "run hint must not mention xcodebuild: \(hint!)")
+        XCTAssertTrue(hint!.contains("vch run"),
+                      "hint should name the user's actual subcommand: \(hint!)")
+    }
+
+    /// Single-dash unknown options (e.g. `-flag`) should also get the
+    /// generic hint; the canonicalized form drops one dash, so a
+    /// `-flag` token round-trips as itself in the suggestion.
+    func testGenericUnknownOptionSingleDashTokenIsPreserved() {
+        let errorMessage = "Error: Unknown option '-flag'"
+        let hint = XcodebuildPassthroughHint.genericUnknownOptionHint(
+            command: "build",
+            errorMessage: errorMessage,
+            downstream: .xcodebuild
+        )
+        XCTAssertNotNil(hint)
+        XCTAssertTrue(hint!.contains("'-flag'"))
+        XCTAssertTrue(hint!.contains("-- -flag <value>"))
+    }
+
+    // MARK: - #89: generic hint — negative cases
+
+    /// AP's typo correction is a higher-signal diagnostic than our
+    /// generic nudge. Deferring to it avoids stacking two
+    /// contradictory suggestions on the same error.
+    func testGenericUnknownOptionSkipsWhenDidYouMeanPresent() {
+        let errorMessage = """
+            Error: Unknown option '--schem'. Did you mean '--scheme'?
+            Usage: vch test [<options>] <name> -- [<extra-args> ...]
+            """
+        XCTAssertNil(
+            XcodebuildPassthroughHint.genericUnknownOptionHint(
+                command: "test",
+                errorMessage: errorMessage,
+                downstream: .xcodebuild
+            )
+        )
+    }
+
+    /// Non-"Unknown option" validation failures (missing arg, missing
+    /// value, value out of range, …) are a different problem — the
+    /// pass-through nudge would be off-topic.
+    func testGenericUnknownOptionSkipsForOtherValidationFailures() {
+        let cases = [
+            "Error: Missing expected argument '<name>'",
+            "Error: Missing value for '--scheme <scheme>'",
+            "Error: The value 'maybe' is invalid for '--no-sim'",
+            "Some completely unrelated message",
+        ]
+        for msg in cases {
+            XCTAssertNil(
+                XcodebuildPassthroughHint.genericUnknownOptionHint(
+                    command: "test",
+                    errorMessage: msg,
+                    downstream: .xcodebuild
+                ),
+                "should not fire for: \(msg)"
+            )
+        }
+    }
+
+    /// Defensive: if AP ever changes the error message format and
+    /// the extracted token doesn't look like a flag, return nil
+    /// instead of generating a nonsense hint.
+    func testGenericUnknownOptionSkipsWhenTokenIsNotFlagShape() {
+        let errorMessage = "Error: Unknown option 'no-dashes-here'"
+        XCTAssertNil(
+            XcodebuildPassthroughHint.genericUnknownOptionHint(
+                command: "test",
+                errorMessage: errorMessage,
+                downstream: .xcodebuild
+            )
+        )
+    }
 }

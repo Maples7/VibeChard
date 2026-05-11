@@ -8,6 +8,21 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Fixed
+- `vch <build|test|run>` now appends an actionable hint after
+  `Error: Unknown option '--<flag>'` whenever the rejected token
+  doesn't match an existing first-class vch flag and ArgumentParser
+  hasn't already proposed a typo correction (#89). The hint points
+  at the `-- <args>` pass-through shape using wording matched to
+  the downstream — xcodebuild for `vch build` / `vch test`, the
+  launched app for `vch run`. This closes the gap left by 0.6.0's
+  #86 fix, which only caught a curated list of known xcodebuild
+  flag spellings (`-testPlan`, `-resultBundlePath`, …). The
+  existing specific hint still takes priority over the generic one
+  on `vch test`. `ArgumentParser`'s own "Did you mean '--scheme'?"
+  typo suggestion suppresses the hint so the two diagnostics can't
+  stack on the same error.
+
 ## [0.6.0] - 2026-05-11
 
 ### Added
