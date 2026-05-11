@@ -8,6 +8,20 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Fixed
+- `vch prune` and `vch clean` no longer error with the
+  self-contradicting `invalid task name '<cmd>': '<cmd>' is a
+  reserved subcommand` in v0.5.0 (#82). The root cause was a
+  duplicated reserved-name list inside the `vch <name>` sugar
+  dispatcher that drifted out of sync with
+  `TaskName.reserved` — every newly-added subcommand silently
+  routed through the sugar path and got rejected. The dispatcher
+  now reads `TaskName.reserved` directly, so there is exactly one
+  list. `TaskShortcutDispatcher` also moved from `Sources/vch/` to
+  `Sources/VibeChardCore/Logic/` so it can be unit-tested; the new
+  test suite asserts every reserved name short-circuits, preventing
+  this class of regression from re-appearing.
+
 ## [0.5.0] - 2026-05-11
 
 ### Added
