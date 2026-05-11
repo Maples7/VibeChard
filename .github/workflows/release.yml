@@ -76,6 +76,24 @@ jobs:
           # xcodebuild via `xcrun -f`. -version is a cheap probe.
           VCH_SHIM_DEBUG=1 ./.build/release/vch-xcodebuild-shim -version
 
+      - name: Smoke tasks-less subcommands route correctly
+        run: |
+          # Closes the #82 / v0.5.0 regression at release time: every
+          # reserved name must reach a real subcommand, not get
+          # rewritten by the sugar dispatcher into a self-contradicting
+          # exec call. We run a handful of subcommands that don't
+          # require an Apple project on disk and just need to print
+          # their --help and exit 0. The full forward+reverse check
+          # runs in `swift test` above; this is the belt-and-suspenders
+          # guard against a botched release artifact.
+          for cmd in prune clean doctor sim land sync repair logs run \
+                     build test exec open path list state remove; do
+            ./.build/release/vch "$cmd" --help >/dev/null || {
+              echo "::error::vch $cmd --help exited non-zero on the release artifact"
+              exit 1
+            }
+          done
+
       - name: Create GitHub Release
         # v3 = first Node 24 major (April 2026); inputs unchanged from v2.
         uses: softprops/action-gh-release@v3

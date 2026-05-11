@@ -116,6 +116,32 @@ because past sessions repeatedly rediscovered them the hard way.
    yourself on `master` with local commits, move them onto a new
    branch (`git switch -c <branch>` then `git push -u origin <branch>`)
    and open a PR.
+6. **One list, one place.** If a constant, set, or table already
+   exists in the codebase, do not retype it elsewhere — `import` it.
+   Specifically: the set of reserved subcommand tokens lives in
+   `TaskName.reserved` (hard rule #8); the canonical product version
+   lives in `VibeChard.version`; the warm-template name pattern
+   lives next to `WarmTemplate`. Any "shadow copy" of one of these
+   is a bug waiting to drift — v0.5.0 shipped with `vch prune` and
+   `vch clean` broken because `TaskShortcutDispatcher` carried a
+   second hardcoded copy of the reserved set (#82). The fix was to
+   delete the copy and read `TaskName.reserved` directly. When PR
+   review spots a literal that resembles a list elsewhere in the
+   tree, push back: re-typing is the smell.
+7. **No logic in `vch/`.** The `vch` target is an ArgumentParser
+   shell: argument parsing, output formatting, exit-code mapping.
+   Every decision rule, parser, planner, or transform belongs in
+   `VibeChardCore/`. The architectural reason is testability — the
+   `vch` executable target cannot be `@testable import`ed (Swift
+   restriction) and hard rule #5 forbids extracting a third
+   Sources/ target. Logic that lives in `vch/` is logic that
+   cannot be unit-tested. The `TaskShortcutDispatcher` regression
+   above wasn't just a duplicated list — it was a duplicated list
+   in a file no unit test could see. Moving it to
+   `VibeChardCore/Logic/` is what made the bug catchable in the
+   first place. New code in `vch/` should be a few lines that call
+   into Core; if a `Commands/*.swift` file grows a decision tree,
+   the decision tree belongs in `Logic/` or `Services/`.
 
 ## Architecture map
 
@@ -143,6 +169,8 @@ work.
 `vch` should never contain logic; only argument parsing, output formatting,
 and exit-code mapping. Every behavior must be unit-testable from
 `VibeChardCoreTests` without touching the disk (use protocol-backed fakes).
+See Engineering discipline #7 — this isn't a style preference, it's the
+reason `vch prune` was broken in v0.5.0 (#82) without any test catching it.
 
 ## Test layers
 
