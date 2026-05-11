@@ -204,7 +204,7 @@ vch exec task-a -- xcodebuild test \
 | `vch <name>` | worktree のシェルに入る。分離環境と PATH shim が有効。 |
 | `vch exec <name> -- <cmd...>` | タスクの worktree 内で任意コマンドを実行（分離有効）。 |
 | `vch build <name>` | `xcodebuild build` を実行し `-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入（`--scheme`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--verbose`）。 |
-| `vch test <name>` | `xcodebuild test` を実行し `-resultBundlePath` を注入。シミュレーターは遅延クローン（`--device`、`--runtime`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
+| `vch test <name>` | `xcodebuild test` を実行し `-resultBundlePath` を注入。シミュレーターは遅延クローン（`--device`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
 | `vch run <name>` | タスクのシミュレータークローン上でビルド・インストール・起動（`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
 | `vch logs <name>` | タスク直近のビルド/テストの完全な xcodebuild ログを表示（`--test`/`--build`）。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスク用シミュレータークローンを明示的に管理。 |

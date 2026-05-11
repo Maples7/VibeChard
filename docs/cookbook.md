@@ -52,25 +52,46 @@ fallback.
 
 ## Running a subset of tests
 
-`vch test` is a thin wrapper around `xcodebuild test`, so the usual
-`-only-testing` / `-skip-testing` flags work — pass them after a
-literal `--` so ArgumentParser doesn't try to interpret them as vch
-options. Note the single dash on `-only-testing` (it's the
-`xcodebuild` flag, not a vch flag):
+`vch test` exposes the two most common test selectors as first-class
+flags ([#86](https://github.com/Maples7/VibeChard/issues/86)):
 
 ```sh
 # Only one test class:
 vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass'
+  --only-testing MyAppTests/MyClass
 
 # Only one Swift Testing function:
 vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -only-testing 'MyAppTests/MyClass/myFunc()'
+  --only-testing 'MyAppTests/MyClass/myFunc()'
 
-# Skip a slow suite:
+# Skip a slow suite while running the rest:
 vch test foo --scheme MyApp --device 'iPhone 16' \
-  -- -skip-testing 'MyAppTests/SlowSuite'
+  --skip-testing MyAppTests/SlowSuite
+
+# Combine — repeat the flag, mix with --skip-testing:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  --only-testing MyAppTests/Critical \
+  --only-testing MyAppTests/Smoke \
+  --skip-testing MyAppTests/Critical/flakyCase
 ```
+
+Each `--only-testing` / `--skip-testing` is translated verbatim to
+`xcodebuild -only-testing:<id>` / `-skip-testing:<id>`, so the
+identifier shape is exactly what xcodebuild accepts
+(`Target/Suite`, `Target/Suite/case()`, `Target/Suite/case`).
+
+For any *other* xcodebuild flag, pass it after a literal `--` using
+the single-dash xcodebuild form:
+
+```sh
+# Pin a test plan + disable parallel testing for one run:
+vch test foo --scheme MyApp --device 'iPhone 16' \
+  -- -testPlan SmokePlan -parallel-testing-enabled NO
+```
+
+If you reach for an xcodebuild flag directly (e.g. `--testPlan`),
+vch will emit an actionable hint pointing at the right invocation
+shape instead of just rejecting the flag.
 
 Once you have a failing run, `vch test foo --rerun-failed` replays
 only the failed cases without re-typing the identifier — vch reads

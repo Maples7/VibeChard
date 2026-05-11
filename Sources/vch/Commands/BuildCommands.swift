@@ -268,20 +268,27 @@ struct TestCommand: ParsableCommand {
         commandName: "test",
         abstract: "Run `xcodebuild test` inside a task's worktree with -resultBundlePath set.",
         discussion: """
-            Pass extra `xcodebuild` flags after a literal `--`. The two most
-            common ones for narrowing a run:
+            For the common case — narrow a run to one suite or function —
+            use the first-class `--only-testing` / `--skip-testing` flags
+            (repeatable, #86):
 
               # Run only one test class:
               vch test mytask --scheme MyScheme --device 'iPhone 16' \\
-                -- -only-testing 'MyAppTests/MyClass'
+                --only-testing MyAppTests/MyClass
 
               # Run only one Swift Testing function:
               vch test mytask --scheme MyScheme --device 'iPhone 16' \\
-                -- -only-testing 'MyAppTests/MyClass/myFunc()'
+                --only-testing 'MyAppTests/MyClass/myFunc()'
 
-            Note: the flag is `-only-testing` (single dash) because that's
-            the `xcodebuild` flag, and the `--` separator is required so
-            ArgumentParser doesn't try to interpret it as a vch option.
+              # Skip a slow suite while running the rest:
+              vch test mytask --scheme MyScheme --device 'iPhone 16' \\
+                --skip-testing MyAppTests/SlowSuite
+
+            For any other xcodebuild flag, pass it after a literal `--`
+            using the single-dash xcodebuild form:
+
+              vch test mytask --scheme MyScheme --device 'iPhone 16' \\
+                -- -testPlan MyPlan -parallel-testing-enabled NO
             """
     )
 
@@ -319,6 +326,14 @@ struct TestCommand: ParsableCommand {
     @Flag(name: .long, help: "Re-run only the tests that failed in the most recent `vch test <name>` (uses the recorded xcresult bundle).")
     var rerunFailed: Bool = false
 
+    @Option(name: .long, parsing: .singleValue,
+            help: "Narrow this run to one test identifier (`Target/Suite`, `Target/Suite/case()`, etc.). Translates to `xcodebuild -only-testing:<id>`; repeat the flag to combine selectors (#86).")
+    var onlyTesting: [String] = []
+
+    @Option(name: .long, parsing: .singleValue,
+            help: "Exclude one test identifier from this run (same shape as `--only-testing`). Translates to `xcodebuild -skip-testing:<id>`; repeatable (#86).")
+    var skipTesting: [String] = []
+
     @Argument(parsing: .postTerminator,
               help: "Extra args appended to xcodebuild after `--`.")
     var extraArgs: [String] = []
@@ -327,10 +342,20 @@ struct TestCommand: ParsableCommand {
         try CLIBridge.run {
             // #46: --rerun / --rerun-failed are mutually exclusive
             // with each other and with positional extra args.
+            //
+            // #86: the new first-class --only-testing / --skip-testing
+            // flags are also incompatible with --rerun*. The contract
+            // for --rerun is "replay verbatim", and --rerun-failed
+            // derives selectors from the recorded xcresult — letting
+            // a stray --only-testing leak through would silently
+            // override the failure-derived selection.
             if rerun && rerunFailed {
                 throw VibeChardError.testConflictingRerunFlags
             }
-            if (rerun || rerunFailed) && !extraArgs.isEmpty {
+            let hasFreshArgs = !extraArgs.isEmpty
+                || !onlyTesting.isEmpty
+                || !skipTesting.isEmpty
+            if (rerun || rerunFailed) && hasFreshArgs {
                 throw VibeChardError.testRerunWithExtraArgs
             }
 
@@ -373,7 +398,15 @@ struct TestCommand: ParsableCommand {
                     CLIBridge.eprintln("→ rerunning last `vch test \(task.raw)` invocation\(priorArgs.isEmpty ? "" : " (with recorded args)")")
                 }
             } else {
-                effectiveExtraArgs = extraArgs
+                // #86: translate first-class selector flags into the
+                // canonical `-only-testing:<id>` / `-skip-testing:<id>`
+                // xcodebuild form, then append the user's verbatim
+                // pass-through args.
+                effectiveExtraArgs = TestSelectorMerger.extraArgs(
+                    only: onlyTesting,
+                    skip: skipTesting,
+                    extra: extraArgs
+                )
             }
 
             try BuildOrTest.execute(

@@ -8,6 +8,25 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Added
+- `vch test` learns first-class `--only-testing <id>` and
+  `--skip-testing <id>` flags (both repeatable, #86). They translate
+  to `xcodebuild -only-testing:<id>` / `-skip-testing:<id>` so the
+  common "run just one suite / function" workflow no longer needs
+  to remember the `--` separator and the single-dash xcodebuild
+  spelling. Power users keep full flexibility: anything else still
+  goes through `vch test … -- <xcodebuild flags…>`. The new flags
+  are mutually exclusive with `--rerun` / `--rerun-failed` for the
+  same reason positional `extraArgs` already were.
+- When `vch test` rejects an invocation containing an obvious
+  xcodebuild flag (e.g. `--testPlan`, `-resultBundlePath`,
+  `-parallel-testing-enabled`), vch now emits an actionable hint
+  after ArgumentParser's "Unknown option" line — pointing either
+  at the new first-class flag (when one exists) or at the
+  `vch test … -- -<flag> <value>` pass-through form (#86). The
+  hint detector is a pure helper in `VibeChardCore.Logic` so it's
+  unit-tested without booting the CLI.
+
 ### Changed
 - New `VchCLISmokeTests` test target forks the real `vch` binary and
   asserts both directions of the subcommand registry: every name in

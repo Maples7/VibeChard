@@ -202,7 +202,7 @@ warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板
 | `vch <name>` | 进入 worktree shell，隔离环境与 PATH shim 已就绪。 |
 | `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |
 | `vch build <name>` | 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`（`--scheme`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--verbose`）。 |
-| `vch test <name>` | 跑 `xcodebuild test`，注入 `-resultBundlePath`，懒克隆模拟器（`--device`、`--runtime`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
+| `vch test <name>` | 跑 `xcodebuild test`，注入 `-resultBundlePath`，懒克隆模拟器（`--device`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
 | `vch run <name>` | 在任务的模拟器克隆上构建、安装并启动 App（`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
 | `vch logs <name>` | 打印任务最近一次构建/测试的完整 xcodebuild 日志（`--test`/`--build`）。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆。 |
