@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-12
+
 ### Fixed
 - `vch <build|test|run>` now appends an actionable hint after
   `Error: Unknown option '--<flag>'` whenever the rejected token
