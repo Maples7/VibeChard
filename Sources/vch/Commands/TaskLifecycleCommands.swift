@@ -616,7 +616,7 @@ struct RemoveCommand: ParsableCommand {
     var allowDirty: Bool = false
 
     @Flag(name: .long,
-          help: "Force-remove even when an editor or shell is still holding files inside the worktree (#65).")
+          help: "Force-remove even when an editor or shell is still holding files inside the worktree.")
     var force: Bool = false
 
     @Flag(name: .long,

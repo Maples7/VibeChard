@@ -46,10 +46,10 @@ struct RunCommand: ParsableCommand {
     @Option(name: .long, help: "Pin the simulator runtime (e.g. 'iOS 26.4', 'watchOS 11.5', 'visionOS 2.5', or the full SimRuntime identifier). Useful when multiple runtimes share the same device name.")
     var runtime: String?
 
-    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before installing. Wipes UserDefaults, app containers, and other state inherited from the template (#68). Adds ~10–20s; off by default.")
+    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before installing. Wipes UserDefaults, app containers, and other state inherited from the template. Adds ~10–20s; off by default.")
     var eraseClone: Bool = false
 
-    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default per hard rule #9: vch never auto-touches shared resources without an opt-in (#66).")
+    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default: vch never auto-touches shared resources without an opt-in.")
     var shutdownTemplate: Bool = false
 
     @Argument(parsing: .postTerminator,

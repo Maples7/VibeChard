@@ -112,7 +112,7 @@ struct DoctorCommand: ParsableCommand {
         }
 
         if !report.warmTemplates.isEmpty {
-            print("warm templates (#47, lifetime is user-managed — doctor never auto-cleans):")
+            print("warm templates (lifetime is user-managed — doctor never auto-cleans):")
             for t in report.warmTemplates {
                 print("  - \(t.deviceName) / \(t.runtimeLabel)  [\(t.humanHealthLabel)]  (\(t.udid.prefix(8))…)")
             }

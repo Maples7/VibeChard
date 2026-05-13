@@ -238,10 +238,10 @@ struct BuildCommand: ParsableCommand {
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
-    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before building. Wipes UserDefaults, app containers, and other state inherited from the template (#68). Adds ~10–20s; off by default.")
+    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before building. Wipes UserDefaults, app containers, and other state inherited from the template. Adds ~10–20s; off by default.")
     var eraseClone: Bool = false
 
-    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default per hard rule #9: vch never auto-touches shared resources without an opt-in (#66).")
+    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default: vch never auto-touches shared resources without an opt-in.")
     var shutdownTemplate: Bool = false
 
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-build.log (see `vch logs <name> --build`).")
@@ -279,7 +279,7 @@ struct TestCommand: ParsableCommand {
         discussion: """
             For the common case — narrow a run to one suite or function —
             use the first-class `--only-testing` / `--skip-testing` flags
-            (repeatable, #86):
+            (repeatable):
 
               # Run only one test class:
               vch test mytask --scheme MyScheme --device 'iPhone 16' \\
@@ -320,10 +320,10 @@ struct TestCommand: ParsableCommand {
     @Flag(name: .long, help: "Skip vch's lazy `simctl clone`; pass --device through as-is.")
     var noSim: Bool = false
 
-    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before testing. Wipes UserDefaults, app containers, and other state inherited from the template — useful when a test depends on first-launch defaults but the template was used interactively (#68). Adds ~10–20s; off by default.")
+    @Flag(name: .long, help: "Run `simctl shutdown && simctl erase` on the per-task clone before testing. Wipes UserDefaults, app containers, and other state inherited from the template — useful when a test depends on first-launch defaults but the template was used interactively. Adds ~10–20s; off by default.")
     var eraseClone: Bool = false
 
-    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default per hard rule #9: vch never auto-touches shared resources without an opt-in (#66).")
+    @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default: vch never auto-touches shared resources without an opt-in.")
     var shutdownTemplate: Bool = false
 
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-test.log (see `vch logs <name>`).")
@@ -336,11 +336,11 @@ struct TestCommand: ParsableCommand {
     var rerunFailed: Bool = false
 
     @Option(name: .long, parsing: .singleValue,
-            help: "Narrow this run to one test identifier (`Target/Suite`, `Target/Suite/case()`, etc.). Translates to `xcodebuild -only-testing:<id>`; repeat the flag to combine selectors (#86).")
+            help: "Narrow this run to one test identifier (`Target/Suite`, `Target/Suite/case()`, etc.). Translates to `xcodebuild -only-testing:<id>`; repeat the flag to combine selectors.")
     var onlyTesting: [String] = []
 
     @Option(name: .long, parsing: .singleValue,
-            help: "Exclude one test identifier from this run (same shape as `--only-testing`). Translates to `xcodebuild -skip-testing:<id>`; repeatable (#86).")
+            help: "Exclude one test identifier from this run (same shape as `--only-testing`). Translates to `xcodebuild -skip-testing:<id>`; repeatable.")
     var skipTesting: [String] = []
 
     @Argument(parsing: .postTerminator,
