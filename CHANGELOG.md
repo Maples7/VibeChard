@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.7.0 - 2026-05-14
+
 ### Breaking
 - `vch sim info --json` output schema changed (#99). Pre-#99 it
   emitted `{"task": "...", "bound": {...} | null }` — a single
