@@ -173,16 +173,17 @@ Xcode 빌드 캡시 무효화로 서로를 막는 일이 없습니다. 서로 �
 `vch test` 를 동시에 돌려도 Core Data 스토어 충돌이나 시뮬레이터 뎍어쓰기가
 일어나지 않습니다.
 
-vch 를 스크립트로 돌릴 때(예: 에이전트 구동)는 `.vch/state.json` 을 직접
-읽는 대신 안정적인 `vch state <name> --field <dotted>` 접근자를 쓰세요:
+build/test 루프를 스크립트로 돌릴 때는 raw
+`vch exec ... xcodebuild ...` 보다 `vch build` / `vch test` 를 우선하세요.
+상위 명령은 간결한 요약, 로그, result bundle 경로를 함께 관리합니다:
 
 ```sh
-udid=$(vch state task-a --field simulator.udid)
-vch exec task-a -- xcodebuild test \
-  -scheme MyApp \
-  -destination "platform=iOS Simulator,id=$udid" \
-  -only-testing:MyAppTests/Foo
+vch test task-a --scheme MyApp --device 'iPhone 16' \
+  --only-testing MyAppTests/Foo
 ```
+
+저수준 도구를 직접 호출해야 할 때도 `.vch/state.json` 을 직접 읽는 대신
+안정적인 `vch state <name> --field <dotted>` 접근자를 쓰세요.
 
 ## Cookbook
 

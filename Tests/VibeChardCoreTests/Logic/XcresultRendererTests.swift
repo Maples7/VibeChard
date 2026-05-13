@@ -73,14 +73,15 @@ final class XcresultRendererTests: XCTestCase {
                       "unknown branch must surface the log path; got: \(out)")
     }
 
-    func testKnownStatusDoesNotAppendLogPathHint() {
-        // The hint is unknown-branch only — succeeded / failed runs
-        // already give the user enough to act on without a log dump.
+    func testKnownStatusAppendsArtifactPathHints() {
         let s = makeSummary(status: .succeeded, passed: 1, failed: 0)
         let out = XcresultRenderer.render(s, colorize: false,
-                                          logPath: "/tmp/x/.vch/last-test.log")
-        XCTAssertFalse(out.contains("→ log:"),
-                       "log path must not be appended on succeeded runs")
+                                          logPath: "/tmp/x/.vch/last-test.log",
+                                          resultBundlePath: "/tmp/x/.agent-build/Result.xcresult")
+        XCTAssertTrue(out.contains("→ log: /tmp/x/.vch/last-test.log"),
+                      "known-status xcresult summaries should surface the full log path; got: \(out)")
+        XCTAssertTrue(out.contains("→ result: /tmp/x/.agent-build/Result.xcresult"),
+                      "xcresult summaries should surface the result bundle path; got: \(out)")
     }
 
     func testNoColorWhenDisabled() {

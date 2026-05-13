@@ -93,6 +93,13 @@ If you reach for an xcodebuild flag directly (e.g. `--testPlan`),
 vch will emit an actionable hint pointing at the right invocation
 shape instead of just rejecting the flag.
 
+Prefer `vch test` over raw `vch exec <task> -- xcodebuild test ...`
+for everyday rerun loops: the high-level command clears vch's
+task-local result bundle when needed, writes the full firehose to
+`.vch/last-test.log`, and prints the result bundle path in the
+summary. Raw `vch exec` remains useful as an escape hatch, but it
+does not tee or summarize xcodebuild output.
+
 Once you have a failing run, `vch test foo --rerun-failed` replays
 only the failed cases without re-typing the identifier — vch reads
 them out of the recorded xcresult bundle.

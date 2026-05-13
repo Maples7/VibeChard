@@ -166,17 +166,18 @@ vch new task-b
 Xcode 建置快取失效互相阻塞。從不同 shell 同時跑幾個 `vch test` 也
 不會撞 Core Data 資料庫或抶同一個模擬器。
 
-如果你為 vch 寫腳本（例如驅動 agent），請優先使用穩定的
-`vch state <name> --field <dotted>` 介面，不要直接讀
-`.vch/state.json`：
+如果你要把 build/test 迴圈寫進腳本，請優先使用 `vch build` /
+`vch test`，而不是裸跑 `vch exec ... xcodebuild ...`；高階命令會
+保留簡潔摘要、日誌和 result bundle 路徑：
 
 ```sh
-udid=$(vch state task-a --field simulator.udid)
-vch exec task-a -- xcodebuild test \
-  -scheme MyApp \
-  -destination "platform=iOS Simulator,id=$udid" \
-  -only-testing:MyAppTests/Foo
+vch test task-a --scheme MyApp --device 'iPhone 16' \
+  --only-testing MyAppTests/Foo
 ```
+
+如果確實需要呼叫底層工具，請優先使用穩定的
+`vch state <name> --field <dotted>` 介面，不要直接讀
+`.vch/state.json`。
 
 ## Cookbook
 

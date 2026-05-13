@@ -170,16 +170,18 @@ Xcode ビルドキャッシュの無効化で互いをブロックすること�
 複数の `vch test` を同時に走らせても Core Data ストアの衝突やシミュレーターの
 上書きは起きません。
 
-vch をスクリプトから驅動する場合（例：エージェントを回す）は、`.vch/state.json`
-を手読みするより安定した `vch state <name> --field <dotted>` を使ってください：
+build/test ループをスクリプト化する場合は、生の
+`vch exec ... xcodebuild ...` より `vch build` / `vch test` を優先して
+ください。高レベルコマンドは簡潔なサマリー、ログ、result bundle のパスを
+そのまま扱えます：
 
 ```sh
-udid=$(vch state task-a --field simulator.udid)
-vch exec task-a -- xcodebuild test \
-  -scheme MyApp \
-  -destination "platform=iOS Simulator,id=$udid" \
-  -only-testing:MyAppTests/Foo
+vch test task-a --scheme MyApp --device 'iPhone 16' \
+  --only-testing MyAppTests/Foo
 ```
+
+低レベルのツールを直接呼ぶ必要がある場合も、`.vch/state.json` を
+手読みするより安定した `vch state <name> --field <dotted>` を使ってください。
 
 ## Cookbook
 

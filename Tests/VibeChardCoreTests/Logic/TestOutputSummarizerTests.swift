@@ -260,7 +260,7 @@ final class TestOutputSummarizerTests: XCTestCase {
                       "unknown branch must surface the log path; got: \(rendered)")
     }
 
-    func testRenderKnownStatusDoesNotAppendLogPathHint() {
+    func testRenderKnownStatusAppendsArtifactPathHints() {
         let s = TestOutputSummarizer()
         feed(s, """
         Test Suite 'All tests' started at t
@@ -277,8 +277,11 @@ final class TestOutputSummarizerTests: XCTestCase {
         ** TEST SUCCEEDED **
         """)
         let rendered = s.render(colorize: false,
-                                logPath: "/tmp/x/.vch/last-test.log")
-        XCTAssertFalse(rendered.contains("→ log:"),
-                       "log path must not be appended on succeeded runs")
+                                logPath: "/tmp/x/.vch/last-test.log",
+                                resultBundlePath: "/tmp/x/.agent-build/Result.xcresult")
+        XCTAssertTrue(rendered.contains("→ log: /tmp/x/.vch/last-test.log"),
+                      "known-status test summaries should surface the full log path; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("→ result: /tmp/x/.agent-build/Result.xcresult"),
+                      "test summaries should surface the result bundle path; got: \(rendered)")
     }
 }

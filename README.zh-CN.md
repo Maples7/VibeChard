@@ -168,17 +168,18 @@ vch new task-b
 Xcode 构建缓存失效互相阻塞。从不同 shell 同时跑几个 `vch test` 也
 不会撞 Core Data 数据库或抢同一个模拟器。
 
-如果你给 vch 写脚本（比如驱动 agent），优先使用稳定的
-`vch state <name> --field <dotted>` 接口，不要直接读
-`.vch/state.json`：
+如果你要把 build/test 循环写进脚本，优先用 `vch build` /
+`vch test`，而不是裸跑 `vch exec ... xcodebuild ...`；高层命令会
+保留简洁摘要、日志和 result bundle 路径：
 
 ```sh
-udid=$(vch state task-a --field simulator.udid)
-vch exec task-a -- xcodebuild test \
-  -scheme MyApp \
-  -destination "platform=iOS Simulator,id=$udid" \
-  -only-testing:MyAppTests/Foo
+vch test task-a --scheme MyApp --device 'iPhone 16' \
+  --only-testing MyAppTests/Foo
 ```
+
+如果确实需要调用底层工具，优先使用稳定的
+`vch state <name> --field <dotted>` 接口，不要直接读
+`.vch/state.json`。
 
 ## Cookbook
 

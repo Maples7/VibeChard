@@ -207,6 +207,77 @@ final class ShimIntegrationTests: XCTestCase {
                        "shim must not mkdir paths it didn't inject")
     }
 
+    func test_xcodebuild_removes_stale_injected_result_bundle() throws {
+        let xc = try makeShimSymlink(named: "xcodebuild")
+        let resultBundle = tmp.appendingPathComponent("stale/Result.xcresult")
+        try FileManager.default.createDirectory(
+            at: resultBundle,
+            withIntermediateDirectories: true
+        )
+        try "old".write(
+            to: resultBundle.appendingPathComponent("Info.plist"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let res = try runShim(
+            argv0: xc,
+            userArgs: ["test"],
+            extraEnv: ["VCH_RESULT_BUNDLE_PATH": resultBundle.path]
+        )
+        XCTAssertEqual(res.exitCode, 0, "stderr: \(res.stderr)")
+        XCTAssertEqual(res.capturedArgv, [
+            "-resultBundlePath", resultBundle.path,
+            "test",
+        ])
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: resultBundle.path),
+            "shim should remove stale vch-injected result bundle before xcodebuild starts"
+        )
+        var isDir: ObjCBool = false
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: resultBundle.deletingLastPathComponent().path,
+                isDirectory: &isDir
+            ) && isDir.boolValue,
+            "shim should still ensure the result bundle parent exists"
+        )
+    }
+
+    func test_xcodebuild_preserves_result_bundle_when_user_passed_flag() throws {
+        let xc = try makeShimSymlink(named: "xcodebuild")
+        let envBundle = tmp.appendingPathComponent("env/Result.xcresult")
+        let userBundle = tmp.appendingPathComponent("user/Result.xcresult")
+        try FileManager.default.createDirectory(
+            at: envBundle,
+            withIntermediateDirectories: true
+        )
+        try "old".write(
+            to: envBundle.appendingPathComponent("Info.plist"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let res = try runShim(
+            argv0: xc,
+            userArgs: ["-resultBundlePath", userBundle.path, "test"],
+            extraEnv: ["VCH_RESULT_BUNDLE_PATH": envBundle.path]
+        )
+        XCTAssertEqual(res.exitCode, 0, "stderr: \(res.stderr)")
+        XCTAssertEqual(res.capturedArgv, [
+            "-resultBundlePath", userBundle.path,
+            "test",
+        ])
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: envBundle.path),
+            "user-supplied -resultBundlePath means the shim did not inject or remove the env bundle"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: userBundle.deletingLastPathComponent().path),
+            "shim should not create directories for user-supplied result bundle paths"
+        )
+    }
+
     func test_xcrun_does_not_inject_anything() throws {
         let xcrun = try makeShimSymlink(named: "xcrun")
         let derived = tmp.appendingPathComponent("DerivedData").path
@@ -219,6 +290,27 @@ final class ShimIntegrationTests: XCTestCase {
         XCTAssertEqual(res.exitCode, 0, "stderr: \(res.stderr)")
         XCTAssertEqual(res.capturedArgv, ["-f", "swift"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: derived))
+    }
+
+    func test_non_xcodebuild_tools_do_not_remove_env_result_bundle() throws {
+        let xcrun = try makeShimSymlink(named: "xcrun")
+        let resultBundle = tmp.appendingPathComponent("env/Result.xcresult")
+        try FileManager.default.createDirectory(
+            at: resultBundle,
+            withIntermediateDirectories: true
+        )
+
+        let res = try runShim(
+            argv0: xcrun,
+            userArgs: ["-f", "swift"],
+            extraEnv: ["VCH_RESULT_BUNDLE_PATH": resultBundle.path]
+        )
+        XCTAssertEqual(res.exitCode, 0, "stderr: \(res.stderr)")
+        XCTAssertEqual(res.capturedArgv, ["-f", "swift"])
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: resultBundle.path),
+            "non-xcodebuild shim invocations must not remove result bundles from env"
+        )
     }
 
     func test_swift_does_not_inject_xcodebuild_flags() throws {

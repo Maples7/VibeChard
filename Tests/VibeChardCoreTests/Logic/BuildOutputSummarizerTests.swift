@@ -182,13 +182,13 @@ final class BuildOutputSummarizerTests: XCTestCase {
                       "unknown build branch must surface the log path; got: \(out)")
     }
 
-    func testKnownBuildStatusDoesNotAppendLogPathHint() {
+    func testKnownBuildStatusAppendsLogPathHint() {
         let s = BuildOutputSummarizer()
         s.feed("** BUILD SUCCEEDED **")
         let out = s.render(durationSeconds: 1.0, colorize: false,
                            logPath: "/tmp/x/.vch/last-build.log")
-        XCTAssertFalse(out.contains("→ log:"),
-                       "log path must not be appended on succeeded builds")
+        XCTAssertTrue(out.contains("→ log: /tmp/x/.vch/last-build.log"),
+                      "known-status build summaries should surface the full log path; got: \(out)")
     }
 
     func testCapsErrorListAtTwenty() {

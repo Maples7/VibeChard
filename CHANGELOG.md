@@ -8,6 +8,28 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+### Changed
+- `vch build` and `vch test` summaries now repeat the relevant
+  artifact paths at the end of every run: build summaries include the
+  full log path, while test summaries include both the full log path
+  and the task-local `.xcresult` path (#93). This keeps the useful
+  inspection handles visible even when the launch banner has scrolled
+  out of an agent transcript.
+
+### Fixed
+- Raw `vch exec <task> -- xcodebuild test ...` invocations no longer
+  fail on rerun solely because vch's injected task-local
+  `.agent-build/Result.xcresult` already exists (#93). The shim now
+  clears only the vch-owned result bundle path it injected from
+  `VCH_RESULT_BUNDLE_PATH`; user-supplied `-resultBundlePath` values
+  are never removed.
+
+### Docs
+- README and command docs now steer normal build/test loops toward
+  `vch build` / `vch test`, while documenting `vch exec ...
+  xcodebuild ...` as a raw escape hatch that preserves isolation but
+  does not tee or summarize xcodebuild output (#93).
+
 ## [0.6.1] - 2026-05-12
 
 ### Fixed

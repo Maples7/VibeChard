@@ -16,10 +16,16 @@ import Foundation
 /// breakdown can pass `--verbose` to mirror xcodebuild's full log.
 public enum XcresultRenderer {
 
-    /// `logPath` (#69) is appended on the trailing line when the run
-    /// status is `.unknown`, so the user can tail the firehose
-    /// without scrolling back to the launch banner.
-    public static func render(_ summary: XcresultSummary, colorize: Bool, logPath: String? = nil) -> String {
+    /// `logPath` / `resultBundlePath` (#69/#93) are appended as
+    /// compact trailing artifact lines when present, so the user can
+    /// inspect the full firehose or xcresult without scrolling back
+    /// to the launch banner.
+    public static func render(
+        _ summary: XcresultSummary,
+        colorize: Bool,
+        logPath: String? = nil,
+        resultBundlePath: String? = nil
+    ) -> String {
         var out: [String] = []
 
         // Failures first — same convention as `TestOutputSummarizer`.
@@ -49,9 +55,11 @@ public enum XcresultRenderer {
             head = "? test status unknown — see full log"
         }
         out.append(head)
-        // #69: same trailing log-path hint as `TestOutputSummarizer`.
-        if summary.status == .unknown, let path = logPath, !path.isEmpty {
+        if let path = logPath, !path.isEmpty {
             out.append("   → log: \(path)")
+        }
+        if let path = resultBundlePath, !path.isEmpty {
+            out.append("   → result: \(path)")
         }
         return out.joined(separator: "\n")
     }

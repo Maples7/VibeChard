@@ -184,17 +184,17 @@ can run several `vch test` invocations concurrently from different
 shells without a single Core Data store collision or simulator
 clobber.
 
-If you script around vch (e.g. driving an agent), prefer the stable
-`vch state <name> --field <dotted>` accessor over reading
-`.vch/state.json` by hand:
+For scripted build/test loops, prefer `vch build` / `vch test` over
+raw `vch exec ... xcodebuild ...`; the high-level commands keep
+concise summaries, logs, and result bundles wired up:
 
 ```sh
-udid=$(vch state task-a --field simulator.udid)
-vch exec task-a -- xcodebuild test \
-  -scheme MyApp \
-  -destination "platform=iOS Simulator,id=$udid" \
-  -only-testing:MyAppTests/Foo
+vch test task-a --scheme MyApp --device 'iPhone 16' \
+  --only-testing MyAppTests/Foo
 ```
+
+If you need raw tools, prefer the stable `vch state <name> --field
+<dotted>` accessor over reading `.vch/state.json` by hand.
 
 ## Cookbook
 
