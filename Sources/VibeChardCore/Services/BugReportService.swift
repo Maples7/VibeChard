@@ -92,18 +92,25 @@ public struct BugReportService: Sendable {
         var perTaskNotes: [String] = []
         for entry in porcelain {
             if entry.path == workspace.mainWorktreePath { continue }
-            guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
-
             let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
+            var raw = workspace.taskNameRaw(forWorktreePath: entry.path)
             if fs.fileExists(at: statePath), let data = try? fs.readFile(at: statePath) {
+                if let state = try? TaskState.parse(data) {
+                    raw = state.name
+                }
+                let taskLabel = raw ?? URL(fileURLWithPath: entry.path).lastPathComponent
+                raw = taskLabel
                 entries.append(BugReportEntry(
-                    path: "tasks/\(raw)/state.json",
+                    path: "tasks/\(taskLabel)/state.json",
                     data: scrub(data, map: homeMap)
                 ))
             } else {
-                perTaskNotes.append("\(raw): no state.json on disk")
+                guard let taskLabel = raw else { continue }
+                raw = taskLabel
+                perTaskNotes.append("\(taskLabel): no state.json on disk")
             }
 
+            guard let raw else { continue }
             let logPath = PathOps.join(entry.path, Workspace.lastTestLogRelativePath)
             if fs.fileExists(at: logPath), let data = try? fs.readFile(at: logPath) {
                 let capped: Data

@@ -176,6 +176,43 @@ final class WorkspaceLocatorIntegrationTests: XCTestCase {
                      "leaf 'sidecar' doesn't match 'Repo-<task>' so resolution must fall back to nil")
     }
 
+    func testLocateIndexesAdoptedWorktreeStateAtArbitraryPath() throws {
+        let workspace = try makeRepo()
+        let adoptedPath = workspace.parentDirectory + "/codex-session"
+        let runner = DiskProcessRunner()
+        try requireSuccess(runner.run(
+            "/usr/bin/git",
+            args: ["worktree", "add", "-b", "feature/codex", adoptedPath],
+            cwd: workspace.mainWorktreePath,
+            env: gitEnv()
+        ))
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        try FileManager.default.createDirectory(
+            atPath: "\(adoptedPath)/.vch",
+            withIntermediateDirectories: true
+        )
+        try state.jsonData().write(to: URL(fileURLWithPath: "\(adoptedPath)/.vch/state.json"))
+
+        let located = try WorkspaceLocator.locate(cwd: workspace.mainWorktreePath)
+        XCTAssertEqual(
+            located.worktreePath(for: try TaskName("codex-task")),
+            adoptedPath
+        )
+
+        let resolved = try WorkspaceLocator.resolveCurrent(cwd: adoptedPath)
+        XCTAssertEqual(resolved.taskName?.raw, "codex-task")
+        XCTAssertEqual(
+            resolved.workspace.worktreePath(for: try TaskName("codex-task")),
+            adoptedPath
+        )
+    }
+
     func testResolveCurrentRejectsNonGitDirectory() throws {
         let plainDir = rootDir.appendingPathComponent("not-a-repo").path
         try FileManager.default.createDirectory(atPath: plainDir, withIntermediateDirectories: true)

@@ -141,6 +141,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. Driving an agent inside the worktree:
 vch new fix-toast --exec "claude"     # spawns claude inside the isolated worktree
 vch new triage --copy-untracked       # also bring over .env / .vscode / etc.
+vch new codex-fix --adopt-current     # adopt this linked worktree if an agent already made it
 vch exec fix-toast -- npm run lint    # one-shot command in the worktree
 
 # 5. Inspect & clean up
@@ -210,7 +211,7 @@ template trap, and pruning merged tasks.
 
 | Command | What it does |
 |---|---|
-| `vch new <name>` | Create worktree + `agent/<name>` branch (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--cd`). |
+| `vch new <name>` | Create worktree + `agent/<name>` branch (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--adopt-current`, `--cd`). |
 | `vch list` | List tasks in the workspace (`--json`, `-v`, `--git-status`). |
 | `vch state <name>` | Print `.vch/state.json` for a task (`--json`, `--field <dotted>`). |
 | `vch path <name>` | Print the absolute path of a task's worktree. |
@@ -225,7 +226,7 @@ template trap, and pruning merged tasks.
 | `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (iOS/watchOS/tvOS/visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47)/[#58](https://github.com/Maples7/VibeChard/issues/58)). |
 | `vch land <name>` | Merge `agent/<name>` back into its base and clean up (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
 | `vch sync <name>` | Fetch the base's upstream and rebase the task branch onto it (`--onto`, `--merge`, `--no-fetch`, `--dry-run`). |
-| `vch remove <name>` | Delete the worktree, branch, and sim clone (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
+| `vch remove <name>` | Delete vch-created worktree, branch, and sim clone; adopted tasks are unregistered only (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
 | `vch prune` | List or remove tasks whose branch is fully merged into its base (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
 | `vch clean <name>` | Delete the task's DerivedData / ModuleCache (`--swiftpm`, `--logs`, `--all`, `--dry-run`). |

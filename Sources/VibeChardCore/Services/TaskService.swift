@@ -156,25 +156,17 @@ public struct TaskService: Sendable {
             throw VibeChardError.worktreeAlreadyExists(path: wtPath)
         }
 
+        if let existing = try managedWorktreePath(for: task) {
+            throw VibeChardError.worktreeAlreadyExists(path: existing)
+        }
+
         if try git.branchExists(repoCwd: workspace.mainWorktreePath, name: task.branchName) {
             throw VibeChardError.worktreeAlreadyExists(path: wtPath)
         }
 
         // Validate `--seed-spm-from` *before* creating the worktree so
         // a user typo doesn't leave a half-initialised task behind.
-        if let src = seedSpmFrom {
-            let srcWt = workspace.worktreePath(for: src)
-            if !fs.directoryExists(at: srcWt) {
-                throw VibeChardError.seedSourceTaskNotFound(name: src.raw)
-            }
-            let srcRepos = workspace.swiftpmRepositoriesDir(for: src)
-            if !fs.directoryExists(at: srcRepos) {
-                throw VibeChardError.seedSourceHasNoSwiftPMCache(
-                    name: src.raw,
-                    expectedPath: srcRepos
-                )
-            }
-        }
+        try validateSeedSource(seedSpmFrom)
 
         // Create the worktree + branch in one shot. Default base = HEAD of main worktree.
         let resolvedBase = baseRef ?? "HEAD"
@@ -209,7 +201,8 @@ public struct TaskService: Sendable {
             branch: task.branchName,
             createdAt: clock.now(),
             baseRef: baseShortSHA,
-            baseBranch: baseBranch
+            baseBranch: baseBranch,
+            worktreeOwnership: .vchCreated
         )
         try fs.writeFileAtomic(state.jsonData(), to: workspace.statePath(for: task))
 
@@ -233,6 +226,112 @@ public struct TaskService: Sendable {
         }
 
         return wtPath
+    }
+
+    /// Register an already-existing linked Git worktree as a vch task.
+    /// This intentionally skips `git worktree add` and branch creation:
+    /// the caller's tool already created the worktree. vch only writes
+    /// its own per-worktree state and scratch layout so build/test/exec
+    /// can use the normal isolation paths from this point on.
+    @discardableResult
+    public func adoptCurrentWorktree(
+        _ task: TaskName,
+        currentWorktreePath: String,
+        baseRef: String? = nil,
+        copyUntracked: Bool = false,
+        seedSpmFrom: TaskName? = nil
+    ) throws -> String {
+        let wtPath = Workspace(mainWorktreePath: currentWorktreePath).mainWorktreePath
+        if wtPath == workspace.mainWorktreePath {
+            throw VibeChardError.adoptCurrentRequiresLinkedWorktree(path: wtPath)
+        }
+        let worktreeEntries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+        let isLinkedWorktree = worktreeEntries.contains { entry in
+            Workspace(mainWorktreePath: entry.path).mainWorktreePath == wtPath
+                && wtPath != workspace.mainWorktreePath
+        }
+        if !isLinkedWorktree {
+            throw VibeChardError.adoptCurrentRequiresLinkedWorktree(path: wtPath)
+        }
+        guard fs.directoryExists(at: wtPath) else {
+            throw VibeChardError.taskNotFound(name: task.raw)
+        }
+
+        if let existing = try managedWorktreePath(for: task), existing != wtPath {
+            throw VibeChardError.worktreeAlreadyExists(path: existing)
+        }
+
+        let existingStatePath = PathOps.join(wtPath, Workspace.stateJsonRelativePath)
+        if fs.fileExists(at: existingStatePath) {
+            let existingName: String
+            if let data = try? fs.readFile(at: existingStatePath),
+               let state = try? TaskState.parse(data) {
+                existingName = state.name
+            } else {
+                existingName = "<corrupt>"
+            }
+            throw VibeChardError.adoptCurrentAlreadyManaged(path: wtPath, name: existingName)
+        }
+
+        try validateSeedSource(seedSpmFrom)
+
+        try? git.appendLocalExcludes(
+            worktreeCwd: wtPath,
+            patterns: Workspace.managedDirPrefixes
+        )
+
+        let resolvedBase: String
+        if let baseRef {
+            resolvedBase = (try? git.revParse(repoCwd: wtPath, ref: baseRef))
+                .map { String($0.prefix(7)) } ?? baseRef
+        } else {
+            resolvedBase = (try? git.revParseHEADShort(repoCwd: workspace.mainWorktreePath)) ?? "HEAD"
+        }
+        let branch = (try? git.currentBranch(repoCwd: wtPath)) ?? "HEAD"
+        let baseBranch = (try? git.currentBranch(repoCwd: workspace.mainWorktreePath)) ?? nil
+
+        try fs.createDirectory(at: PathOps.join(wtPath, ".vch"))
+        let state = TaskState(
+            name: task.raw,
+            branch: branch,
+            createdAt: clock.now(),
+            baseRef: resolvedBase,
+            baseBranch: baseBranch,
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(state.jsonData(), to: existingStatePath)
+
+        if copyUntracked {
+            _ = try copyUntrackedFiles(
+                from: workspace.mainWorktreePath,
+                to: wtPath
+            )
+        }
+
+        if let src = seedSpmFrom {
+            let srcRepos = workspace.swiftpmRepositoriesDir(for: src)
+            let effectiveWorkspace = workspace.withWorktreePath(wtPath, for: task)
+            let dstRepos = effectiveWorkspace.swiftpmRepositoriesDir(for: task)
+            try fs.createDirectory(at: effectiveWorkspace.swiftpmCacheDir(for: task))
+            try fs.cloneItem(from: srcRepos, to: dstRepos)
+        }
+
+        return wtPath
+    }
+
+    private func validateSeedSource(_ seedSpmFrom: TaskName?) throws {
+        guard let src = seedSpmFrom else { return }
+        let srcWt = workspace.worktreePath(for: src)
+        if !fs.directoryExists(at: srcWt) {
+            throw VibeChardError.seedSourceTaskNotFound(name: src.raw)
+        }
+        let srcRepos = workspace.swiftpmRepositoriesDir(for: src)
+        if !fs.directoryExists(at: srcRepos) {
+            throw VibeChardError.seedSourceHasNoSwiftPMCache(
+                name: src.raw,
+                expectedPath: srcRepos
+            )
+        }
     }
 
     /// Copy every untracked + non-ignored file from `sourceWorktree`
@@ -279,6 +378,26 @@ public struct TaskService: Sendable {
         return copied
     }
 
+    private func managedWorktreePath(for task: TaskName) throws -> String? {
+        let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+        for entry in entries {
+            if entry.path == workspace.mainWorktreePath { continue }
+
+            let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
+            if fs.fileExists(at: statePath),
+               let data = try? fs.readFile(at: statePath),
+               let state = try? TaskState.parse(data),
+               state.name == task.raw {
+                return entry.path
+            }
+
+            if workspace.taskNameRaw(forWorktreePath: entry.path) == task.raw {
+                return entry.path
+            }
+        }
+        return nil
+    }
+
     // MARK: - list
 
     /// Returns one summary per managed worktree, sorted by `createdAt`
@@ -290,8 +409,6 @@ public struct TaskService: Sendable {
         for entry in entries {
             // Skip the main worktree itself.
             if entry.path == workspace.mainWorktreePath { continue }
-            // Only consider entries whose leaf matches our `<repo>-<task>` pattern.
-            guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
 
             let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
             var state: TaskState? = nil
@@ -299,6 +416,15 @@ public struct TaskService: Sendable {
                 if let data = try? fs.readFile(at: statePath) {
                     state = try? TaskState.parse(data)
                 }
+            }
+
+            let raw: String
+            if let state {
+                raw = state.name
+            } else if let inferred = workspace.taskNameRaw(forWorktreePath: entry.path) {
+                raw = inferred
+            } else {
+                continue
             }
 
             summaries.append(TaskSummary(
@@ -418,15 +544,21 @@ public struct TaskService: Sendable {
         public static let forceAll = RemoveOptions(allowDirty: true, allowUnmergedBranch: true)
     }
 
-    /// Remove a task's worktree and delete its branch. Refuses by
-    /// default if the worktree is dirty; pass `allowDirty: true` to
-    /// override. Branch deletion uses `git branch -d` first; if the
-    /// branch is unmerged, falls back to `git branch -D` only when
-    /// `allowUnmergedBranch` is true.
+    /// Remove a task. vch-created tasks remove the Git worktree and
+    /// `agent/<name>` branch. Adopted tasks only unregister vch by
+    /// deleting vch-owned scratch directories; the externally-created
+    /// Git worktree and branch remain owned by the tool/user that made
+    /// them.
     public func removeTask(_ task: TaskName, options: RemoveOptions = .init()) throws {
         let wtPath = workspace.worktreePath(for: task)
         if !fs.directoryExists(at: wtPath) {
             throw VibeChardError.taskNotFound(name: task.raw)
+        }
+
+        let state = try? stateForTask(task)
+        if state?.worktreeOwnership == .adopted {
+            try removeAdoptedTaskArtifacts(task)
+            return
         }
 
         if !options.allowDirty {
@@ -452,6 +584,17 @@ public struct TaskService: Sendable {
             } else {
                 throw VibeChardError.unmergedBranch(name: branch)
             }
+        }
+    }
+
+    private func removeAdoptedTaskArtifacts(_ task: TaskName) throws {
+        let vchDir = workspace.vchDir(for: task)
+        if fs.directoryExists(at: vchDir) || fs.fileExists(at: vchDir) {
+            try fs.removeItem(at: vchDir)
+        }
+        let buildDir = workspace.agentBuildDir(for: task)
+        if fs.directoryExists(at: buildDir) || fs.fileExists(at: buildDir) {
+            try fs.removeItem(at: buildDir)
         }
     }
 
@@ -481,21 +624,32 @@ public struct TaskService: Sendable {
         let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
         for entry in entries {
             if entry.path == workspace.mainWorktreePath { continue }
-            guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
-            report.checkedTasks.append(raw)
 
             let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
+            if fs.fileExists(at: statePath) {
+                do {
+                    let data = try fs.readFile(at: statePath)
+                    let state = try TaskState.parse(data)
+                    report.checkedTasks.append(state.name)
+                } catch let err as VibeChardError {
+                    let raw = workspace.taskNameRaw(forWorktreePath: entry.path)
+                        ?? URL(fileURLWithPath: entry.path).lastPathComponent
+                    report.checkedTasks.append(raw)
+                    report.problems.append("\(raw): \(err)")
+                } catch {
+                    let raw = workspace.taskNameRaw(forWorktreePath: entry.path)
+                        ?? URL(fileURLWithPath: entry.path).lastPathComponent
+                    report.checkedTasks.append(raw)
+                    report.problems.append("\(raw): \(error)")
+                }
+                continue
+            }
+
+            guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
+            report.checkedTasks.append(raw)
             guard fs.fileExists(at: statePath) else {
                 report.problems.append("\(raw): missing \(Workspace.stateJsonRelativePath)")
                 continue
-            }
-            do {
-                let data = try fs.readFile(at: statePath)
-                _ = try TaskState.parse(data)
-            } catch let err as VibeChardError {
-                report.problems.append("\(raw): \(err)")
-            } catch {
-                report.problems.append("\(raw): \(error)")
             }
         }
         return report

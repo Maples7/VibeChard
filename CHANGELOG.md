@@ -8,6 +8,15 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- `vch new <name> --adopt-current` can register the current linked
+  Git worktree as a vch task without creating another worktree, while
+  still initializing `.vch/state.json` and the task-local build
+  isolation paths for `build` / `test` / `exec` / `run` (#97).
+- `vch remove <name>` now unregisters adopted tasks by deleting only
+  vch-owned `.vch/` and `.agent-build/` contents, leaving the external
+  Git worktree and branch intact (#97).
+
 ## 0.6.2 - 2026-05-13
 
 ### Changed

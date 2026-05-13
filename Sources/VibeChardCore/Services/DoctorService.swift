@@ -118,17 +118,20 @@ public struct DoctorService: Sendable {
         let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
         for entry in entries {
             if entry.path == workspace.mainWorktreePath { continue }
-            guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path) else { continue }
-            report.checkedTasks.append(raw)
 
             let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
+            let inferredRaw = workspace.taskNameRaw(forWorktreePath: entry.path)
             guard fs.fileExists(at: statePath) else {
+                guard let raw = inferredRaw else { continue }
+                report.checkedTasks.append(raw)
                 report.stateProblems.append("\(raw): missing \(Workspace.stateJsonRelativePath)")
                 continue
             }
             do {
                 let data = try fs.readFile(at: statePath)
                 let state = try TaskState.parse(data)
+                let raw = state.name
+                report.checkedTasks.append(raw)
                 if let sim = state.simulator {
                     boundByUDID[sim.cloneUDID] = StaleBinding(
                         taskName: raw,
@@ -137,8 +140,12 @@ public struct DoctorService: Sendable {
                     )
                 }
             } catch let err as VibeChardError {
+                let raw = inferredRaw ?? URL(fileURLWithPath: entry.path).lastPathComponent
+                report.checkedTasks.append(raw)
                 report.stateProblems.append("\(raw): \(err)")
             } catch {
+                let raw = inferredRaw ?? URL(fileURLWithPath: entry.path).lastPathComponent
+                report.checkedTasks.append(raw)
                 report.stateProblems.append("\(raw): \(error)")
             }
         }

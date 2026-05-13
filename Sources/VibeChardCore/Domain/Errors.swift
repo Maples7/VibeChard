@@ -18,6 +18,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case stateFileCorrupt(path: String, underlying: String)
     case stateSchemaMismatch(found: Int, expected: Int)
     case stateFileMissing(path: String)
+    case adoptCurrentRequiresLinkedWorktree(path: String)
+    case adoptCurrentAlreadyManaged(path: String, name: String)
     case simulatorTemplateNotFound(name: String)
     case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
     /// `xcrun simctl clone` refused because the source template is in
@@ -152,6 +154,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "state schema v\(found) does not match this vch (expected v\(expected)); run `vch repair`"
         case let .stateFileMissing(path):
             return "state file missing at \(path) (run `vch repair`)"
+        case let .adoptCurrentRequiresLinkedWorktree(path):
+            return "--adopt-current requires running from a linked worktree, not the main worktree at \(path)"
+        case let .adoptCurrentAlreadyManaged(path, name):
+            return "current worktree is already managed by vch as '\(name)' at \(path)"
         case let .simulatorTemplateNotFound(name):
             return "no available simulator template named '\(name)' (try `xcrun simctl list devices available`)"
         case let .simulatorAlreadyBound(task, current, requested):

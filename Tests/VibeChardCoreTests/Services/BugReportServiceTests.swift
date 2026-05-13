@@ -75,6 +75,39 @@ final class BugReportServiceTests: XCTestCase {
         XCTAssertFalse(paths.contains { $0.contains("tasks/Repo") })
     }
 
+    func testCollectIncludesAdoptedWorktreeAtArbitraryPath() throws {
+        let workspace = Workspace(mainWorktreePath: "/Users/test/Repo")
+        let git = FakeGitClient()
+        git.entries = [
+            WorktreeEntry(path: "/Users/test/Repo", branch: "main"),
+            WorktreeEntry(path: "/Users/test/codex-session", branch: "feature/codex"),
+        ]
+        let fs = InMemoryFileSystem()
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbeef",
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(
+            state.jsonData(),
+            to: "/Users/test/codex-session/.vch/state.json"
+        )
+
+        let service = BugReportService(
+            workspace: workspace,
+            git: git,
+            fs: fs,
+            runner: ScriptedRunner(),
+            now: { Date(timeIntervalSince1970: 1_700_000_000) },
+            homeDir: { "/Users/test" }
+        )
+
+        let paths = try service.collect().map(\.path)
+        XCTAssertTrue(paths.contains("tasks/codex-task/state.json"))
+    }
+
     func testLastTestLogIsCappedToTailBytes() throws {
         let workspace = Workspace(mainWorktreePath: "/Users/test/Repo")
         let git = FakeGitClient()

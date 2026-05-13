@@ -85,6 +85,29 @@ final class DoctorServiceTests: XCTestCase {
         XCTAssertFalse(report.hasFindings)
     }
 
+    func testDiagnoseIncludesAdoptedWorktreeWithArbitraryPath() throws {
+        let (svc, fs, git, _) = makeService()
+        let adoptedPath = "/repos/codex-session"
+        fs.seedDirectory(adoptedPath)
+        git.entries.append(WorktreeEntry(path: adoptedPath, branch: "feature/codex"))
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(
+            "\(adoptedPath)/.vch/state.json",
+            data: try state.jsonData()
+        )
+
+        let report = try svc.diagnose()
+
+        XCTAssertEqual(report.checkedTasks, ["codex-task"])
+        XCTAssertTrue(report.stateProblems.isEmpty)
+    }
+
     // MARK: - orphan clones
 
     func testDiagnoseDetectsOrphanCloneFromKeepSim() throws {

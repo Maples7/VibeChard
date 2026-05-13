@@ -27,6 +27,16 @@ final class WorkspaceTests: XCTestCase {
         XCTAssertEqual(ws.lastTestLogPath(for: task), "/Users/me/BeanLedger-auth-redesign/.vch/last-test.log")
     }
 
+    func testWorktreePathUsesExplicitTaskPathOverride() throws {
+        let task = try TaskName("auth-redesign")
+        let ws = Workspace(mainWorktreePath: "/Users/me/BeanLedger")
+            .withWorktreePath("/Users/me/agent-session/", for: task)
+
+        XCTAssertEqual(ws.worktreePath(for: task), "/Users/me/agent-session")
+        XCTAssertEqual(ws.statePath(for: task), "/Users/me/agent-session/.vch/state.json")
+        XCTAssertEqual(ws.derivedDataDir(for: task), "/Users/me/agent-session/.agent-build/DerivedData")
+    }
+
     func testTaskNameRawFromWorktreePath() {
         let ws = Workspace(mainWorktreePath: "/Users/me/BeanLedger")
         XCTAssertEqual(ws.taskNameRaw(forWorktreePath: "/Users/me/BeanLedger-foo"), "foo")

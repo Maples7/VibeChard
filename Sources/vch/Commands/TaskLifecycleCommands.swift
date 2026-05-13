@@ -43,6 +43,17 @@ struct NewCommand: ParsableCommand {
     )
     var seedSpmFrom: String?
 
+    @Flag(
+        name: .long,
+        help: ArgumentHelp(
+            "Adopt the current linked git worktree instead of creating "
+                + "a new sibling worktree. Useful when an agent tool "
+                + "already created the worktree; vch only initializes "
+                + ".vch/state.json and task-local build isolation."
+        )
+    )
+    var adoptCurrent: Bool = false
+
     @Option(
         name: .long,
         help: ArgumentHelp(
@@ -79,18 +90,33 @@ struct NewCommand: ParsableCommand {
 
             let task = try TaskName(name)
             let cwd = FileManager.default.currentDirectoryPath
-            let workspace = try WorkspaceLocator.locate(cwd: cwd)
+            let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
+            let workspace = location.workspace
             let service = TaskService(
                 workspace: workspace,
                 git: DiskGitClient()
             )
             let seedTask = try seedSpmFrom.map(TaskName.init)
-            let path = try service.newTask(
-                task,
-                baseRef: base,
-                copyUntracked: copyUntracked,
-                seedSpmFrom: seedTask
-            )
+            let path: String
+            let effectiveWorkspace: Workspace
+            if adoptCurrent {
+                path = try service.adoptCurrentWorktree(
+                    task,
+                    currentWorktreePath: location.currentWorktreePath,
+                    baseRef: base,
+                    copyUntracked: copyUntracked,
+                    seedSpmFrom: seedTask
+                )
+                effectiveWorkspace = workspace.withWorktreePath(path, for: task)
+            } else {
+                path = try service.newTask(
+                    task,
+                    baseRef: base,
+                    copyUntracked: copyUntracked,
+                    seedSpmFrom: seedTask
+                )
+                effectiveWorkspace = workspace
+            }
             print(path)
 
             // #32A: nudge first-time users toward `vch shellenv` so
@@ -99,7 +125,7 @@ struct NewCommand: ParsableCommand {
             // when --cd is set (machine-readable mode — wrapper is
             // already doing the cd), or when the user already
             // sources the helpers / opted out.
-            if exec == nil, !cd {
+            if exec == nil, !cd, !adoptCurrent {
                 let env = ProcessInfo.processInfo.environment
                 let stdoutIsTTY = isatty(fileno(stdout)) != 0
                 if let hint = NewTaskHint.message(
@@ -120,7 +146,7 @@ struct NewCommand: ParsableCommand {
                 let env = ProcessInfo.processInfo.environment
                 let shimPath = try ExecCommand.resolveShimPath(env: env)
                 let execService = ExecService(
-                    workspace: workspace,
+                    workspace: effectiveWorkspace,
                     git: DiskGitClient(),
                     developerDir: XcodeSelectDeveloperDirResolver()
                 )
@@ -574,7 +600,7 @@ struct StateCommand: ParsableCommand {
 struct RemoveCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "remove",
-        abstract: "Remove a task's worktree and delete its branch.",
+        abstract: "Remove a task and its vch-owned resources.",
         aliases: ["rm"]
     )
 
@@ -604,12 +630,14 @@ struct RemoveCommand: ParsableCommand {
             let workspace = try WorkspaceLocator.locate(cwd: cwd)
             let service = TaskService(workspace: workspace, git: DiskGitClient())
 
-            // #10 / #65: refuse to delete the worktree out from
-            // under an open editor / shell unless the user
-            // explicitly forces. We do this BEFORE reading
-            // state.json (which is also held by us for the
-            // simulator-cleanup step) so the diagnostic lands
-            // before we touch anything.
+            let state = readTaskState(workspace: workspace, task: task)
+
+            // #10 / #65: refuse to delete vch-owned files out from
+            // under a running process unless the user explicitly
+            // forces. vch-created tasks scan the whole worktree before
+            // deleting it. Adopted tasks keep the external worktree, so
+            // only scan the vch-owned scratch roots we are about to
+            // remove.
             //
             // Prior to v0.5.0 this was gated on `--allow-dirty`,
             // which conflated two unrelated concerns. The holder
@@ -618,19 +646,21 @@ struct RemoveCommand: ParsableCommand {
             // without also being told to discard uncommitted
             // work. `--allow-dirty` no longer affects this check.
             let wtPath = workspace.worktreePath(for: task)
-            if !force,
-               FileManager.default.fileExists(atPath: wtPath) {
+            let holderRoots: [String]
+            if state?.worktreeOwnership == .adopted {
+                holderRoots = [workspace.vchDir(for: task), workspace.agentBuildDir(for: task)]
+            } else {
+                holderRoots = [wtPath]
+            }
+            if !force {
                 let scanner = DiskWorktreeHolderScanner()
-                if let holders = try? scanner.findHolders(of: wtPath),
-                   !holders.isEmpty {
-                    throw VibeChardError.worktreeBusy(path: wtPath, holders: holders)
+                for root in holderRoots where FileManager.default.fileExists(atPath: root) {
+                    if let holders = try? scanner.findHolders(of: root),
+                       !holders.isEmpty {
+                        throw VibeChardError.worktreeBusy(path: root, holders: holders)
+                    }
                 }
             }
-
-            // Read state.json BEFORE git tears the worktree down so we
-            // can clean up the simulator clone afterwards. Best-effort
-            // — a missing/corrupt state.json must not block removal.
-            let simRecord = readSimulatorRecord(workspace: workspace, task: task)
 
             let opts = TaskService.RemoveOptions(
                 allowDirty: allowDirty,
@@ -638,7 +668,7 @@ struct RemoveCommand: ParsableCommand {
             )
             try service.removeTask(task, options: opts)
 
-            if !keepSim, let sim = simRecord {
+            if !keepSim, let sim = state?.simulator {
                 let simctl = DiskSimctlClient()
                 do {
                     try simctl.delete(udid: sim.cloneUDID)
@@ -653,13 +683,13 @@ struct RemoveCommand: ParsableCommand {
         }
     }
 
-    private func readSimulatorRecord(
+    private func readTaskState(
         workspace: Workspace, task: TaskName
-    ) -> TaskState.SimulatorRecord? {
+    ) -> TaskState? {
         let p = workspace.statePath(for: task)
         guard FileManager.default.fileExists(atPath: p) else { return nil }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: p)) else { return nil }
-        return (try? TaskState.parse(data))?.simulator
+        return try? TaskState.parse(data)
     }
 }
 
