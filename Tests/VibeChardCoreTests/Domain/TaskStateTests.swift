@@ -110,6 +110,36 @@ final class TaskStateTests: XCTestCase {
         XCTAssertEqual(restored.baseBranch, "develop")
     }
 
+    func testRoundtripsAdoptedWorktreeOwnership() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let original = TaskState(
+            name: "foo",
+            branch: "feature/foo",
+            createdAt: now,
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+
+        let restored = try TaskState.parse(try original.jsonData())
+        XCTAssertEqual(restored.worktreeOwnership, .adopted)
+        XCTAssertFalse(restored.ownsGitWorktree)
+    }
+
+    func testLegacyStateDefaultsToVchOwnedWorktree() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "foo",
+          "branch": "agent/foo",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "abc1234"
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNil(state.worktreeOwnership)
+        XCTAssertTrue(state.ownsGitWorktree)
+    }
+
     func testRoundtripsLastSync() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_500)
         let original = TaskState(

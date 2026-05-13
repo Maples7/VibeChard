@@ -185,6 +185,7 @@ public struct LandService: Sendable {
 
         let inputs = LandPlan.Inputs(
             task: task,
+            taskBranch: taskBranch,
             intoOption: options.into,
             recordedBaseBranch: state.baseBranch,
             currentMainBranch: currentMainBranch,

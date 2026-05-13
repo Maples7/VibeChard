@@ -126,6 +126,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. 在 worktree 裡直接驅動 agent：
 vch new fix-toast --exec "claude"     # 在隔離的 worktree 裡啟動 claude
 vch new triage --copy-untracked       # 順便將 .env / .vscode 等未追蹤檔案一起帶過來
+vch new codex-fix --adopt-current     # 如果 agent 已經建好 linked worktree，就直接接管目前 worktree
 vch exec fix-toast -- npm run lint    # 在 worktree 裡跑一次性指令
 
 # 5. 檢視與清理
@@ -193,7 +194,7 @@ warm 模擬器模板的快速路徑、重置每任務的模擬器狀態、模板
 
 | 指令 | 作用 |
 |---|---|
-| `vch new <name>` | 建立 worktree + `agent/<name>` 分支（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--cd`）。 |
+| `vch new <name>` | 建立 worktree + `agent/<name>` 分支（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--adopt-current`、`--cd`）。 |
 | `vch list` | 列出工作區下所有任務（`--json`、`-v`、`--git-status`）。 |
 | `vch state <name>` | 印出任務的 `.vch/state.json`（`--json`、`--field <dotted>`）。 |
 | `vch path <name>` | 印出任務 worktree 的絕對路徑。 |
@@ -208,7 +209,7 @@ warm 模擬器模板的快速路徑、重置每任務的模擬器狀態、模板
 | `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模擬器模板（iOS / watchOS / tvOS / visionOS，[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
 | `vch land <name>` | 把 `agent/<name>` 合併回 base 並清理（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
 | `vch sync <name>` | 拉取 base 的 upstream 並把任務分支 rebase 上去（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |
-| `vch remove <name>` | 刪除 worktree、分支與模擬器克隆（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
+| `vch remove <name>` | 刪除 vch 建立的 worktree、分支與模擬器克隆；接管的任務只註銷 vch 狀態（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
 | `vch prune` | 列出或刪除已完全合併進 base 的任務（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
 | `vch repair` | 用 `git worktree list` 的實際狀態重新對齊 `.vch/state.json`。 |
 | `vch clean <name>` | 刪除任務的 DerivedData / ModuleCache（`--swiftpm`、`--logs`、`--all`、`--dry-run`）。 |

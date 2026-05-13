@@ -66,6 +66,115 @@ final class TaskServiceTests: XCTestCase {
         }
     }
 
+    func testNewTaskRefusesIfTaskAlreadyManagedAtArbitraryPath() throws {
+        let (service, git, fs, _) = makeService()
+        let adoptedPath = "/Users/me/agent-session"
+        fs.seedDirectory(adoptedPath)
+        git.entries.append(WorktreeEntry(path: adoptedPath, branch: "feature/foo"))
+        let state = TaskState(
+            name: "foo",
+            branch: "feature/foo",
+            createdAt: Date(),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(
+            "\(adoptedPath)/.vch/state.json",
+            data: try state.jsonData()
+        )
+
+        XCTAssertThrowsError(try service.newTask(TaskName("foo"))) { error in
+            guard case let VibeChardError.worktreeAlreadyExists(path) = error else {
+                return XCTFail("expected worktreeAlreadyExists, got \(error)")
+            }
+            XCTAssertEqual(path, adoptedPath)
+        }
+    }
+
+    func testAdoptCurrentWorktreeWritesStateWithoutCreatingGitWorktree() throws {
+        let (service, git, fs, clock) = makeService()
+        let currentPath = "/Users/me/agent-session"
+        fs.seedDirectory(currentPath)
+        git.entries.append(WorktreeEntry(path: currentPath, branch: "feature/foo"))
+        git.currentBranchByCwd["/Users/me/Repo"] = "main"
+        git.currentBranchByCwd[currentPath] = "feature/foo"
+
+        let path = try service.adoptCurrentWorktree(
+            TaskName("foo"),
+            currentWorktreePath: currentPath
+        )
+
+        XCTAssertEqual(path, currentPath)
+        XCTAssertEqual(git.addNewBranchCalls.count, 0)
+        XCTAssertEqual(git.appendExcludesCalls.first?.worktreeCwd, currentPath)
+
+        let stateData = try fs.readFile(at: "\(currentPath)/.vch/state.json")
+        let state = try TaskState.parse(stateData)
+        XCTAssertEqual(state.name, "foo")
+        XCTAssertEqual(state.branch, "feature/foo")
+        XCTAssertEqual(state.createdAt, clock.current)
+        XCTAssertEqual(state.baseRef, "1234abc")
+        XCTAssertEqual(state.baseBranch, "main")
+        XCTAssertEqual(state.worktreeOwnership, .adopted)
+    }
+
+    func testAdoptCurrentWorktreeRejectsMainWorktree() throws {
+        let (service, _, _, _) = makeService()
+
+        XCTAssertThrowsError(try service.adoptCurrentWorktree(
+            TaskName("foo"),
+            currentWorktreePath: "/Users/me/Repo"
+        )) { error in
+            guard case VibeChardError.adoptCurrentRequiresLinkedWorktree = error else {
+                return XCTFail("expected adoptCurrentRequiresLinkedWorktree, got \(error)")
+            }
+        }
+    }
+
+    func testAdoptCurrentWorktreeRejectsPathNotInGitWorktreeList() throws {
+        let (service, _, fs, _) = makeService()
+        fs.seedDirectory("/Users/me/random-dir")
+
+        XCTAssertThrowsError(try service.adoptCurrentWorktree(
+            TaskName("foo"),
+            currentWorktreePath: "/Users/me/random-dir"
+        )) { error in
+            guard case VibeChardError.adoptCurrentRequiresLinkedWorktree = error else {
+                return XCTFail("expected adoptCurrentRequiresLinkedWorktree, got \(error)")
+            }
+        }
+        XCTAssertFalse(fs.fileExists(at: "/Users/me/random-dir/.vch/state.json"))
+    }
+
+    func testAdoptCurrentWorktreeRefusesAlreadyManagedCurrentWorktree() throws {
+        let (service, git, fs, _) = makeService()
+        let currentPath = "/Users/me/agent-session"
+        fs.seedDirectory(currentPath)
+        git.entries.append(WorktreeEntry(path: currentPath, branch: "feature/old"))
+        let state = TaskState(
+            name: "old",
+            branch: "feature/old",
+            createdAt: Date(),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(
+            "\(currentPath)/.vch/state.json",
+            data: try state.jsonData()
+        )
+
+        XCTAssertThrowsError(try service.adoptCurrentWorktree(
+            TaskName("foo"),
+            currentWorktreePath: currentPath
+        )) { error in
+            guard case let VibeChardError.adoptCurrentAlreadyManaged(path, name) = error else {
+                return XCTFail("expected adoptCurrentAlreadyManaged, got \(error)")
+            }
+            XCTAssertEqual(path, currentPath)
+            XCTAssertEqual(name, "old")
+        }
+    }
+
     // MARK: - new --copy-untracked
 
     func testNewTaskWithoutCopyUntrackedDoesNotListUntracked() throws {
@@ -103,6 +212,27 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(
             try fs.readFile(at: "/Users/me/Repo-foo/scripts/local-only.sh"),
             Data("#!/bin/sh\n".utf8)
+        )
+    }
+
+    func testAdoptCurrentWorktreeCanCopyUntrackedFilesIntoCurrentWorktree() throws {
+        let (service, git, fs, _) = makeService()
+        let currentPath = "/Users/me/agent-session"
+        fs.seedDirectory(currentPath)
+        git.entries.append(WorktreeEntry(path: currentPath, branch: "feature/foo"))
+        git.untrackedFilesByCwd["/Users/me/Repo"] = [".env"]
+        fs.seedFile("/Users/me/Repo/.env", data: Data("LOCAL=1".utf8))
+
+        _ = try service.adoptCurrentWorktree(
+            TaskName("foo"),
+            currentWorktreePath: currentPath,
+            copyUntracked: true
+        )
+
+        XCTAssertEqual(git.listUntrackedCalls, ["/Users/me/Repo"])
+        XCTAssertEqual(
+            try fs.readFile(at: "\(currentPath)/.env"),
+            Data("LOCAL=1".utf8)
         )
     }
 
@@ -318,6 +448,27 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertNil(summaries.first?.createdAt)
     }
 
+    func testListIncludesAdoptedWorktreeWithArbitraryPath() throws {
+        let (service, git, fs, _) = makeService()
+        let adoptedPath = "/Users/me/codex-session"
+        git.entries.append(WorktreeEntry(path: adoptedPath, branch: "feature/adopted"))
+        let state = TaskState(
+            name: "adopted",
+            branch: "feature/adopted",
+            createdAt: Date(timeIntervalSince1970: 5_000),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(state.jsonData(), to: "\(adoptedPath)/.vch/state.json")
+
+        let summaries = try service.listTasks()
+
+        XCTAssertEqual(summaries.count, 1)
+        XCTAssertEqual(summaries.first?.name, "adopted")
+        XCTAssertEqual(summaries.first?.branch, "feature/adopted")
+        XCTAssertEqual(summaries.first?.path, adoptedPath)
+    }
+
     // MARK: - path
 
     func testPathThrowsTaskNotFoundWhenMissing() throws {
@@ -391,6 +542,55 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(read.baseRef, "abc1234")
     }
 
+    // MARK: - pathForTask / stateForTask through adopted-path override (#98 follow-up)
+
+    /// `pathForTask` is the entry point most subcommands call to
+    /// resolve "what's the cwd for this task". For an adopted task
+    /// the `Workspace.taskWorktreePaths` override must win — otherwise
+    /// every downstream subcommand silently operates on the wrong
+    /// directory.
+    func testPathForTaskHonoursAdoptedWorktreeOverride() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: "/Users/me/Repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(adoptedPath)
+        let service = TaskService(workspace: workspace, git: FakeGitClient(),
+                                  fs: fs, clock: FixedClock(Date()))
+
+        let resolved = try service.pathForTask(task)
+        XCTAssertEqual(resolved, adoptedPath)
+    }
+
+    /// `stateForTask` reads `state.json` from `workspace.statePath(for:)`,
+    /// which must also follow the override. Symmetric guard for
+    /// `pathForTask`.
+    func testStateForTaskReadsFromAdoptedWorktree() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: "/Users/me/Repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory("\(adoptedPath)/.vch")
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(state.jsonData(),
+                               to: "\(adoptedPath)/.vch/state.json")
+        let service = TaskService(workspace: workspace, git: FakeGitClient(),
+                                  fs: fs, clock: FixedClock(Date()))
+
+        let read = try service.stateForTask(task)
+        XCTAssertEqual(read.name, "codex-task")
+        XCTAssertEqual(read.branch, "feature/codex")
+        XCTAssertEqual(read.worktreeOwnership, .adopted)
+    }
+
     // MARK: - remove
 
     func testRemoveRefusesDirtyWorktreeByDefault() throws {
@@ -451,6 +651,44 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertFalse(git.branches.contains("agent/foo"))
     }
 
+    func testRemoveAdoptedTaskOnlyRemovesVchArtifacts() throws {
+        let task = try TaskName("foo")
+        let adoptedPath = "/Users/me/codex-session"
+        let workspace = Workspace(mainWorktreePath: "/Users/me/Repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let git = FakeGitClient()
+        git.entries = [
+            WorktreeEntry(path: "/Users/me/Repo", branch: "main"),
+            WorktreeEntry(path: adoptedPath, branch: "feature/foo"),
+        ]
+        git.branches.insert("feature/foo")
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory("/Users/me/Repo")
+        fs.seedDirectory(adoptedPath)
+        fs.seedFile("\(adoptedPath)/.agent-build/DerivedData/marker", data: Data("x".utf8))
+        let state = TaskState(
+            name: "foo",
+            branch: "feature/foo",
+            createdAt: Date(),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(
+            "\(adoptedPath)/.vch/state.json",
+            data: try state.jsonData()
+        )
+        let service = TaskService(workspace: workspace, git: git, fs: fs)
+
+        try service.removeTask(task)
+
+        XCTAssertTrue(fs.directoryExists(at: adoptedPath))
+        XCTAssertFalse(fs.directoryExists(at: "\(adoptedPath)/.vch"))
+        XCTAssertFalse(fs.directoryExists(at: "\(adoptedPath)/.agent-build"))
+        XCTAssertTrue(git.removeCalls.isEmpty)
+        XCTAssertTrue(git.branchDeleteCalls.isEmpty)
+        XCTAssertTrue(git.branches.contains("feature/foo"))
+    }
+
     // MARK: - repair
 
     func testRepairPrunesAndCollectsProblems() throws {
@@ -472,6 +710,25 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(report.problems.count, 2)
         XCTAssertTrue(report.problems.contains(where: { $0.contains("orphan") && $0.contains("missing") }))
         XCTAssertTrue(report.problems.contains(where: { $0.contains("junk") }))
+    }
+
+    func testRepairChecksAdoptedWorktreeWithArbitraryPath() throws {
+        let (service, git, fs, _) = makeService()
+        let adoptedPath = "/Users/me/codex-session"
+        git.entries.append(WorktreeEntry(path: adoptedPath, branch: "feature/codex"))
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(state.jsonData(), to: "\(adoptedPath)/.vch/state.json")
+
+        let report = try service.repair()
+
+        XCTAssertEqual(report.checkedTasks, ["codex-task"])
+        XCTAssertTrue(report.problems.isEmpty)
     }
 
     // MARK: - listTasks baseBranch propagation (#24)

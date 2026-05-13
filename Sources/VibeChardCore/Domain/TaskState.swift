@@ -49,6 +49,11 @@ public struct TaskState: Codable, Equatable, Sendable {
     /// dry-run and conflict paths leave it untouched. (#25)
     public var lastSync: SyncRecord?
 
+    /// Lifecycle owner for the Git worktree itself. Missing means
+    /// "vch-created" for backward compatibility with state.json files
+    /// written before adopted worktrees existed.
+    public var worktreeOwnership: WorktreeOwnership?
+
     public init(
         schemaVersion: Int = TaskState.currentSchemaVersion,
         name: String,
@@ -61,7 +66,8 @@ public struct TaskState: Codable, Equatable, Sendable {
         lastBuild: BuildRecord? = nil,
         lastTest: TestRecord? = nil,
         lastExec: ExecRecord? = nil,
-        lastSync: SyncRecord? = nil
+        lastSync: SyncRecord? = nil,
+        worktreeOwnership: WorktreeOwnership? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.name = name
@@ -75,6 +81,16 @@ public struct TaskState: Codable, Equatable, Sendable {
         self.lastTest = lastTest
         self.lastExec = lastExec
         self.lastSync = lastSync
+        self.worktreeOwnership = worktreeOwnership
+    }
+
+    public enum WorktreeOwnership: String, Codable, Equatable, Sendable {
+        case vchCreated = "vch-created"
+        case adopted = "adopted"
+    }
+
+    public var ownsGitWorktree: Bool {
+        worktreeOwnership != .adopted
     }
 
     public struct SimulatorRecord: Codable, Equatable, Sendable {

@@ -85,6 +85,43 @@ final class VchCLISmokeTests: XCTestCase {
         )
     }
 
+    /// Variant that lets the test caller set a working directory and
+    /// extend the environment. Used by the `--adopt-current` smoke
+    /// test, which has to invoke `vch new --adopt-current` from
+    /// *inside* a linked git worktree and gives git enough env to
+    /// avoid touching the developer's real `~/.gitconfig`.
+    private func runVch(
+        _ args: [String], cwd: String, env: [String: String]
+    ) throws -> Result {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: try Self.vchPath())
+        proc.arguments = args
+        proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        let out = Pipe(), err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+        var combined = env
+        if combined["PATH"] == nil {
+            combined["PATH"] = "/usr/bin:/bin"
+        }
+        proc.environment = combined
+        try proc.run()
+        proc.waitUntilExit()
+        let stdout = String(
+            data: out.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        let stderr = String(
+            data: err.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        return Result(
+            exitCode: proc.terminationStatus,
+            stdout: stdout,
+            stderr: stderr
+        )
+    }
+
     // MARK: - Parse the SUBCOMMANDS section of `vch --help`
 
     /// Extract every command name (and its aliases) from the
@@ -378,5 +415,232 @@ final class VchCLISmokeTests: XCTestCase {
             result.stderr.contains("hint:"),
             "commands without a `--` tail must not get the pass-through hint; got: \(result.stderr)"
         )
+    }
+
+    // MARK: - #98 follow-up: --adopt-current end-to-end
+
+    /// End-to-end smoke test for `vch new --adopt-current` and its
+    /// downstream consumers. This is the user-visible side of PR #98:
+    /// for a git worktree the user created themselves (e.g. via a
+    /// codex / claude session script), `vch new <name> --adopt-current`
+    /// must register the worktree without trying to clone it, and
+    /// every subsequent vch command must operate on the externally-
+    /// created path rather than the conventional `<repo>-<task>`.
+    ///
+    /// Each unit test in this PR pins a single seam (BuildService,
+    /// SyncService, etc.) but the chain is wide; if any link bypasses
+    /// `Workspace.taskWorktreePaths`, this test fails with a concrete
+    /// path mismatch rather than a unit-level abstraction error.
+    ///
+    /// Coverage targets (one assertion per intent):
+    /// 1.  `vch new --adopt-current` succeeds without `simctl` or
+    ///     `xcodebuild` and prints the adopted path on stdout.
+    /// 2.  `vch path` resolves to the adopted path, not
+    ///     `<repo>-<task>`.
+    /// 3.  `vch state --field worktreeOwnership` reports `adopted`.
+    /// 4.  `vch list --json` reports the adopted path AND the user's
+    ///     branch (`feature/codex`, not the synthetic `agent/<task>`).
+    /// 5.  `vch rm` deletes only vch-owned scratch under the adopted
+    ///     worktree; the worktree itself and the user's branch are
+    ///     untouched.
+    func testAdoptCurrentEndToEnd() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        // ---------- 1. Tmp git repo + linked worktree ----------
+        let rootDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("vch-adopt-smoke-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: rootDir, withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: rootDir)
+        }
+        let repoPath = rootDir.appendingPathComponent("Repo").path
+        let sidecarPath = rootDir.appendingPathComponent("codex-session").path
+        try FileManager.default.createDirectory(
+            atPath: repoPath, withIntermediateDirectories: true
+        )
+
+        // Stay strictly inside `rootDir`: HOME, XDG_CONFIG_HOME, and
+        // GIT_CONFIG_NOSYSTEM together keep the test from picking up
+        // the developer's real git config (signing, hooks, …).
+        let gitEnv: [String: String] = [
+            "PATH": "/usr/bin:/bin",
+            "HOME": rootDir.path,
+            "XDG_CONFIG_HOME": rootDir.appendingPathComponent("xdg").path,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "vch test",
+            "GIT_AUTHOR_EMAIL": "vch@test.local",
+            "GIT_COMMITTER_NAME": "vch test",
+            "GIT_COMMITTER_EMAIL": "vch@test.local",
+        ]
+        try runGit(["init", "-q", "-b", "main"], cwd: repoPath, env: gitEnv)
+        try runGit(["config", "commit.gpgsign", "false"], cwd: repoPath, env: gitEnv)
+        try "hello\n".write(
+            toFile: "\(repoPath)/README.md",
+            atomically: true, encoding: .utf8
+        )
+        try runGit(["add", "README.md"], cwd: repoPath, env: gitEnv)
+        try runGit(["commit", "-q", "-m", "initial"], cwd: repoPath, env: gitEnv)
+        // The user has their own naming convention; vch must use the
+        // exact branch they picked, not synthesise `agent/codex-task`.
+        try runGit(
+            ["worktree", "add", "-b", "feature/codex", sidecarPath],
+            cwd: repoPath, env: gitEnv
+        )
+
+        // ---------- 2. vch new --adopt-current ----------
+        let newResult = try runVch(
+            ["new", "codex-task", "--adopt-current"],
+            cwd: sidecarPath, env: gitEnv
+        )
+        XCTAssertEqual(
+            newResult.exitCode, 0,
+            "vch new --adopt-current failed.\nstdout: \(newResult.stdout)\nstderr: \(newResult.stderr)"
+        )
+        XCTAssertEqual(
+            newResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            try sidecarPath.resolvingSymlinks(),
+            "vch new --adopt-current must print the adopted worktree path"
+        )
+
+        // ---------- 3. vch path codex-task ----------
+        let pathResult = try runVch(
+            ["path", "codex-task"], cwd: sidecarPath, env: gitEnv
+        )
+        XCTAssertEqual(pathResult.exitCode, 0, "stderr: \(pathResult.stderr)")
+        XCTAssertEqual(
+            pathResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            try sidecarPath.resolvingSymlinks(),
+            "`vch path` must resolve through the adopted-worktree override, not `<repo>-<task>`"
+        )
+
+        // ---------- 4. vch state --field worktreeOwnership ----------
+        let stateResult = try runVch(
+            ["state", "codex-task", "--field", "worktreeOwnership"],
+            cwd: sidecarPath, env: gitEnv
+        )
+        XCTAssertEqual(stateResult.exitCode, 0, "stderr: \(stateResult.stderr)")
+        XCTAssertEqual(
+            stateResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            "adopted",
+            "worktreeOwnership must persist as 'adopted'"
+        )
+
+        // ---------- 5. vch list --json ----------
+        let listResult = try runVch(
+            ["list", "--json"], cwd: sidecarPath, env: gitEnv
+        )
+        XCTAssertEqual(listResult.exitCode, 0, "stderr: \(listResult.stderr)")
+        // Parse rather than substring-match: substring-matching path
+        // strings would silently pass if `<repo>-codex-task` also
+        // happened to contain "codex-session".
+        let listData = Data(listResult.stdout.utf8)
+        let listJSON = try JSONSerialization.jsonObject(with: listData) as? [[String: Any]]
+        let entry = try XCTUnwrap(
+            listJSON?.first(where: { ($0["name"] as? String) == "codex-task" }),
+            "vch list --json did not include the adopted task. raw: \(listResult.stdout)"
+        )
+        XCTAssertEqual(
+            entry["path"] as? String, try sidecarPath.resolvingSymlinks(),
+            "list path must be the adopted path, not <repo>-<task>"
+        )
+        XCTAssertEqual(
+            entry["branch"] as? String, "feature/codex",
+            "list branch must be the user's branch, not the synthetic agent/<task>"
+        )
+
+        // ---------- 6. vch rm codex-task ----------
+        let rmResult = try runVch(
+            ["rm", "codex-task"], cwd: sidecarPath, env: gitEnv
+        )
+        XCTAssertEqual(rmResult.exitCode, 0, "stderr: \(rmResult.stderr)")
+
+        // ---------- 7. Adopted worktree + branch survive ----------
+        var isDir: ObjCBool = false
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: sidecarPath, isDirectory: &isDir),
+            "adopted worktree directory must survive `vch rm`; vch only owned `.vch` / `.agent-build` inside it"
+        )
+        XCTAssertTrue(isDir.boolValue, "\(sidecarPath) should still be a directory")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: "\(sidecarPath)/.vch"),
+            "`.vch/` scratch dir must have been scrubbed by `vch rm`"
+        )
+        // The user's branch must still exist in the main repo; this
+        // is the load-bearing contract of adopt-current — vch never
+        // touches state it doesn't own.
+        let branchProbe = try captureGit(
+            ["rev-parse", "--verify", "feature/codex"],
+            cwd: repoPath, env: gitEnv
+        )
+        XCTAssertEqual(
+            branchProbe.exitCode, 0,
+            "feature/codex must still exist after `vch rm`. stderr: \(branchProbe.stderr)"
+        )
+    }
+
+    // MARK: - smoke-test git helpers
+
+    private func runGit(
+        _ args: [String], cwd: String, env: [String: String]
+    ) throws {
+        let result = try captureGit(args, cwd: cwd, env: env)
+        guard result.exitCode == 0 else {
+            XCTFail(
+                "git \(args.joined(separator: " ")) failed (\(result.exitCode))\nstderr: \(result.stderr)"
+            )
+            throw NSError(
+                domain: "VchCLISmokeTests.git", code: Int(result.exitCode),
+                userInfo: [NSLocalizedDescriptionKey: result.stderr]
+            )
+        }
+    }
+
+    private func captureGit(
+        _ args: [String], cwd: String, env: [String: String]
+    ) throws -> Result {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = args
+        proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        proc.environment = env
+        let out = Pipe(), err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+        try proc.run()
+        proc.waitUntilExit()
+        let stdout = String(
+            data: out.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        let stderr = String(
+            data: err.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        return Result(
+            exitCode: proc.terminationStatus,
+            stdout: stdout, stderr: stderr
+        )
+    }
+}
+
+// `WorkspaceLocator` resolves paths via `git rev-parse --show-toplevel`,
+// which on macOS returns the `realpath(3)` form (e.g. `/private/var/...`
+// rather than `/var/...`). Mirror that here so path equality checks
+// against vch's stdout aren't dominated by the `/var → /private/var`
+// symlink. `URL.resolvingSymlinksInPath` is not enough: it strips
+// `/private` in some macOS versions, which is the opposite of what
+// git does.
+private extension String {
+    func resolvingSymlinks() throws -> String {
+        guard let buf = realpath(self, nil) else {
+            return self
+        }
+        defer { free(buf) }
+        return String(cString: buf)
     }
 }

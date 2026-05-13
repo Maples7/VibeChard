@@ -131,6 +131,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. worktree 안에서 직접 에이전트 구동:
 vch new fix-toast --exec "claude"     # 격리된 worktree 에서 claude 실행
 vch new triage --copy-untracked       # .env / .vscode 등 추적되지 않은 파일도 함께 복사
+vch new codex-fix --adopt-current     # agent 가 이미 만든 linked worktree 를 현재 위치에서 채택
 vch exec fix-toast -- npm run lint    # worktree 안에서 일회성 명령 실행
 
 # 5. 점검과 정리
@@ -199,7 +200,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 
 | 명령어 | 하는 일 |
 |---|---|
-| `vch new <name>` | worktree 와 `agent/<name>` 브랜치 생성 (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--cd`). |
+| `vch new <name>` | worktree 와 `agent/<name>` 브랜치 생성 (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--adopt-current`, `--cd`). |
 | `vch list` | 워크스페이스의 모든 작업을 나열 (`--json`, `-v`, `--git-status`). |
 | `vch state <name>` | 작업의 `.vch/state.json` 출력 (`--json`, `--field <dotted>`). |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
@@ -214,7 +215,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 | `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿 관리 (iOS / watchOS / tvOS / visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)). |
 | `vch land <name>` | `agent/<name>` 를 base 에 머지하고 정리 (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
 | `vch sync <name>` | base 의 upstream 을 fetch 하고 작업 브랜치를 rebase (`--onto`, `--merge`, `--no-fetch`, `--dry-run`). |
-| `vch remove <name>` | worktree, 브랜치, 시뮬레이터 클론을 삭제 (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
+| `vch remove <name>` | vch 가 만든 worktree, 브랜치, 시뮬레이터 클론을 삭제; 채택한 작업은 vch 상태만 해제 (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
 | `vch prune` | base 에 완전히 머지된 작업을 나열/삭제 (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |
 | `vch repair` | `git worktree list` 실제 상태와 `.vch/state.json` 재동기화. |
 | `vch clean <name>` | 작업의 DerivedData / ModuleCache 삭제 (`--swiftpm`, `--logs`, `--all`, `--dry-run`). |

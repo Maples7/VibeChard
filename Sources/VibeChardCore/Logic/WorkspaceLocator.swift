@@ -1,5 +1,21 @@
 import Foundation
 
+public struct WorkspaceLocation: Equatable, Sendable {
+    public let workspace: Workspace
+    public let currentWorktreePath: String
+    public let taskName: TaskName?
+
+    public var isMainWorktree: Bool {
+        currentWorktreePath == workspace.mainWorktreePath
+    }
+
+    public init(workspace: Workspace, currentWorktreePath: String, taskName: TaskName?) {
+        self.workspace = workspace
+        self.currentWorktreePath = currentWorktreePath
+        self.taskName = taskName
+    }
+}
+
 /// CLI-side helper that resolves the main worktree path for a given
 /// directory. Uses `git rev-parse --show-toplevel` then resolves linked
 /// worktrees back to the main one via `git worktree list --porcelain`.
@@ -8,7 +24,19 @@ public enum WorkspaceLocator {
     /// of, `cwd`. The user can be standing either in the main worktree
     /// or in any linked (vch-managed) worktree — we always resolve back
     /// to the main one.
-    public static func locate(cwd: String, runner: ProcessRunner = DiskProcessRunner()) throws -> Workspace {
+    public static func locate(
+        cwd: String,
+        runner: ProcessRunner = DiskProcessRunner(),
+        fs: FileSystem = DiskFileSystem()
+    ) throws -> Workspace {
+        try locateCurrent(cwd: cwd, runner: runner, fs: fs).workspace
+    }
+
+    public static func locateCurrent(
+        cwd: String,
+        runner: ProcessRunner = DiskProcessRunner(),
+        fs: FileSystem = DiskFileSystem()
+    ) throws -> WorkspaceLocation {
         // Step 1: ask git for the toplevel of whichever worktree we're in.
         let topResult = try runner.run("/usr/bin/git", args: ["rev-parse", "--show-toplevel"], cwd: cwd)
         guard topResult.succeeded else {
@@ -33,7 +61,17 @@ public enum WorkspaceLocator {
         guard let main = entries.first else {
             throw VibeChardError.worktreeNotAGitRepository(path: cwd)
         }
-        return Workspace(mainWorktreePath: main.path)
+        let workspace = workspace(mainPath: main.path, entries: entries, fs: fs)
+        let taskName = taskNameForCurrentWorktree(
+            toplevel: toplevel,
+            workspace: workspace,
+            fs: fs
+        )
+        return WorkspaceLocation(
+            workspace: workspace,
+            currentWorktreePath: Workspace(mainWorktreePath: toplevel).mainWorktreePath,
+            taskName: taskName
+        )
     }
 
     /// Resolve both the workspace AND, if `cwd` is inside a vch-managed
@@ -46,32 +84,58 @@ public enum WorkspaceLocator {
     /// directory name doesn't follow the `<repo>-<task>` convention.
     public static func resolveCurrent(
         cwd: String,
-        runner: ProcessRunner = DiskProcessRunner()
+        runner: ProcessRunner = DiskProcessRunner(),
+        fs: FileSystem = DiskFileSystem()
     ) throws -> (workspace: Workspace, taskName: TaskName?) {
-        let workspace = try locate(cwd: cwd, runner: runner)
+        let location = try locateCurrent(cwd: cwd, runner: runner, fs: fs)
+        return (location.workspace, location.taskName)
+    }
 
-        // Re-ask git for the cwd's own toplevel — `locate` already
-        // walked it but didn't expose it. The cost is one extra git
-        // exec; cheap relative to the IDE launch we're about to do.
-        let topResult = try runner.run(
-            "/usr/bin/git",
-            args: ["rev-parse", "--show-toplevel"],
-            cwd: cwd
-        )
-        guard topResult.succeeded else { return (workspace, nil) }
-        let toplevel = topResult.stdoutTrimmed
-        if toplevel.isEmpty || toplevel == workspace.mainWorktreePath {
-            return (workspace, nil)
+    private static func workspace(
+        mainPath: String,
+        entries: [WorktreeEntry],
+        fs: FileSystem
+    ) -> Workspace {
+        let normalizedMain = Workspace(mainWorktreePath: mainPath).mainWorktreePath
+        var taskPaths: [String: String] = [:]
+        for entry in entries where Workspace(mainWorktreePath: entry.path).mainWorktreePath != normalizedMain {
+            let statePath = PathOps.join(entry.path, Workspace.stateJsonRelativePath)
+            guard fs.fileExists(at: statePath),
+                  let data = try? fs.readFile(at: statePath),
+                  let state = try? TaskState.parse(data),
+                  (try? TaskName(state.name)) != nil else {
+                continue
+            }
+            taskPaths[state.name] = entry.path
         }
-        guard let raw = workspace.taskNameRaw(forWorktreePath: toplevel) else {
-            return (workspace, nil)
+        return Workspace(mainWorktreePath: normalizedMain, taskWorktreePaths: taskPaths)
+    }
+
+    private static func taskNameForCurrentWorktree(
+        toplevel: String,
+        workspace: Workspace,
+        fs: FileSystem
+    ) -> TaskName? {
+        let normalizedTop = Workspace(mainWorktreePath: toplevel).mainWorktreePath
+        if normalizedTop == workspace.mainWorktreePath {
+            return nil
         }
+
+        let statePath = PathOps.join(normalizedTop, Workspace.stateJsonRelativePath)
+        if fs.fileExists(at: statePath),
+           let data = try? fs.readFile(at: statePath),
+           let state = try? TaskState.parse(data),
+           let task = try? TaskName(state.name) {
+            return task
+        }
+
         // The leaf naming matches but the suffix may not be a valid
         // TaskName (e.g. someone hand-created a sibling like
         // `BeanLedger-foo bar`). Treat that as "not a vch worktree".
-        if let task = try? TaskName(raw) {
-            return (workspace, task)
+        if let raw = workspace.taskNameRaw(forWorktreePath: normalizedTop),
+           let task = try? TaskName(raw) {
+            return task
         }
-        return (workspace, nil)
+        return nil
     }
 }

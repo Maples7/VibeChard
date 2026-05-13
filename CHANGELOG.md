@@ -8,6 +8,25 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- `vch new <name> --adopt-current` can register the current linked
+  Git worktree as a vch task without creating another worktree, while
+  still initializing `.vch/state.json` and the task-local build
+  isolation paths for `build` / `test` / `exec` / `run` (#97).
+- `vch remove <name>` now unregisters adopted tasks by deleting only
+  vch-owned `.vch/` and `.agent-build/` contents, leaving the external
+  Git worktree and branch intact (#97).
+
+### Fixed
+- `vch land <name>` and `vch sync <name>` no longer hard-code the
+  synthetic `agent/<task>` branch name in the merge commit message.
+  For adopted tasks (#97), the commit message now uses the branch
+  that the user's own worktree is actually on (e.g.
+  `Merge feature/codex: subject` instead of
+  `Merge agent/codex-task: subject`). Behaviour for non-adopted
+  tasks is unchanged because `state.branch` is exactly `agent/<task>`
+  in that case.
+
 ## 0.6.2 - 2026-05-13
 
 ### Changed

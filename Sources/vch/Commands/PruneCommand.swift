@@ -96,8 +96,7 @@ struct PruneCommand: ParsableCommand {
             var simRecords: [String: TaskState.SimulatorRecord] = [:]
             if apply, !keepSim {
                 for d in plan.prunable {
-                    if let raw = workspace.taskNameRaw(forWorktreePath: d.summary.path),
-                       let task = try? TaskName(raw),
+                    if let task = try? TaskName(d.summary.name),
                        let sim = readSimulatorRecord(workspace: workspace, task: task) {
                         simRecords[d.summary.name] = sim
                     }

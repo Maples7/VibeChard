@@ -18,6 +18,7 @@ public enum TaskStateField {
         "base",
         "schema",
         "scheme",
+        "worktreeOwnership",
         "createdAt",
         "simulator.udid",
         "simulator.cloneUDID",
@@ -71,6 +72,8 @@ public enum TaskStateField {
         case "base":           return .value(state.baseRef)
         case "schema":         return .value(String(state.schemaVersion))
         case "scheme":         return optional(state.scheme)
+        case "worktreeOwnership":
+            return optional(state.worktreeOwnership?.rawValue ?? TaskState.WorktreeOwnership.vchCreated.rawValue)
         case "createdAt":      return .value(iso8601(state.createdAt))
 
         case "simulator.udid", "simulator.cloneUDID":

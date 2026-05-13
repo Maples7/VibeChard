@@ -303,7 +303,14 @@ public struct SyncService: Sendable {
                         taskBranch: taskBranch,
                         onto: resolved.baseLabel
                     ))
-                    let message = "Merge \(resolved.baseLabel) into agent/\(task.raw)"
+                    // #98 follow-up: for `--adopt-current` tasks the
+                    // real branch lives in `state.branch` (here
+                    // `taskBranch`). Constructing the message from
+                    // `task.raw` produced "Merge X into agent/codex-task"
+                    // for an adopted task whose branch was actually
+                    // `feature/codex` — same shape of bug as the
+                    // LandPlanner regression fixed in this PR.
+                    let message = "Merge \(resolved.baseLabel) into \(taskBranch)"
                     try git.merge(
                         repoCwd: worktreePath,
                         branch: resolved.baseLabel,

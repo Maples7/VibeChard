@@ -128,6 +128,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. worktree 内で直接エージェントを走らせる：
 vch new fix-toast --exec "claude"     # 隔離された worktree 内で claude を起動
 vch new triage --copy-untracked       # .env / .vscode など未追跡ファイルも一緒にコピー
+vch new codex-fix --adopt-current     # agent が作成済みの linked worktree をそのまま採用
 vch exec fix-toast -- npm run lint    # worktree 内でワンショット実行
 
 # 5. 確認とクリーンアップ
@@ -198,7 +199,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 
 | コマンド | 何をするか |
 |---|---|
-| `vch new <name>` | worktree と `agent/<name>` ブランチを作成（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--cd`）。 |
+| `vch new <name>` | worktree と `agent/<name>` ブランチを作成（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--adopt-current`、`--cd`）。 |
 | `vch list` | ワークスペース内の全タスクを一覧表示（`--json`、`-v`、`--git-status`）。 |
 | `vch state <name>` | タスクの `.vch/state.json` を表示（`--json`、`--field <dotted>`）。 |
 | `vch path <name>` | タスクの worktree の絶対パスを表示。 |
@@ -213,7 +214,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 | `vch sim warm-template {create,list,remove}` | 共有の *warm* シミュレーターテンプレートを管理（iOS / watchOS / tvOS / visionOS、[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
 | `vch land <name>` | `agent/<name>` を base にマージして後始末（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
 | `vch sync <name>` | base の upstream を fetch してタスクブランチを rebase（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |
-| `vch remove <name>` | worktree、ブランチ、シミュレータークローンを削除（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
+| `vch remove <name>` | vch が作成した worktree、ブランチ、シミュレータークローンを削除。採用したタスクは vch 状態のみ解除（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
 | `vch prune` | base に完全マージ済みのタスクを一覧／削除（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
 | `vch repair` | `git worktree list` の実状に合わせて `.vch/state.json` を再同期。 |
 | `vch clean <name>` | タスクの DerivedData / ModuleCache を削除（`--swiftpm`、`--logs`、`--all`、`--dry-run`）。 |

@@ -13,23 +13,49 @@ public struct Workspace: Equatable, Sendable {
     /// The leaf name of `mainWorktreePath` (e.g. "BeanLedger"), used as
     /// the prefix for sibling worktree paths.
     public let repoName: String
+    /// Task paths discovered from `.vch/state.json` in linked worktrees.
+    /// This lets vch manage worktrees that it did not create itself
+    /// (for example, VS Code Agent / Codex-created linked worktrees)
+    /// without relying on the default `<repo>-<task>` directory layout.
+    public let taskWorktreePaths: [String: String]
 
-    public init(mainWorktreePath: String) {
+    public init(mainWorktreePath: String, taskWorktreePaths: [String: String] = [:]) {
         self.mainWorktreePath = Self.normalize(mainWorktreePath)
         let url = URL(fileURLWithPath: self.mainWorktreePath)
         self.parentDirectory = url.deletingLastPathComponent().path
         self.repoName = url.lastPathComponent
+        self.taskWorktreePaths = Self.normalizedOverrides(taskWorktreePaths)
     }
 
-    public init(mainWorktreePath: String, parentDirectory: String, repoName: String) {
+    public init(
+        mainWorktreePath: String,
+        parentDirectory: String,
+        repoName: String,
+        taskWorktreePaths: [String: String] = [:]
+    ) {
         self.mainWorktreePath = Self.normalize(mainWorktreePath)
         self.parentDirectory = parentDirectory
         self.repoName = repoName
+        self.taskWorktreePaths = Self.normalizedOverrides(taskWorktreePaths)
     }
 
     /// Sibling worktree path for a task: `<parent>/<repo>-<task>`.
     public func worktreePath(for task: TaskName) -> String {
-        PathOps.join(parentDirectory, "\(repoName)-\(task.raw)")
+        if let explicit = taskWorktreePaths[task.raw] {
+            return explicit
+        }
+        return PathOps.join(parentDirectory, "\(repoName)-\(task.raw)")
+    }
+
+    public func withWorktreePath(_ path: String, for task: TaskName) -> Workspace {
+        var paths = taskWorktreePaths
+        paths[task.raw] = Self.normalize(path)
+        return Workspace(
+            mainWorktreePath: mainWorktreePath,
+            parentDirectory: parentDirectory,
+            repoName: repoName,
+            taskWorktreePaths: paths
+        )
     }
 
     public func statePath(for task: TaskName) -> String {
@@ -102,6 +128,10 @@ public struct Workspace: Equatable, Sendable {
         // Strip trailing slash for stable equality checks.
         if p.hasSuffix("/") && p != "/" { return String(p.dropLast()) }
         return p
+    }
+
+    private static func normalizedOverrides(_ paths: [String: String]) -> [String: String] {
+        paths.mapValues(Self.normalize)
     }
 
     // MARK: - Layout constants

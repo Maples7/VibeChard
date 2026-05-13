@@ -30,6 +30,8 @@ public extension VibeChardError {
              .stateFileCorrupt,
              .stateSchemaMismatch,
              .stateFileMissing,
+             .adoptCurrentRequiresLinkedWorktree,
+             .adoptCurrentAlreadyManaged,
              .simulatorTemplateNotFound,
              .simulatorAlreadyBound,
              .simulatorTemplateBooted,

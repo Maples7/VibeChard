@@ -49,7 +49,7 @@ workspace — install completions and hit `<TAB>`.
 ### `vch new`
 
 ```text
-vch new <name> [--exec "<cmd>" | --cd] [--copy-untracked] [--seed-spm-from <task>] [--base <ref>]
+vch new <name> [--exec "<cmd>" | --cd] [--copy-untracked] [--seed-spm-from <task>] [--adopt-current] [--base <ref>]
 ```
 
 Create worktree at `../<repo>-<name>` on branch `agent/<name>`.
@@ -61,6 +61,10 @@ Create worktree at `../<repo>-<name>` on branch `agent/<name>`.
 - `--seed-spm-from <task>` COW-clones a sibling vch task's SwiftPM
   bare-mirror cache so this task's first build skips the dependency
   network fetch (APFS only; source task must already have built once).
+- `--adopt-current` registers the current linked Git worktree as the
+  task instead of creating another `git worktree`. Use this when an
+  agent tool already created the worktree; vch still writes
+  `.vch/state.json` and uses task-local build isolation.
 - `--cd` opts into the machine-readable contract: stdout prints
   **only** the absolute worktree path, all status/hints go to
   stderr — for fish/nushell wrappers like `cd "$(vch new --cd foo)"`.
@@ -319,7 +323,10 @@ onto it.
 vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]
 ```
 
-Delete the worktree, branch, and (by default) simulator clone.
+For vch-created tasks, delete the worktree, branch, and (by default)
+simulator clone. For `--adopt-current` tasks, unregister vch by
+removing only `.vch/` and `.agent-build/`; the external Git worktree
+and branch remain intact.
 
 - `--allow-dirty` permits uncommitted changes.
 - `--force` overrides the held-open-files check (e.g. an editor still

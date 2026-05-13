@@ -12,14 +12,16 @@ final class TaskStateFieldTests: XCTestCase {
         lastBuild: TaskState.BuildRecord? = nil,
         lastTest: TaskState.TestRecord? = nil,
         lastExec: TaskState.ExecRecord? = nil,
-        lastSync: TaskState.SyncRecord? = nil
+        lastSync: TaskState.SyncRecord? = nil,
+        worktreeOwnership: TaskState.WorktreeOwnership? = nil
     ) -> TaskState {
         TaskState(
             name: name, branch: "agent/\(name)",
             createdAt: createdAt, baseRef: "deadbee",
             scheme: scheme, simulator: sim,
             lastBuild: lastBuild, lastTest: lastTest,
-            lastExec: lastExec, lastSync: lastSync
+            lastExec: lastExec, lastSync: lastSync,
+            worktreeOwnership: worktreeOwnership
         )
     }
 
@@ -38,6 +40,14 @@ final class TaskStateFieldTests: XCTestCase {
                        .value("App"))
         XCTAssertEqual(TaskStateField.lookup("schema", in: s, worktreePath: path),
                        .value("1"))
+        XCTAssertEqual(TaskStateField.lookup("worktreeOwnership", in: s, worktreePath: path),
+                       .value("vch-created"))
+    }
+
+    func testLooksUpAdoptedWorktreeOwnership() {
+        let s = state(worktreeOwnership: .adopted)
+        XCTAssertEqual(TaskStateField.lookup("worktreeOwnership", in: s, worktreePath: "/x"),
+                       .value("adopted"))
     }
 
     // MARK: - simulator nesting
@@ -201,7 +211,8 @@ final class TaskStateFieldTests: XCTestCase {
         // Tripwire: if someone adds a new lookup case but forgets to
         // register it, this fails fast with a clear pointer.
         for f in [
-            "name", "branch", "path", "base", "schema", "scheme", "createdAt",
+            "name", "branch", "path", "base", "schema", "scheme",
+            "worktreeOwnership", "createdAt",
             "simulator.udid", "simulator.cloneUDID", "simulator.runtime",
             "simulator.sourceKind",
             "lastBuild.success", "lastTest.resultBundlePath", "lastExec.exitCode",
