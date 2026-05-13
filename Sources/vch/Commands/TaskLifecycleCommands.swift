@@ -553,7 +553,10 @@ struct StateCommand: ParsableCommand {
         if let scheme = s.scheme {
             lines.append(("scheme", scheme))
         }
-        if let sim = s.simulator {
+        // Multi-binding (#99): emit one `sim:` line per binding so
+        // operators see every clone the task owns. With one binding
+        // (the pre-#99 case) the output is unchanged.
+        for sim in s.allSimulators {
             lines.append(("sim", "\(sim.name) (\(sim.cloneUDID))"))
         }
         if let b = s.lastBuild {
@@ -668,14 +671,22 @@ struct RemoveCommand: ParsableCommand {
             )
             try service.removeTask(task, options: opts)
 
-            if !keepSim, let sim = state?.simulator {
-                let simctl = DiskSimctlClient()
-                do {
-                    try simctl.delete(udid: sim.cloneUDID)
-                    CLIBridge.eprintln("→ deleted simulator clone '\(sim.name)'")
-                } catch {
-                    // Worktree is already gone; surface but don't fail.
-                    CLIBridge.eprintln("warning: could not delete simulator clone \(sim.cloneUDID): \(error)")
+            if !keepSim {
+                // Multi-binding (#99): reap every recorded clone.
+                // First failure does not block subsequent deletes —
+                // each warning is independent and we never abort
+                // because the worktree is already gone by this point.
+                let bindings = state?.allSimulators ?? []
+                if !bindings.isEmpty {
+                    let simctl = DiskSimctlClient()
+                    for sim in bindings {
+                        do {
+                            try simctl.delete(udid: sim.cloneUDID)
+                            CLIBridge.eprintln("→ deleted simulator clone '\(sim.name)'")
+                        } catch {
+                            CLIBridge.eprintln("warning: could not delete simulator clone \(sim.cloneUDID): \(error)")
+                        }
+                    }
                 }
             }
 

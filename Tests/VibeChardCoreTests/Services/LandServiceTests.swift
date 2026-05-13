@@ -627,4 +627,114 @@ final class LandServiceTests: XCTestCase {
         XCTAssertFalse(fs.directoryExists(at: workspace.vchDir(for: task)))
         XCTAssertFalse(fs.directoryExists(at: workspace.agentBuildDir(for: task)))
     }
+
+    // MARK: - #99 multi-platform binding cleanup
+
+    /// Seed a world where the task owns BOTH an iOS and a watchOS
+    /// simulator clone (via the new `simulators` list field). Used
+    /// by the multi-binding land tests below.
+    private func makeWorldWithTwoSimulators()
+        throws -> (workspace: Workspace, task: TaskName, fs: InMemoryFileSystem, git: FakeGitClient)
+    {
+        let mainRepo = "/repo"
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let task = try TaskName("alpha")
+        let wtPath = workspace.worktreePath(for: task)
+
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(wtPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        var state = TaskState(
+            name: "alpha",
+            branch: "agent/alpha",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbee",
+            baseBranch: "main"
+        )
+        state.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "IOS-CLONE",
+                sourceUDID: "IOS-TPL",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "WATCH-CLONE",
+                sourceUDID: "WATCH-TPL",
+                name: "Apple Watch Series 10-vch-alpha",
+                templateName: "Apple Watch Series 10 (46mm)",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
+            ),
+        ])
+        fs.seedFile(workspace.statePath(for: task), data: try state.jsonData())
+
+        let git = FakeGitClient()
+        git.branches = ["main", "agent/alpha"]
+        git.entries = [
+            WorktreeEntry(path: mainRepo, branch: "main"),
+            WorktreeEntry(path: wtPath, branch: "agent/alpha"),
+        ]
+        git.currentBranchByCwd = [mainRepo: "main"]
+        git.revListCountByRange["main..agent/alpha"] = 1
+        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
+        return (workspace, task, fs, git)
+    }
+
+    func testLandDeletesEveryBindingOnMultiPlatformTask() throws {
+        // #99: a task with multiple platform clones (iOS + watchOS)
+        // must have all of them reaped on a successful `vch land`.
+        // Pre-#99 only the legacy single `simulator` field was
+        // consulted, so the second binding silently leaked.
+        let world = try makeWorldWithTwoSimulators()
+        let simctl = FakeSimctl()
+        let service = LandService(
+            workspace: world.workspace, git: world.git,
+            fs: world.fs, clock: SystemClock(), simctl: simctl
+        )
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.simRemoved)
+        XCTAssertEqual(Set(simctl.deleteCalls),
+                       Set(["IOS-CLONE", "WATCH-CLONE"]),
+                       "both clones must be reaped, order doesn't matter")
+        XCTAssertEqual(outcome.simName,
+                       "iPhone 16-vch-alpha, Apple Watch Series 10-vch-alpha",
+                       "simName joins every reaped clone so the CLI can list them")
+        XCTAssertNil(outcome.simRemoveError)
+    }
+
+    func testLandPartialDeleteFailureRetriesEveryBinding() throws {
+        // First simctl.delete fails, but vch must continue and
+        // attempt the second one. simRemoved=false because at least
+        // one failed; simRemoveError carries the underlying detail.
+        let world = try makeWorldWithTwoSimulators()
+        let simctl = FakeSimctl()
+        // Fail only for the first UDID; the second one succeeds.
+        simctl.deleteThrowsByUDID["IOS-CLONE"] = .externalCommandFailed(
+            cmd: "xcrun simctl delete IOS-CLONE",
+            exitCode: 1,
+            stderr: "Unable to delete device: still booted"
+        )
+        let service = LandService(
+            workspace: world.workspace, git: world.git,
+            fs: world.fs, clock: SystemClock(), simctl: simctl
+        )
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertTrue(outcome.removed)
+        XCTAssertFalse(outcome.simRemoved,
+                       "partial failure → simRemoved must be false")
+        XCTAssertTrue(simctl.deleteCalls.contains("WATCH-CLONE"),
+                      "second binding must still be attempted even after the first one failed")
+        XCTAssertNotNil(outcome.simRemoveError)
+        XCTAssertTrue(
+            outcome.simRemoveError?.contains("IOS-CLONE") ?? false ||
+            outcome.simRemoveError?.contains("iPhone 16-vch-alpha") ?? false,
+            "simRemoveError must mention the failing binding: '\(outcome.simRemoveError ?? "nil")'"
+        )
+    }
 }

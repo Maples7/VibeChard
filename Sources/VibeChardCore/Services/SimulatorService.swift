@@ -45,18 +45,27 @@ public struct SimulatorService: Sendable {
 
     /// Lazy-clone the simulator for `task`.
     ///
-    /// - If `state.json.simulator` is already populated, returns it
-    ///   (after sanity-checking that `requestedDevice` either matches
-    ///   or is nil — caller can opt into reuse without specifying
-    ///   `--device` again).
-    /// - Otherwise, if `requestedDevice` is nil, returns nil so the
-    ///   caller invokes xcodebuild without a `-destination` flag (M4
-    ///   behavior).
-    /// - Otherwise, picks the newest available template named
-    ///   `requestedDevice` (filtered by `requestedRuntime` when set,
-    ///   #11), runs `xcrun simctl clone`, persists
-    ///   `simulator{cloneUDID, sourceUDID, name}` into state.json,
-    ///   and returns it.
+    /// Multi-binding semantics (#99): a task may bind to several
+    /// platform clones (e.g. an iOS clone for the host app + a
+    /// watchOS clone for the companion). The resolution rules are:
+    ///
+    ///   * No `--device`:
+    ///     0 bindings → return nil (xcodebuild runs without a `-destination`);
+    ///     1 binding  → reuse it;
+    ///     ≥2 bindings → throw `simulatorBindingAmbiguous` — the
+    ///     caller must disambiguate with `--device`.
+    ///
+    ///   * With `--device` (and optionally `--runtime`):
+    ///     filter existing bindings by `templateName` (and runtime
+    ///     when given). If exactly one matches, reuse it. If none
+    ///     match, clone a new one and APPEND it to `state.simulators`.
+    ///     If two or more match (e.g. same device on two runtimes
+    ///     and user didn't pin `--runtime`), throw
+    ///     `simulatorBindingAmbiguous`.
+    ///
+    /// Pre-#99 callers that always passed `--device` and bound a
+    /// single platform keep their idempotent reuse behaviour
+    /// unchanged.
     public func ensureClone(
         task: TaskName,
         requestedDevice: String?,
@@ -73,49 +82,42 @@ public struct SimulatorService: Sendable {
         let data = try fs.readFile(at: statePath)
         var state = try TaskState.parse(data)
 
-        if let existing = state.simulator {
-            if let requested = requestedDevice {
-                // #4: previously this compared `requested` against
-                // `existing.name`, which is the *clone display name*
-                // and therefore never matched the user's
-                // `--device 'iPhone 16'`. Compare against the persisted
-                // template name instead, falling back to a suffix-strip
-                // on legacy state written by vch ≤ v0.1.x (no
-                // `templateName` field). Both the v0.3.0 hyphen suffix
-                // (`-vch-<task>`) and the pre-v0.3.0 middle-dot suffix
-                // (` · vch[<task>]`) are recognized.
-                let bound = existing.templateName
-                    ?? Self.stripCloneSuffix(from: existing.name, task: task)
-                if bound != requested {
-                    throw VibeChardError.simulatorAlreadyBound(
-                        taskName: task.raw,
-                        currentName: existing.name,
-                        requestedName: requested
-                    )
-                }
-            }
-            // #11(b): if the user *also* passed --runtime, refuse to
-            // reuse a clone whose persisted runtime doesn't match.
-            if let req = requestedRuntime,
-               let target = parseRuntimeRequest(req),
-               let bound = existing.runtimeIdentifier
-                    .flatMap({ SimRuntimeVersion.parse(runtimeIdentifier: $0) }),
-               bound != target {
-                throw VibeChardError.simulatorAlreadyBound(
+        let existing = state.allSimulators
+
+        // No --device: pure-reuse path. 0 → nil, 1 → reuse, ≥2 → ambiguous.
+        guard let requested = requestedDevice, !requested.isEmpty else {
+            switch existing.count {
+            case 0:
+                return nil
+            case 1:
+                let only = existing[0]
+                // Honour the legacy runtime-mismatch guard for the
+                // single-binding case: when the user pinned
+                // `--runtime` but recorded runtime disagrees, refuse.
+                try assertRuntimeMatches(existing: only, requestedRuntime: requestedRuntime, task: task)
+                return resolved(from: only, createdNow: false)
+            default:
+                throw VibeChardError.simulatorBindingAmbiguous(
                     taskName: task.raw,
-                    currentName: "\(existing.name) (runtime iOS \(bound.major).\(bound.minor))",
-                    requestedName: "\(requestedDevice ?? existing.templateName ?? existing.name) (runtime iOS \(target.major).\(target.minor))"
+                    candidates: existing.map(\.name)
                 )
             }
-            return Resolved(udid: existing.cloneUDID, name: existing.name,
-                            createdNow: false,
-                            runtime: existing.runtimeIdentifier.flatMap {
-                                SimRuntimeVersion.parse(runtimeIdentifier: $0)
-                            })
         }
 
-        guard let requested = requestedDevice, !requested.isEmpty else {
-            return nil
+        // --device specified: filter and route.
+        let matches = existing.filter { rec in
+            matchesBinding(rec, device: requested, runtime: requestedRuntime, task: task)
+        }
+        switch matches.count {
+        case 1:
+            return resolved(from: matches[0], createdNow: false)
+        case 2...:
+            throw VibeChardError.simulatorBindingAmbiguous(
+                taskName: task.raw,
+                candidates: matches.map(\.name)
+            )
+        default:
+            break  // 0 matches → clone a new binding below
         }
 
         // #47: warm-template lookup wins over the Apple-template scan
@@ -152,12 +154,80 @@ public struct SimulatorService: Sendable {
             runtimeIdentifier: template.runtime,
             sourceKind: sourceKind
         )
-        state.simulator = record
+        state.setSimulators(existing + [record])
         try fs.writeFileAtomic(state.jsonData(), to: statePath)
 
         return Resolved(udid: record.cloneUDID, name: record.name,
                         createdNow: true,
                         runtime: template.runtimeVersion)
+    }
+
+    /// Build a `Resolved` from an existing binding. Centralised so
+    /// the parsing of `runtimeIdentifier → SimRuntimeVersion` stays
+    /// in one place.
+    private func resolved(from rec: TaskState.SimulatorRecord, createdNow: Bool) -> Resolved {
+        Resolved(
+            udid: rec.cloneUDID,
+            name: rec.name,
+            createdNow: createdNow,
+            runtime: rec.runtimeIdentifier.flatMap { SimRuntimeVersion.parse(runtimeIdentifier: $0) }
+        )
+    }
+
+    /// Predicate used by the `--device` filter. Compares against the
+    /// persisted `templateName`, falling back to a suffix-strip on
+    /// `name` for state.json written by vch ≤ v0.1.x. When `runtime`
+    /// is supplied, also requires the binding's recorded runtime to
+    /// match — bindings with a missing `runtimeIdentifier` (legacy)
+    /// are excluded from runtime-filtered queries so the user can
+    /// safely add a new runtime-pinned clone without colliding with
+    /// the legacy record. An empty `device` skips the device check
+    /// (used by the CLI selector when only `--runtime` was given).
+    private func matchesBinding(
+        _ rec: TaskState.SimulatorRecord,
+        device: String,
+        runtime: String?,
+        task: TaskName
+    ) -> Bool {
+        if !device.isEmpty {
+            let stored = rec.templateName ?? Self.stripCloneSuffix(from: rec.name, task: task)
+            guard stored == device else { return false }
+        }
+        guard let raw = runtime, let target = parseRuntimeRequest(raw) else {
+            return true
+        }
+        guard let id = rec.runtimeIdentifier,
+              let bound = SimRuntimeVersion.parse(runtimeIdentifier: id) else {
+            return false
+        }
+        return bound == target
+    }
+
+    /// Preserves the pre-#99 single-binding contract for the
+    /// "no --device, reuse the one binding I already have" path:
+    /// if the user pinned `--runtime` and the recorded runtime
+    /// disagrees, throw `simulatorAlreadyBound` so the user sees
+    /// the same actionable message they did before. Legacy records
+    /// with no `runtimeIdentifier` keep silently reusing for
+    /// backwards compatibility.
+    private func assertRuntimeMatches(
+        existing: TaskState.SimulatorRecord,
+        requestedRuntime: String?,
+        task: TaskName
+    ) throws {
+        guard let raw = requestedRuntime,
+              let target = parseRuntimeRequest(raw),
+              let id = existing.runtimeIdentifier,
+              let bound = SimRuntimeVersion.parse(runtimeIdentifier: id),
+              bound != target else {
+            return
+        }
+        let device = existing.templateName ?? Self.stripCloneSuffix(from: existing.name, task: task)
+        throw VibeChardError.simulatorAlreadyBound(
+            taskName: task.raw,
+            currentName: "\(existing.name) (runtime iOS \(bound.major).\(bound.minor))",
+            requestedName: "\(device) (runtime iOS \(target.major).\(target.minor))"
+        )
     }
 
     /// Wrap `simctl.clone` with optional auto-shutdown of the source
@@ -215,9 +285,31 @@ public struct SimulatorService: Sendable {
         try simctl.erase(udid: udid)
     }
 
-    /// Read `state.simulator` for `task`, returning nil when there's
-    /// no binding. Throws when state.json is missing/corrupt.
+    /// Read the task's single simulator binding (#99). Returns nil
+    /// when there's no binding. Throws `simulatorBindingAmbiguous`
+    /// when the task has two or more bindings — callers that want
+    /// the full set use `lookupAllBindings`, and callers that take
+    /// a `--device` selector should resolve through
+    /// `resolveBindingForCLI`.
     public func lookupBound(task: TaskName) throws -> TaskState.SimulatorRecord? {
+        let bindings = try lookupAllBindings(task: task)
+        switch bindings.count {
+        case 0:
+            return nil
+        case 1:
+            return bindings[0]
+        default:
+            throw VibeChardError.simulatorBindingAmbiguous(
+                taskName: task.raw,
+                candidates: bindings.map(\.name)
+            )
+        }
+    }
+
+    /// Read every simulator binding persisted for `task` (#99).
+    /// Always returns a (possibly empty) list — never throws on
+    /// ambiguity. Throws when `state.json` is missing/corrupt.
+    public func lookupAllBindings(task: TaskName) throws -> [TaskState.SimulatorRecord] {
         let statePath = workspace.statePath(for: task)
         guard fs.fileExists(at: statePath) else {
             throw VibeChardError.stateFileCorrupt(
@@ -227,7 +319,65 @@ public struct SimulatorService: Sendable {
         }
         let data = try fs.readFile(at: statePath)
         let state = try TaskState.parse(data)
-        return state.simulator
+        return state.allSimulators
+    }
+
+    /// Resolve which binding a CLI subcommand should operate on (#99).
+    /// Used by `vch sim erase / shutdown / info` and any future
+    /// per-binding command that needs to disambiguate when the task
+    /// has more than one clone.
+    ///
+    /// Returns nil when the task has no bindings at all (caller emits
+    /// "no clone bound"); otherwise:
+    ///   * neither `device` nor `runtime` given:
+    ///     1 binding → return it; ≥2 → `simulatorBindingAmbiguous`.
+    ///   * `device` (and optionally `runtime`) given: filter
+    ///     `lookupAllBindings`. 1 match → return it; 0 → throw
+    ///     `taskNotFound`-style `simulatorTemplateNotFound`; ≥2 →
+    ///     `simulatorBindingAmbiguous` over the remaining matches.
+    public func resolveBindingForCLI(
+        task: TaskName,
+        device: String?,
+        runtime: String? = nil
+    ) throws -> TaskState.SimulatorRecord? {
+        let all = try lookupAllBindings(task: task)
+        if all.isEmpty { return nil }
+
+        if (device == nil || device!.isEmpty) && (runtime == nil || runtime!.isEmpty) {
+            switch all.count {
+            case 1: return all[0]
+            default:
+                throw VibeChardError.simulatorBindingAmbiguous(
+                    taskName: task.raw,
+                    candidates: all.map(\.name)
+                )
+            }
+        }
+
+        let matches = all.filter { rec in
+            matchesBinding(rec, device: device ?? "", runtime: runtime, task: task)
+        }
+        switch matches.count {
+        case 0:
+            // Surface the actual binding names so the user can copy-paste
+            // a `--device` value that exists.
+            let detail: String
+            if let runtime, !runtime.isEmpty {
+                detail = "\(device ?? "(any)") (runtime \(runtime))"
+            } else {
+                detail = device ?? "(any)"
+            }
+            throw VibeChardError.simulatorTemplateNotFound(
+                name: "\(detail) — bindings: \(all.map(\.name).joined(separator: ", "))"
+            )
+        case 1:
+            return matches[0]
+        default:
+            throw VibeChardError.simulatorBindingAmbiguous(
+                taskName: task.raw,
+                candidates: matches.map(\.name)
+            )
+        }
     }
 
     /// Look up live state for a UDID via `simctl list devices --json`

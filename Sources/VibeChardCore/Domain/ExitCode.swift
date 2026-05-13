@@ -34,6 +34,7 @@ public extension VibeChardError {
              .adoptCurrentAlreadyManaged,
              .simulatorTemplateNotFound,
              .simulatorAlreadyBound,
+             .simulatorBindingAmbiguous,
              .simulatorTemplateBooted,
              .warmTemplateAlreadyExists,
              .worktreeBusy,

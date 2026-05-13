@@ -283,28 +283,53 @@ final class SimulatorServiceTests: XCTestCase {
         XCTAssertEqual(simctl.cloneCalls.count, 0)
     }
 
-    func testEnsureCloneRefusesMismatchedDevice() throws {
+    func testEnsureCloneAppendsBindingForDifferentDevice() throws {
+        // #99: when a task already has one binding and the caller
+        // passes a *different* `--device`, ensureClone now clones a
+        // second binding and appends it to `state.simulators` rather
+        // than throwing `simulatorAlreadyBound`. That's the whole
+        // point of the multi-platform feature — an iOS task can
+        // grow a watchOS sibling without removing the task first.
         var seed = emptyState("alpha")
         seed.simulator = TaskState.SimulatorRecord(
             cloneUDID: "OLD-CLONE", sourceUDID: "OLD-SRC",
             name: "iPhone 16 · vch[alpha]",
-            templateName: "iPhone 16"
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-2"
         )
-        let (service, _, _) = makeService(
+        let (service, fs, simctl) = makeService(
             seedingTask: "alpha",
-            seedingState: seed
+            seedingState: seed,
+            devices: [
+                device("WATCH-TPL", "Apple Watch Series 10 (46mm)",
+                       "com.apple.CoreSimulator.SimRuntime.watchOS-11-0",
+                       .init(platform: .watchOS, major: 11, minor: 0)),
+            ],
+            cloneReturnsUDID: "NEW-WATCH-CLONE"
         )
-        XCTAssertThrowsError(try service.ensureClone(
+        let resolved = try service.ensureClone(
             task: try TaskName("alpha"),
-            requestedDevice: "iPhone 17 Pro"
-        )) { err in
-            guard case let VibeChardError.simulatorAlreadyBound(t, current, requested) = err else {
-                return XCTFail("expected simulatorAlreadyBound, got \(err)")
-            }
-            XCTAssertEqual(t, "alpha")
-            XCTAssertEqual(current, "iPhone 16 · vch[alpha]")
-            XCTAssertEqual(requested, "iPhone 17 Pro")
-        }
+            requestedDevice: "Apple Watch Series 10 (46mm)"
+        )
+        XCTAssertEqual(resolved?.udid, "NEW-WATCH-CLONE")
+        XCTAssertTrue(resolved?.createdNow ?? false,
+                      "ensureClone must report the new binding as freshly created")
+        XCTAssertEqual(simctl.cloneCalls.count, 1,
+                       "exactly one simctl clone for the second platform binding")
+
+        // Persisted state should now carry BOTH bindings.
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let task = try TaskName("alpha")
+        let stateData = try fs.readFile(at: workspace.statePath(for: task))
+        let state = try TaskState.parse(stateData)
+        XCTAssertEqual(state.allSimulators.count, 2)
+        XCTAssertEqual(state.allSimulators[0].cloneUDID, "OLD-CLONE")
+        XCTAssertEqual(state.allSimulators[1].cloneUDID, "NEW-WATCH-CLONE")
+        XCTAssertEqual(state.allSimulators[1].templateName,
+                       "Apple Watch Series 10 (46mm)")
+        // Legacy `simulator` field mirrors the FIRST binding for
+        // downgrade safety.
+        XCTAssertEqual(state.simulator?.cloneUDID, "OLD-CLONE")
     }
 
     // MARK: - delete
@@ -568,7 +593,55 @@ final class SimulatorServiceTests: XCTestCase {
         }
     }
 
-    func testEnsureCloneRefusesReuseOnRuntimeMismatch() throws {
+    func testEnsureCloneAppendsBindingForRuntimeMismatch() throws {
+        // #99: when a single iPhone 16 binding exists on iOS 18.5 and
+        // the caller asks for `--device "iPhone 16" --runtime
+        // "iOS 26.4"`, the filter excludes the iOS-18.5 record (its
+        // runtime differs), so ensureClone clones a NEW iPhone 16
+        // binding pinned to iOS 26.4 and appends it. This replaces
+        // the pre-#99 "simulatorAlreadyBound" hard-fail.
+        let bound = TaskState.SimulatorRecord(
+            cloneUDID: "C-18", sourceUDID: "TPL-18",
+            name: "iPhone 16 · vch[alpha]",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-5"
+        )
+        var state = emptyState("alpha")
+        state.simulator = bound
+        let (service, fs, simctl) = makeService(
+            seedingTask: "alpha", seedingState: state,
+            devices: [
+                device("TPL-26", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                       .init(major: 26, minor: 4)),
+            ],
+            cloneReturnsUDID: "C-26"
+        )
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: "iPhone 16",
+            requestedRuntime: "iOS 26.4"
+        )
+        XCTAssertEqual(resolved?.udid, "C-26")
+        XCTAssertTrue(resolved?.createdNow ?? false)
+        XCTAssertEqual(simctl.cloneCalls.count, 1)
+
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let task = try TaskName("alpha")
+        let after = try TaskState.parse(try fs.readFile(at: workspace.statePath(for: task)))
+        XCTAssertEqual(after.allSimulators.count, 2)
+        XCTAssertEqual(after.allSimulators[0].runtimeIdentifier,
+                       "com.apple.CoreSimulator.SimRuntime.iOS-18-5")
+        XCTAssertEqual(after.allSimulators[1].runtimeIdentifier,
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-4")
+    }
+
+    func testEnsureCloneRefusesSingleBindingReuseWhenRuntimePinned() throws {
+        // Pre-#99 single-binding reuse path: when the caller does NOT
+        // pass `--device` (just `--runtime`) and the only binding's
+        // runtime disagrees, ensureClone still throws
+        // `simulatorAlreadyBound`. This preserves the actionable
+        // legacy message for "I forgot to also pass --device" users.
         let bound = TaskState.SimulatorRecord(
             cloneUDID: "C", sourceUDID: "TPL", name: "iPhone 16 · vch[alpha]",
             templateName: "iPhone 16",
@@ -580,7 +653,7 @@ final class SimulatorServiceTests: XCTestCase {
             seedingTask: "alpha", seedingState: state)
         XCTAssertThrowsError(
             try service.ensureClone(task: try TaskName("alpha"),
-                                    requestedDevice: "iPhone 16",
+                                    requestedDevice: nil,
                                     requestedRuntime: "iOS 26.4")
         ) { err in
             guard case let VibeChardError.simulatorAlreadyBound(_, currentName, requestedName) = err else {
@@ -717,6 +790,195 @@ final class SimulatorServiceTests: XCTestCase {
         }
         XCTAssertEqual(simctl.shutdownCalls, [])
     }
+
+    // MARK: - #99 multi-platform bindings
+
+    /// Helper: seed two bindings (iOS + watchOS) on `alpha` and
+    /// return a configured service that knows about templates for
+    /// both platforms plus an iOS 26.4 template (used by ambiguity
+    /// tests that need a same-device-different-runtime case).
+    private func makeServiceWithTwoBindings(
+        cloneReturnsUDID: String = "NEW-UDID"
+    ) -> (SimulatorService, InMemoryFileSystem, FakeSimctl) {
+        var seed = emptyState("alpha")
+        seed.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "IOS-CLONE", sourceUDID: "IOS-TPL",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-2"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "WATCH-CLONE", sourceUDID: "WATCH-TPL",
+                name: "Apple Watch Series 10-vch-alpha",
+                templateName: "Apple Watch Series 10 (46mm)",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
+            ),
+        ])
+        return makeService(
+            seedingTask: "alpha",
+            seedingState: seed,
+            devices: [
+                device("IOS-26-TPL", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                       .init(major: 26, minor: 4)),
+            ],
+            cloneReturnsUDID: cloneReturnsUDID
+        )
+    }
+
+    func testEnsureCloneReusesIOSBindingWhenDeviceMatches() throws {
+        // Two bindings (iOS + watchOS) + `--device "iPhone 16"`:
+        // filter narrows to the iOS binding, reuse it, no new clone.
+        let (service, _, simctl) = makeServiceWithTwoBindings()
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: "iPhone 16"
+        )
+        XCTAssertEqual(resolved?.udid, "IOS-CLONE")
+        XCTAssertFalse(resolved?.createdNow ?? true)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+    }
+
+    func testEnsureCloneThrowsAmbiguousWhenMultipleBindingsAndNoDevice() throws {
+        // Two bindings + no `--device`: ensureClone can't pick for
+        // the user, so it raises `simulatorBindingAmbiguous` (and
+        // ExitCode maps it to business=1). The previous single-binding
+        // implicit-reuse path is intentionally gone for multi-binding
+        // tasks — silently picking would be surprising.
+        let (service, _, _) = makeServiceWithTwoBindings()
+        XCTAssertThrowsError(try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: nil
+        )) { err in
+            guard case let VibeChardError.simulatorBindingAmbiguous(t, candidates) = err else {
+                return XCTFail("expected simulatorBindingAmbiguous, got \(err)")
+            }
+            XCTAssertEqual(t, "alpha")
+            XCTAssertEqual(candidates.count, 2)
+            XCTAssertTrue(candidates.contains("iPhone 16-vch-alpha"))
+            XCTAssertTrue(candidates.contains("Apple Watch Series 10-vch-alpha"))
+        }
+    }
+
+    func testEnsureCloneAmbiguousWhenTwoBindingsSameDeviceAndNoRuntime() throws {
+        // Same device on two runtimes (iOS 18.2 + iOS 26.4) + caller
+        // passes `--device "iPhone 16"` only. Filter narrows to 2
+        // candidates → ambiguous. The actionable message tells the
+        // user to add `--runtime`.
+        var seed = emptyState("alpha")
+        seed.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "C-18", sourceUDID: "TPL-18",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-2"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "C-26", sourceUDID: "TPL-26",
+                name: "iPhone 16-vch-alpha-2",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+            ),
+        ])
+        let (service, _, _) = makeService(seedingTask: "alpha", seedingState: seed)
+        XCTAssertThrowsError(try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: "iPhone 16"
+        )) { err in
+            guard case let VibeChardError.simulatorBindingAmbiguous(_, candidates) = err else {
+                return XCTFail("expected simulatorBindingAmbiguous, got \(err)")
+            }
+            XCTAssertEqual(candidates.count, 2)
+        }
+    }
+
+    func testEnsureCloneRoundtripsLegacyStateAsSingleBinding() throws {
+        // Pre-#99 state.json populated only `simulator` (no
+        // `simulators` list). The `allSimulators` accessor promotes
+        // it into a one-element list, so every code path that
+        // iterates bindings (reuse, lookup, info, rm) Just Works
+        // without a schema bump or a migration write.
+        var seed = emptyState("alpha")
+        seed.simulator = TaskState.SimulatorRecord(
+            cloneUDID: "LEGACY-CLONE", sourceUDID: "TPL",
+            name: "iPhone 16-vch-alpha",
+            templateName: "iPhone 16"
+        )
+        seed.simulators = nil   // explicit: legacy schema, no list field.
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha", seedingState: seed)
+        // No `--device`, single binding → silent reuse.
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"), requestedDevice: nil)
+        XCTAssertEqual(resolved?.udid, "LEGACY-CLONE")
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+
+        let all = try service.lookupAllBindings(task: try TaskName("alpha"))
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].cloneUDID, "LEGACY-CLONE")
+    }
+
+    func testLookupBoundThrowsAmbiguousOnMultipleBindings() throws {
+        // The `lookupBound` shorthand only makes sense when there are
+        // 0 or 1 bindings. With ≥2 it raises the same ambiguous
+        // error as ensureClone, forcing callers to explicitly route
+        // through `lookupAllBindings` or `resolveBindingForCLI`.
+        let (service, _, _) = makeServiceWithTwoBindings()
+        XCTAssertThrowsError(try service.lookupBound(task: try TaskName("alpha"))) { err in
+            guard case VibeChardError.simulatorBindingAmbiguous = err else {
+                return XCTFail("expected simulatorBindingAmbiguous, got \(err)")
+            }
+        }
+    }
+
+    func testResolveBindingForCLIDevicePicksOne() throws {
+        let (service, _, _) = makeServiceWithTwoBindings()
+        let bound = try service.resolveBindingForCLI(
+            task: try TaskName("alpha"),
+            device: "Apple Watch Series 10 (46mm)",
+            runtime: nil
+        )
+        XCTAssertEqual(bound?.cloneUDID, "WATCH-CLONE")
+    }
+
+    func testResolveBindingForCLIWithoutSelectorThrowsAmbiguous() throws {
+        let (service, _, _) = makeServiceWithTwoBindings()
+        XCTAssertThrowsError(try service.resolveBindingForCLI(
+            task: try TaskName("alpha"), device: nil, runtime: nil
+        )) { err in
+            guard case VibeChardError.simulatorBindingAmbiguous = err else {
+                return XCTFail("expected simulatorBindingAmbiguous, got \(err)")
+            }
+        }
+    }
+
+    func testResolveBindingForCLIRuntimeDisambiguates() throws {
+        // Two bindings share a device but pin different runtimes.
+        // `--device "iPhone 16" --runtime "iOS 26.4"` resolves to one.
+        var seed = emptyState("alpha")
+        seed.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "C-18", sourceUDID: "TPL-18",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-2"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "C-26", sourceUDID: "TPL-26",
+                name: "iPhone 16-vch-alpha-2",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4"
+            ),
+        ])
+        let (service, _, _) = makeService(seedingTask: "alpha", seedingState: seed)
+        let bound = try service.resolveBindingForCLI(
+            task: try TaskName("alpha"),
+            device: "iPhone 16",
+            runtime: "iOS 26.4"
+        )
+        XCTAssertEqual(bound?.cloneUDID, "C-26")
+    }
 }
 
 // MARK: - test double
@@ -747,6 +1009,11 @@ class FakeSimctl: SimctlClient, @unchecked Sendable {
     var shutdownThrows: VibeChardError?
     var eraseThrows: VibeChardError?
     var deleteThrows: VibeChardError?
+    /// Per-UDID failure mode (#99): used by tests that need a
+    /// `simctl.delete` call to fail for SOME bindings but succeed
+    /// for others, verifying partial-failure cleanup symmetry in
+    /// `LandService` / `RemoveCommand`.
+    var deleteThrowsByUDID: [String: VibeChardError] = [:]
     var installThrows: VibeChardError?
     var launchThrows: VibeChardError?
 
@@ -788,6 +1055,13 @@ class FakeSimctl: SimctlClient, @unchecked Sendable {
     }
 
     func delete(udid: String) throws {
+        if let err = deleteThrowsByUDID[udid] {
+            // Record the attempt before bubbling — partial-failure
+            // tests want to assert that vch *tried* to delete every
+            // binding, even if some throws.
+            deleteCalls.append(udid)
+            throw err
+        }
         if let err = deleteThrows { throw err }
         deleteCalls.append(udid)
     }

@@ -402,8 +402,7 @@ public struct TaskService: Sendable {
 
     /// Returns one summary per managed worktree, sorted by `createdAt`
     /// descending (newest first), with stateless worktrees ordered last.
-    public func listTasks() throws -> [TaskSummary] {
-        let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+    public func listTasks() throws -> [TaskSummary] {        let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
         var summaries: [TaskSummary] = []
 
         for entry in entries {
@@ -434,7 +433,7 @@ public struct TaskService: Sendable {
                 createdAt: state?.createdAt,
                 baseRef: state?.baseRef,
                 baseBranch: state?.baseBranch,
-                simulatorName: state?.simulator?.name,
+                simulatorName: Self.summarize(simulators: state?.allSimulators ?? []),
                 lastBuildSucceeded: state?.lastBuild?.success,
                 lastBuildAt: state?.lastBuild?.finishedAt
             ))
@@ -653,5 +652,17 @@ public struct TaskService: Sendable {
             }
         }
         return report
+    }
+
+    /// Compact display string for the simulator column of `vch list`
+    /// (#99). With 0 bindings → nil; 1 binding → that name; 2+
+    /// bindings → `"<first> (+N)"` so the column stays narrow while
+    /// still telling the user the task has extra clones.
+    static func summarize(simulators records: [TaskState.SimulatorRecord]) -> String? {
+        switch records.count {
+        case 0: return nil
+        case 1: return records[0].name
+        default: return "\(records[0].name) (+\(records.count - 1))"
+        }
     }
 }

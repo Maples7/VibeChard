@@ -22,6 +22,15 @@ public enum VibeChardError: Error, CustomStringConvertible {
     case adoptCurrentAlreadyManaged(path: String, name: String)
     case simulatorTemplateNotFound(name: String)
     case simulatorAlreadyBound(taskName: String, currentName: String, requestedName: String)
+    /// Multi-binding disambiguation (#99): a task has two or more
+    /// simulator bindings and the caller didn't pass enough
+    /// information (`--device` and optionally `--runtime`) to pick
+    /// one. Both `vch sim {erase,shutdown,info}` and the implicit
+    /// "reuse my binding" path of `vch build` / `vch test` raise this
+    /// when the choice would otherwise be silent. Mapped to the
+    /// business exit code so scripts can `if vch sim info foo;
+    /// then …; else if exit==1 then disambiguate`.
+    case simulatorBindingAmbiguous(taskName: String, candidates: [String])
     /// `xcrun simctl clone` refused because the source template is in
     /// the `Booted` state. The user (or some other tool — Simulator.app,
     /// Xcode UI tests, an explicit `simctl boot`) booted the template
@@ -162,6 +171,9 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "no available simulator template named '\(name)' (try `xcrun simctl list devices available`)"
         case let .simulatorAlreadyBound(task, current, requested):
             return "task '\(task)' is already bound to simulator '\(current)' — refusing to clone '\(requested)' (use `vch sim erase` or remove the task first)"
+        case let .simulatorBindingAmbiguous(task, candidates):
+            let listing = candidates.map { "  - \($0)" }.joined(separator: "\n")
+            return "task '\(task)' has \(candidates.count) simulator bindings — pass --device <name> (and --runtime <version> when two bindings share a device) to pick one:\n\(listing)"
         case let .simulatorTemplateBooted(name, udid):
             let prefix = String(udid.prefix(8))
             return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it)"

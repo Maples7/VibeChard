@@ -205,7 +205,7 @@ warm 模擬器模板的快速路徑、重置每任務的模擬器狀態、模板
 | `vch test <name>` | 跑 `xcodebuild test`，注入 `-resultBundlePath`，懶克隆模擬器（`--device`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
 | `vch run <name>` | 在任務的模擬器克隆上建置、安裝並啟動 App（`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
 | `vch logs <name>` | 印出任務最近一次建置/測試的完整 xcodebuild 紀錄（`--test`/`--build`）。 |
-| `vch sim {clone,erase,shutdown,info} <name>` | 明確管理任務的模擬器克隆。 |
+| `vch sim {clone,erase,shutdown,info} <name>` | 明確管理任務的模擬器克隆；透過重複執行 `vch sim clone --device <name>`，一個任務可以同時持有多個克隆（每個平台一個，例如 iOS + watchOS）（[#99](https://github.com/Maples7/VibeChard/issues/99)）。 |
 | `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模擬器模板（iOS / watchOS / tvOS / visionOS，[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
 | `vch land <name>` | 把 `agent/<name>` 合併回 base 並清理（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
 | `vch sync <name>` | 拉取 base 的 upstream 並把任務分支 rebase 上去（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |

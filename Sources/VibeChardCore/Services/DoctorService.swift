@@ -132,7 +132,10 @@ public struct DoctorService: Sendable {
                 let state = try TaskState.parse(data)
                 let raw = state.name
                 report.checkedTasks.append(raw)
-                if let sim = state.simulator {
+                // Multi-binding (#99): a task may have several sim
+                // clones — track every one so the orphan scan
+                // doesn't flag a known per-task device as stale.
+                for sim in state.allSimulators {
                     boundByUDID[sim.cloneUDID] = StaleBinding(
                         taskName: raw,
                         cloneUDID: sim.cloneUDID,
