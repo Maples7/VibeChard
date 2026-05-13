@@ -17,6 +17,14 @@ public enum LandPlan {
     /// filesystem calls happen inside the planner.
     public struct Inputs: Equatable, Sendable {
         public let task: TaskName
+        /// The actual git branch being merged. For vch-created tasks
+        /// this equals `task.branchName` (`agent/<name>`); for tasks
+        /// adopted via `vch new <name> --adopt-current` it's whatever
+        /// branch was checked out at adopt time (e.g. `feature/codex`).
+        /// Used in the merge commit message and the `noOp` reason so
+        /// both reflect the branch git actually operates on, not the
+        /// vch task name. (#98 follow-up)
+        public let taskBranch: String
         public let intoOption: String?
         public let recordedBaseBranch: String?
         public let currentMainBranch: String?
@@ -32,6 +40,7 @@ public enum LandPlan {
 
         public init(
             task: TaskName,
+            taskBranch: String,
             intoOption: String?,
             recordedBaseBranch: String?,
             currentMainBranch: String?,
@@ -46,6 +55,7 @@ public enum LandPlan {
             taskHeadSubject: String?
         ) {
             self.task = task
+            self.taskBranch = taskBranch
             self.intoOption = intoOption
             self.recordedBaseBranch = recordedBaseBranch
             self.currentMainBranch = currentMainBranch
@@ -132,7 +142,7 @@ public enum LandPlanner {
         // Task branch must be strictly ahead of `into`.
         if inputs.taskAheadCount == 0 {
             return .abort(.noOp(
-                taskBranch: inputs.task.branchName,
+                taskBranch: inputs.taskBranch,
                 into: into
             ))
         }
@@ -148,17 +158,20 @@ public enum LandPlanner {
             }
         }
 
-        // Resolve the merge commit message.
+        // Resolve the merge commit message. Use `taskBranch` (which is
+        // `agent/<name>` for vch-created tasks and whatever the user
+        // adopted for `--adopt-current` tasks) so the commit log
+        // accurately names the branch that was merged. (#98 follow-up)
         let message: String
         if let user = inputs.userMessage, !user.isEmpty {
             message = user
         } else if let subject = inputs.taskHeadSubject, !subject.isEmpty {
-            message = "Merge agent/\(inputs.task.raw): \(subject)"
+            message = "Merge \(inputs.taskBranch): \(subject)"
         } else {
             // No commits with a usable subject (extremely rare — branch
             // exists but only has merge commits). Fall back to a stable
             // default.
-            message = "Merge agent/\(inputs.task.raw)"
+            message = "Merge \(inputs.taskBranch)"
         }
 
         return .proceed(LandPlan.Resolved(

@@ -354,6 +354,43 @@ final class SimulatorServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - lookupBound under adopted worktree (#98 follow-up)
+
+    /// `lookupBound` reads `state.json` from
+    /// `workspace.statePath(for:)`. For an adopted task this means
+    /// reading from `<adoptedPath>/.vch/state.json`. If the override
+    /// were ever bypassed, lookupBound would either return nil (state
+    /// not seeded at the wrong location) or throw stateFileCorrupt
+    /// — both observable failures of `vch sim list` against an
+    /// adopted task.
+    func testLookupBoundReadsFromAdoptedWorktreeStatePath() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory("\(adoptedPath)/.vch")
+        var state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbee",
+            worktreeOwnership: .adopted
+        )
+        state.simulator = TaskState.SimulatorRecord(
+            cloneUDID: "C-9", sourceUDID: "S-9",
+            name: "iPhone 16 · vch[codex-task]"
+        )
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try state.jsonData())
+        let service = SimulatorService(workspace: workspace, simctl: FakeSimctl(), fs: fs)
+
+        let bound = try service.lookupBound(task: task)
+        XCTAssertEqual(bound?.cloneUDID, "C-9")
+        XCTAssertEqual(bound?.sourceUDID, "S-9")
+    }
+
     // MARK: - shutdown / erase (M6)
 
     func testShutdownDelegatesToSimctl() throws {

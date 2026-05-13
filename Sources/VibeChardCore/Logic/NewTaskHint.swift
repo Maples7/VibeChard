@@ -28,10 +28,23 @@ public enum NewTaskHint {
     ///   • stdout isn't a TTY (caller is scripting, output captured)
     ///   • `VCH_SHELL_HELPER` is already set (helpers are sourced)
     ///   • `VCH_NEW_HINT` is `0` / `false` (explicit opt-out)
+    ///   • `adoptCurrent == true` — the user is already standing in the
+    ///     worktree they just adopted, there is no auto-cd benefit to
+    ///     advertise. Suppressing here keeps decision logic in Core so
+    ///     it's unit-testable (AGENTS.md discipline #7). (#98 follow-up)
+    ///   • `execProvided == true` — about to `execve` into the agent,
+    ///     any hint we print would be lost.
+    ///   • `cdProvided == true` — `--cd` puts vch into machine-readable
+    ///     mode (the wrapper consumes stdout); a banner on stderr would
+    ///     pollute that contract.
     public static func message(
         stdoutIsTTY: Bool,
-        env: [String: String]
+        env: [String: String],
+        adoptCurrent: Bool = false,
+        execProvided: Bool = false,
+        cdProvided: Bool = false
     ) -> String? {
+        if adoptCurrent || execProvided || cdProvided { return nil }
         guard stdoutIsTTY else { return nil }
         if let helper = env[helperEnv], !helper.isEmpty { return nil }
         if let suppress = env[suppressEnv]?.lowercased(),

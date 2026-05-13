@@ -542,6 +542,55 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(read.baseRef, "abc1234")
     }
 
+    // MARK: - pathForTask / stateForTask through adopted-path override (#98 follow-up)
+
+    /// `pathForTask` is the entry point most subcommands call to
+    /// resolve "what's the cwd for this task". For an adopted task
+    /// the `Workspace.taskWorktreePaths` override must win — otherwise
+    /// every downstream subcommand silently operates on the wrong
+    /// directory.
+    func testPathForTaskHonoursAdoptedWorktreeOverride() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: "/Users/me/Repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(adoptedPath)
+        let service = TaskService(workspace: workspace, git: FakeGitClient(),
+                                  fs: fs, clock: FixedClock(Date()))
+
+        let resolved = try service.pathForTask(task)
+        XCTAssertEqual(resolved, adoptedPath)
+    }
+
+    /// `stateForTask` reads `state.json` from `workspace.statePath(for:)`,
+    /// which must also follow the override. Symmetric guard for
+    /// `pathForTask`.
+    func testStateForTaskReadsFromAdoptedWorktree() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: "/Users/me/Repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory("\(adoptedPath)/.vch")
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(state.jsonData(),
+                               to: "\(adoptedPath)/.vch/state.json")
+        let service = TaskService(workspace: workspace, git: FakeGitClient(),
+                                  fs: fs, clock: FixedClock(Date()))
+
+        let read = try service.stateForTask(task)
+        XCTAssertEqual(read.name, "codex-task")
+        XCTAssertEqual(read.branch, "feature/codex")
+        XCTAssertEqual(read.worktreeOwnership, .adopted)
+    }
+
     // MARK: - remove
 
     func testRemoveRefusesDirtyWorktreeByDefault() throws {

@@ -599,4 +599,95 @@ final class SyncServiceTests: XCTestCase {
         let workspace = Workspace(mainWorktreePath: mainRepo)
         XCTAssertNil(try loadState(fs, workspace, task).lastSync)
     }
+
+    // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
+
+    /// Adopted tasks carry their *own* branch name in
+    /// `state.branch` — there is no synthetic `agent/<name>`. The
+    /// previous LandPlanner bug (hardcoded `agent/...` in merge
+    /// message) had a sibling here: every git operation issued by
+    /// SyncService has to use `state.branch` AND the adopted cwd.
+    /// This test guards both.
+    func testRebaseInAdoptedWorktreeUsesAdoptedCwdAndStateBranch() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let adoptedBranch = "feature/codex"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        let git = FakeGitClient()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        let state = TaskState(
+            name: "codex-task",
+            branch: adoptedBranch,
+            createdAt: Date(timeIntervalSince1970: 1_699_000_000),
+            baseRef: "abc123",
+            baseBranch: "origin/main",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try state.jsonData())
+        git.branches.insert(adoptedBranch)
+        let baseSHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        git.revParseByRef["origin/main"] = baseSHA
+        git.revListCountByRange["\(baseSHA)..\(adoptedBranch)"] = 1
+        git.revListCountByRange["\(adoptedBranch)..\(baseSHA)"] = 3
+        let service = SyncService(workspace: workspace, git: git,
+                                  fs: fs, clock: FixedClock(Date()))
+
+        _ = try service.sync(task, options: .init())
+
+        XCTAssertEqual(git.rebaseCalls.count, 1)
+        XCTAssertEqual(git.rebaseCalls[0].worktreeCwd, adoptedPath,
+                       "rebase must run inside the adopted worktree, NOT \(mainRepo)-codex-task")
+        XCTAssertEqual(git.rebaseCalls[0].onto, "origin/main")
+        // ahead/behind queries used state.branch, not "agent/codex-task"
+        XCTAssertNotNil(git.revListCountByRange["\(baseSHA)..\(adoptedBranch)"])
+    }
+
+    /// Merge strategy variant: the merge-into-feature-branch commit
+    /// message must reference the real branch (`state.branch`), not
+    /// the synthetic `agent/<name>` form that some callers historically
+    /// constructed via `task.branchName` (#98 LandPlanner regression).
+    func testMergeInAdoptedWorktreeUsesStateBranchInMessage() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let adoptedBranch = "feature/codex"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        let git = FakeGitClient()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        let state = TaskState(
+            name: "codex-task",
+            branch: adoptedBranch,
+            createdAt: Date(timeIntervalSince1970: 1_699_000_000),
+            baseRef: "abc123",
+            baseBranch: "origin/main",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try state.jsonData())
+        git.branches.insert(adoptedBranch)
+        let baseSHA = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        git.revParseByRef["origin/main"] = baseSHA
+        git.revListCountByRange["\(baseSHA)..\(adoptedBranch)"] = 1
+        git.revListCountByRange["\(adoptedBranch)..\(baseSHA)"] = 2
+        let service = SyncService(workspace: workspace, git: git,
+                                  fs: fs, clock: FixedClock(Date()))
+
+        _ = try service.sync(task, options: .init(strategy: .merge))
+
+        XCTAssertEqual(git.mergeCalls.count, 1)
+        XCTAssertEqual(git.mergeCalls[0].repoCwd, adoptedPath)
+        XCTAssertEqual(
+            git.mergeCalls[0].message,
+            "Merge origin/main into \(adoptedBranch)",
+            "merge commit message must use state.branch, not agent/<task>"
+        )
+    }
 }

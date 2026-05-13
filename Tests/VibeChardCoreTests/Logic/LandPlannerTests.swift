@@ -7,6 +7,7 @@ import XCTest
 final class LandPlannerTests: XCTestCase {
 
     private func makeInputs(
+        taskBranch: String = "agent/alpha",
         intoOption: String? = nil,
         recordedBaseBranch: String? = "main",
         currentMainBranch: String? = "main",
@@ -22,6 +23,7 @@ final class LandPlannerTests: XCTestCase {
     ) -> LandPlan.Inputs {
         LandPlan.Inputs(
             task: try! TaskName("alpha"),
+            taskBranch: taskBranch,
             intoOption: intoOption,
             recordedBaseBranch: recordedBaseBranch,
             currentMainBranch: currentMainBranch,
@@ -186,5 +188,67 @@ final class LandPlannerTests: XCTestCase {
             return XCTFail("expected mergeOverlap, got \(decision)")
         }
         XCTAssertEqual(paths, ["a.swift", "b.swift", "c.swift"])
+    }
+
+    // MARK: - adopted task branch names (#98 follow-up)
+
+    /// For a task adopted via `vch new <name> --adopt-current`, the
+    /// branch git actually merges is `state.branch` (e.g. the user's
+    /// pre-existing `feature/codex`), NOT `agent/<task.raw>`. The
+    /// default merge commit subject must reflect the real branch so
+    /// the merge commit log doesn't lie about what was merged.
+    func testProceedDefaultMessageUsesAdoptedBranchName() {
+        let decision = LandPlanner.plan(makeInputs(
+            taskBranch: "feature/codex",
+            taskHeadSubject: "wire up adoption hint"
+        ))
+        guard case let .proceed(resolved) = decision else {
+            return XCTFail("expected proceed, got \(decision)")
+        }
+        XCTAssertEqual(
+            resolved.message,
+            "Merge feature/codex: wire up adoption hint",
+            "merge commit subject must reference the adopted branch, not agent/<name>"
+        )
+    }
+
+    /// The no-subject fallback also has to use the real branch name —
+    /// same reasoning as the happy path.
+    func testProceedFallbackMessageUsesAdoptedBranchName() {
+        let decision = LandPlanner.plan(makeInputs(
+            taskBranch: "feature/codex",
+            taskHeadSubject: nil
+        ))
+        guard case let .proceed(resolved) = decision else {
+            return XCTFail("expected proceed, got \(decision)")
+        }
+        XCTAssertEqual(resolved.message, "Merge feature/codex")
+    }
+
+    /// `--message "..."` always wins regardless of taskBranch — guard
+    /// against a regression that quietly reformats user-supplied text.
+    func testProceedUserMessageWinsEvenWithAdoptedBranch() {
+        let decision = LandPlanner.plan(makeInputs(
+            taskBranch: "feature/codex",
+            userMessage: "Merge codex spike"
+        ))
+        guard case let .proceed(resolved) = decision else {
+            return XCTFail("expected proceed, got \(decision)")
+        }
+        XCTAssertEqual(resolved.message, "Merge codex spike")
+    }
+
+    /// The `noOp` abort reason carries `taskBranch` directly to the
+    /// CLI error. Reporting `agent/<name>` when the real branch is
+    /// `feature/codex` would send the user looking at the wrong ref.
+    func testNoOpReportsAdoptedBranchName() {
+        let decision = LandPlanner.plan(makeInputs(
+            taskBranch: "feature/codex",
+            taskAheadCount: 0
+        ))
+        XCTAssertEqual(
+            decision,
+            .abort(.noOp(taskBranch: "feature/codex", into: "main"))
+        )
     }
 }

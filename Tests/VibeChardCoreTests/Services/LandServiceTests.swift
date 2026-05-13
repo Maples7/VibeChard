@@ -554,4 +554,77 @@ final class LandServiceTests: XCTestCase {
             "simctl.delete must not run when auto-rm failed — leave the sim with the live task"
         )
     }
+
+    // MARK: - adopted auto-rm contract (#98 follow-up)
+
+    /// For a task adopted via `vch new <name> --adopt-current`,
+    /// `vch land <name>` must merge the *user's* branch
+    /// (`state.branch`, e.g. `feature/codex`) but on success only
+    /// scrub vch-owned artefacts (`.vch/`, `.agent-build/`) — never
+    /// the user's worktree or branch. Regression guard for the
+    /// `vch land` half of the adopt-current contract that PR #98
+    /// added on the `vch rm` side.
+    func testAutoRmForAdoptedTaskKeepsWorktreeAndBranchIntact() throws {
+        let mainRepo = "/repo"
+        let adoptedPath = "/Users/me/codex-session"
+        let adoptedBranch = "feature/codex"
+        let task = try TaskName("codex-task")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedDirectory(workspace.agentBuildDir(for: task))
+        let state = TaskState(
+            name: "codex-task",
+            branch: adoptedBranch,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbee",
+            baseBranch: "main",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile(workspace.statePath(for: task), data: try state.jsonData())
+
+        let git = FakeGitClient()
+        git.branches = ["main", adoptedBranch]
+        git.entries = [
+            WorktreeEntry(path: mainRepo, branch: "main"),
+            WorktreeEntry(path: adoptedPath, branch: adoptedBranch),
+        ]
+        git.currentBranchByCwd = [mainRepo: "main"]
+        git.revListCountByRange["main..\(adoptedBranch)"] = 1
+        git.diffNamesByRange["main..\(adoptedBranch)"] = ["src/foo.swift"]
+        git.lastSubjectByBranch[adoptedBranch] = "feat: codex spike"
+
+        let service = LandService(workspace: workspace, git: git, fs: fs, clock: SystemClock())
+        let outcome = try service.land(task, options: .init())
+
+        // Merge must reference the adopted branch and use it in the message (#98).
+        XCTAssertEqual(git.mergeCalls.count, 1)
+        XCTAssertEqual(git.mergeCalls.first?.branch, adoptedBranch,
+                       "merge target must be state.branch, not agent/<task>")
+        XCTAssertEqual(git.mergeCalls.first?.message,
+                       "Merge \(adoptedBranch): feat: codex spike",
+                       "merge commit message must use state.branch")
+
+        // Auto-rm path: outcome.removed reports cleanup ran, but for an
+        // adopted task no worktree-remove and no branch-delete may have
+        // been issued — only the vch-owned scratch must be gone.
+        XCTAssertTrue(outcome.merged)
+        XCTAssertTrue(outcome.removed,
+                      "removed=true for adopted means vch artefacts scrubbed (not the worktree itself)")
+        XCTAssertNil(outcome.removeError)
+        XCTAssertEqual(git.removeCalls.count, 0,
+                       "must not git worktree remove an adopted worktree")
+        XCTAssertEqual(git.branchDeleteCalls.count, 0,
+                       "must not delete the user's branch under an adopted task")
+        // Adopted worktree itself is untouched.
+        XCTAssertTrue(fs.directoryExists(at: adoptedPath),
+                      "the user-owned worktree must remain on disk")
+        // vch-owned scratch is gone.
+        XCTAssertFalse(fs.directoryExists(at: workspace.vchDir(for: task)))
+        XCTAssertFalse(fs.directoryExists(at: workspace.agentBuildDir(for: task)))
+    }
 }

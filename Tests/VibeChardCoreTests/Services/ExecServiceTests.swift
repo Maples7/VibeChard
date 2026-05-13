@@ -185,6 +185,79 @@ final class ExecServiceTests: XCTestCase {
         )
         XCTAssertNil(env["DEVELOPER_DIR"])
     }
+
+    // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
+
+    /// `vch new <name> --adopt-current` is followed (when `--exec` is
+    /// passed) by an `ExecService.prepare` call against a Workspace
+    /// whose `taskWorktreePaths` overrides the conventional path.
+    /// Every artefact ExecService installs must land inside the
+    /// adopted worktree, not next to the canonical
+    /// `<repo>-<task>` path.
+    func testPrepareUsesAdoptedWorktreeAsCwdAndInstallsShimsThere() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        let git = FakeGitClient()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        let service = ExecService(workspace: workspace, git: git, fs: fs)
+
+        let plan = try service.prepare(
+            task: task,
+            command: ["/bin/sh", "-c", "echo hi"],
+            shimPath: "/opt/vch/libexec/vch-xcodebuild-shim",
+            baseEnv: ["PATH": "/usr/bin"]
+        )
+
+        XCTAssertEqual(plan.cwd, adoptedPath)
+        XCTAssertEqual(plan.installedShimSymlinks, [
+            "\(adoptedPath)/.vch/bin/xcodebuild",
+            "\(adoptedPath)/.vch/bin/xcrun",
+            "\(adoptedPath)/.vch/bin/swift",
+        ])
+        XCTAssertEqual(
+            fs.symlink(at: "\(adoptedPath)/.vch/bin/xcodebuild"),
+            "/opt/vch/libexec/vch-xcodebuild-shim"
+        )
+        XCTAssertTrue(fs.directoryExists(at: "\(adoptedPath)/.agent-build/DerivedData"))
+        // The canonical path must not have been created behind the
+        // user's back; if it has, the override is being bypassed.
+        XCTAssertFalse(
+            fs.directoryExists(at: "\(mainRepo)-alpha/.vch/bin"),
+            "ExecService leaked .vch/bin to the conventional path"
+        )
+    }
+
+    /// `buildEnv` is the single function the CLI calls to populate
+    /// shim and tooling vars. For adopted tasks every `VCH_*` env
+    /// var must be rooted at the override, including the PATH
+    /// prepend.
+    func testBuildEnvRootsShimVarsAtAdoptedWorktree() {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try! TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(adoptedPath)
+        let service = ExecService(workspace: workspace, git: FakeGitClient(), fs: fs)
+
+        let env = service.buildEnv(
+            task: task,
+            worktree: adoptedPath,
+            baseEnv: ["PATH": "/usr/bin"]
+        )
+        XCTAssertEqual(env["VCH_TASK_ROOT"], adoptedPath)
+        XCTAssertEqual(env["VCH_DERIVED_DATA_PATH"],
+                       "\(adoptedPath)/.agent-build/DerivedData")
+        XCTAssertEqual(env["CLANG_MODULE_CACHE_PATH"],
+                       "\(adoptedPath)/.agent-build/ModuleCache")
+        XCTAssertEqual(env["SWIFTPM_CACHE_DIR"],
+                       "\(adoptedPath)/.agent-build/SwiftPM")
+        XCTAssertEqual(env["PATH"], "\(adoptedPath)/.vch/bin:/usr/bin")
+    }
 }
 
 private struct StubDeveloperDir: DeveloperDirResolver {

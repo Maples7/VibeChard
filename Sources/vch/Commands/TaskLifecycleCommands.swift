@@ -120,20 +120,20 @@ struct NewCommand: ParsableCommand {
             print(path)
 
             // #32A: nudge first-time users toward `vch shellenv` so
-            // that `vch_new <name>` auto-cds. Skipped when --exec is
-            // set (we're about to execve, banner would be lost),
-            // when --cd is set (machine-readable mode — wrapper is
-            // already doing the cd), or when the user already
-            // sources the helpers / opted out.
-            if exec == nil, !cd, !adoptCurrent {
-                let env = ProcessInfo.processInfo.environment
-                let stdoutIsTTY = isatty(fileno(stdout)) != 0
-                if let hint = NewTaskHint.message(
-                    stdoutIsTTY: stdoutIsTTY,
-                    env: env
-                ) {
-                    CLIBridge.eprintln(hint)
-                }
+            // that `vch_new <name>` auto-cds. The decision tree
+            // (TTY check + env opt-outs + adopt-current / --exec /
+            // --cd suppressions) lives in `NewTaskHint.message` so
+            // it stays unit-testable per AGENTS.md discipline #7.
+            let env = ProcessInfo.processInfo.environment
+            let stdoutIsTTY = isatty(fileno(stdout)) != 0
+            if let hint = NewTaskHint.message(
+                stdoutIsTTY: stdoutIsTTY,
+                env: env,
+                adoptCurrent: adoptCurrent,
+                execProvided: exec != nil,
+                cdProvided: cd
+            ) {
+                CLIBridge.eprintln(hint)
             }
 
             // BYO Agent integration point (AGENTS.md rule #2):

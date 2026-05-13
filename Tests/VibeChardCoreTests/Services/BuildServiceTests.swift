@@ -336,6 +336,81 @@ final class BuildServiceTests: XCTestCase {
         try service.bootSimulator(.init(udid: "U-1", name: "x", createdNow: false))
         XCTAssertEqual(simctl.bootCalls, ["U-1"])
     }
+
+    // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
+
+    /// For a task adopted via `vch new <name> --adopt-current`, the
+    /// downstream services receive a `Workspace` whose
+    /// `taskWorktreePaths` map overrides the conventional
+    /// `<repo>-<task>` path. Every path BuildService computes —
+    /// `cwd`, `.agent-build` subdirs, the env vars it sets — has to
+    /// resolve to the override. Regression guard: if `BuildService`
+    /// ever re-derives a path directly from `task.raw` instead of
+    /// going through `workspace.<dir>(for:)`, this test will catch it.
+    func testPrepareBuildResolvesAdoptedWorktreePathAndIsolationDirs() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try emptyState("alpha").jsonData())
+        let service = BuildService(workspace: workspace, fs: fs)
+
+        let plan = try service.prepareBuild(
+            task: task,
+            options: .init(scheme: "App"),
+            baseEnv: ["PATH": "/usr/bin"]
+        )
+
+        XCTAssertEqual(plan.cwd, adoptedPath,
+                       "cwd must be the adopted path, NOT \(mainRepo)-alpha")
+        XCTAssertEqual(plan.env["VCH_TASK_ROOT"], adoptedPath)
+        XCTAssertEqual(plan.env["CLANG_MODULE_CACHE_PATH"],
+                       "\(adoptedPath)/.agent-build/ModuleCache")
+        XCTAssertEqual(plan.env["SWIFTPM_CACHE_DIR"],
+                       "\(adoptedPath)/.agent-build/SwiftPM")
+        XCTAssertTrue(fs.directoryExists(at: "\(adoptedPath)/.agent-build/DerivedData"),
+                      "DerivedData must be inside the adopted worktree")
+        XCTAssertTrue(fs.directoryExists(at: "\(adoptedPath)/.agent-build/SwiftPM"))
+        // Crucial negative: the conventional path must NOT have been
+        // touched. If it has, BuildService is leaking caches outside
+        // the adopted worktree.
+        XCTAssertFalse(fs.directoryExists(at: "\(mainRepo)-alpha"),
+                       "BuildService leaked the conventional <repo>-<task> path")
+    }
+
+    /// `prepareTest` lays down the result bundle and adds
+    /// `-resultBundlePath`. Same override propagation requirement —
+    /// regression test for a separate code path inside BuildService.
+    func testPrepareTestPointsResultBundleInsideAdoptedWorktree() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try emptyState("alpha").jsonData())
+        let service = BuildService(workspace: workspace, fs: fs)
+
+        let plan = try service.prepareTest(
+            task: task,
+            options: .init(scheme: "App", device: "iPhone 16"),
+            baseEnv: [:]
+        )
+        XCTAssertTrue(plan.argv.contains("-resultBundlePath"))
+        XCTAssertTrue(
+            plan.argv.contains("\(adoptedPath)/.agent-build/Result.xcresult"),
+            "result bundle path must live inside the adopted worktree; argv=\(plan.argv)"
+        )
+        XCTAssertEqual(plan.cwd, adoptedPath)
+    }
 }
 
 // Tiny ergonomic helper local to this file so the assertion above

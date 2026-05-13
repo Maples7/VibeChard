@@ -239,6 +239,44 @@ final class RunServiceTests: XCTestCase {
         ))
         XCTAssertEqual(simctl.launchCalls.count, 0)
     }
+
+    // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
+
+    /// `vch run` against an adopted task must look up build settings
+    /// using the adopted worktree as cwd and the adopted DerivedData
+    /// dir as the `-derivedDataPath` argument. If RunService still
+    /// resolved either from `<repo>-<task>`, xcodebuild would either
+    /// fail with "scheme not found" or pick up a stale .app from the
+    /// wrong DerivedData. Both failures would be silent at the
+    /// CLI surface, hence this regression guard.
+    func test_resolveTarget_usesAdoptedWorktreeForCwdAndDerivedData() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: "/tmp/repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        try fs.createDirectory(at: "/products/Debug-iphonesimulator/App.app")
+        let lister = makeFakeSettings(goodSettingsJSON)
+        let svc = RunService(
+            workspace: workspace,
+            simctl: FakeSimctl(),
+            settingsLister: lister,
+            fs: fs
+        )
+
+        _ = try svc.resolveTarget(
+            task: task,
+            scheme: "App",
+            configuration: "Debug",
+            simulatorUDID: "UDID-1"
+        )
+        XCTAssertEqual(lister.lastCwd, adoptedPath)
+        XCTAssertEqual(
+            lister.lastDerivedDataPath,
+            "\(adoptedPath)/.agent-build/DerivedData",
+            "derivedDataPath must be inside the adopted worktree, not <repo>-<task>"
+        )
+    }
 }
 
 // MARK: - test doubles

@@ -206,6 +206,48 @@ final class CleanServiceTests: XCTestCase {
             [derived, moduleCache, swiftpm, testLog]
         )
     }
+
+    // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
+
+    /// For a task adopted via `--adopt-current`, `vch clean` must
+    /// scrub `.agent-build/` *inside the adopted worktree* and never
+    /// touch anything next to the canonical `<repo>-<task>` path —
+    /// which the user may not even own. Regression target: if Clean
+    /// ever bypassed the Workspace override and built the targets
+    /// from `task.raw`, an adopted task would silently leak caches
+    /// into the canonical sidecar path.
+    func testCleanScrubsAdoptedAgentBuildAndLeavesCanonicalPathAlone() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        let adoptedDerived = "\(adoptedPath)/.agent-build/DerivedData"
+        let adoptedModuleCache = "\(adoptedPath)/.agent-build/ModuleCache"
+        let adoptedSwiftPM = "\(adoptedPath)/.agent-build/SwiftPM"
+        fs.seedDirectory(adoptedDerived)
+        fs.seedDirectory(adoptedModuleCache)
+        fs.seedDirectory(adoptedSwiftPM)
+        // Decoy: a canonical sidecar dir from some past mistake.
+        // Clean must NOT touch it.
+        fs.seedDirectory("\(mainRepo)-alpha/.agent-build/DerivedData")
+        let service = CleanService(workspace: workspace, fs: fs)
+
+        let result = try service.clean(task: task, options: .all)
+
+        XCTAssertEqual(result.removed.sorted(), [
+            adoptedDerived,
+            adoptedModuleCache,
+            adoptedSwiftPM,
+        ].sorted())
+        XCTAssertFalse(fs.directoryExists(at: adoptedDerived))
+        XCTAssertTrue(
+            fs.directoryExists(at: "\(mainRepo)-alpha/.agent-build/DerivedData"),
+            "Clean must not touch the canonical sidecar path of an adopted task"
+        )
+    }
 }
 
 private final class StubScanner: WorktreeHolderScanner, @unchecked Sendable {
