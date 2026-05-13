@@ -126,6 +126,12 @@ Run any command inside a task's worktree with isolation active. See
 the [How isolation works](../README.md#how-isolation-works) section
 of the README for the env vars vch injects.
 
+`vch exec` is the raw escape hatch. When the command resolves to the
+shimmed `xcodebuild`, vch still injects isolation flags and clears a
+stale vch-owned result bundle before exec, but it does not tee,
+summarize, or retain logs. Prefer `vch build` / `vch test` for normal
+build/test loops.
+
 ## Building, testing, running
 
 ### `vch build`
@@ -149,7 +155,7 @@ vch build <name> [flags] [-- xcodebuild-extras]
   `simctl clone` refuses because the template is Booted (off by
   default; see
   [When `simctl clone` says the template is "Booted"](cookbook.md#when-simctl-clone-says-the-template-is-booted)).
-- By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`); `--verbose` mirrors xcodebuild's full output.
+- By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`) plus the full log path; `--verbose` mirrors xcodebuild's full output.
 - The full firehose is always tee'd to `<wt>/.vch/last-build.log`.
 
 ### `vch test`
@@ -176,8 +182,9 @@ vch test <name> [flags] [-- xcodebuild-extras]
   the clone (see
   [When `simctl clone` says the template is "Booted"](cookbook.md#when-simctl-clone-says-the-template-is-booted)).
 - By default prints only a concise summary (one line per suite,
-  failing tests expanded with file:line and assertion message);
-  `--verbose` mirrors xcodebuild's full output to the terminal.
+  failing tests expanded with file:line and assertion message) plus
+  the full log and result bundle paths; `--verbose` mirrors
+  xcodebuild's full output to the terminal.
 - The full firehose is always tee'd to `<wt>/.vch/last-test.log`.
 - Counts come from the xcresult bundle so swift-testing
   (`@Suite` / `@Test` / `#expect`) targets are reported correctly.

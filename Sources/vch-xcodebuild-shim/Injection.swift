@@ -63,11 +63,22 @@ public struct ShimPlan: Equatable, Sendable {
     /// `-resultBundlePath` it's the parent (xcodebuild needs the file
     /// itself to NOT yet exist).
     public let directoriesToEnsure: [String]
+    /// Paths the shim should remove before exec. Today this is only
+    /// the vch-owned result bundle path that the shim injected from
+    /// `VCH_RESULT_BUNDLE_PATH`; user-supplied `-resultBundlePath`
+    /// values are never touched.
+    public let pathsToRemoveBeforeExec: [String]
     public let skipReason: String?
 
-    public init(injected: [ShimInjectedFlag], directoriesToEnsure: [String], skipReason: String? = nil) {
+    public init(
+        injected: [ShimInjectedFlag],
+        directoriesToEnsure: [String],
+        pathsToRemoveBeforeExec: [String] = [],
+        skipReason: String? = nil
+    ) {
         self.injected = injected
         self.directoriesToEnsure = directoriesToEnsure
+        self.pathsToRemoveBeforeExec = pathsToRemoveBeforeExec
         self.skipReason = skipReason
     }
 
@@ -116,6 +127,7 @@ public enum ShimPlanner {
 
         var injected: [ShimInjectedFlag] = []
         var dirs: [String] = []
+        var removals: [String] = []
 
         if !userFlags.contains(ShimFlag.derivedDataPath),
            let v = env[ShimEnv.derivedDataPath]?.nonEmpty {
@@ -134,9 +146,14 @@ public enum ShimPlanner {
             injected.append(ShimInjectedFlag(flag: ShimFlag.resultBundlePath, value: v))
             // -resultBundlePath wants the file to NOT exist; create the parent only.
             dirs.append((v as NSString).deletingLastPathComponent)
+            removals.append(v)
         }
 
-        return ShimPlan(injected: injected, directoriesToEnsure: dirs)
+        return ShimPlan(
+            injected: injected,
+            directoriesToEnsure: dirs,
+            pathsToRemoveBeforeExec: removals
+        )
     }
 
     /// Build the argv that should be passed to `execv` for the real

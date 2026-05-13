@@ -166,9 +166,18 @@ private enum BuildOrTest {
             if (s.totalPassed + s.totalFailed) == 0,
                let x = xcresult,
                (x.totalPassed + x.totalFailed) > 0 {
-                print(XcresultRenderer.render(x, colorize: colorize, logPath: logURL.path))
+                print(XcresultRenderer.render(
+                    x,
+                    colorize: colorize,
+                    logPath: logURL.path,
+                    resultBundlePath: bundlePath
+                ))
             } else {
-                print(s.render(colorize: colorize, logPath: logURL.path))
+                print(s.render(
+                    colorize: colorize,
+                    logPath: logURL.path,
+                    resultBundlePath: bundlePath
+                ))
             }
         }
 

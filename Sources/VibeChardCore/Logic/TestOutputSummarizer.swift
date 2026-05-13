@@ -185,11 +185,15 @@ public final class TestOutputSummarizer {
     /// `--verbose` is off. `colorize` controls ANSI styling and is
     /// resolved by the CLI per `ANSI.shouldColorize(...)`.
     ///
-    /// `logPath` (#69) is the path to the tee'd `last-test.log`. When
-    /// non-nil and the run ends in `.unknown`, the renderer appends a
-    /// `→ log: <path>` line so the user can copy-paste it without
-    /// scrolling back to the launch banner.
-    public func render(colorize: Bool, logPath: String? = nil) -> String {
+    /// `logPath` / `resultBundlePath` (#69/#93) are appended as
+    /// compact trailing artifact lines when present, so the user can
+    /// inspect the full firehose or xcresult without scrolling back
+    /// to the launch banner.
+    public func render(
+        colorize: Bool,
+        logPath: String? = nil,
+        resultBundlePath: String? = nil
+    ) -> String {
         var out: [String] = []
         // Failures first (so the user's eye lands on them).
         if !failures.isEmpty {
@@ -247,11 +251,11 @@ public final class TestOutputSummarizer {
             head = "? test status unknown — see full log"
         }
         out.append(head)
-        // #69: when the status is unknown, the launch banner's
-        // `→ log:` line has long scrolled off — repeat the path on
-        // the trailing line so the hint is actionable.
-        if status == .unknown, let path = logPath, !path.isEmpty {
+        if let path = logPath, !path.isEmpty {
             out.append("   → log: \(path)")
+        }
+        if let path = resultBundlePath, !path.isEmpty {
+            out.append("   → result: \(path)")
         }
         return out.joined(separator: "\n")
     }

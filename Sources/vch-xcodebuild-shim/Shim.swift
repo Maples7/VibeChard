@@ -39,6 +39,22 @@ struct ShimMain {
             stderr(ShimPlanner.debugLine(invokedAs: tool, real: realPath, plan: plan, userArgs: userArgs))
         }
 
+        // Remove vch-owned stale result bundles before xcodebuild
+        // starts. xcodebuild refuses to overwrite an existing
+        // -resultBundlePath; `vch exec ... xcodebuild test ...`
+        // goes through this shim, so the shim must mirror the
+        // `vch test` prepare step for the path it injected itself.
+        for path in plan.pathsToRemoveBeforeExec where !path.isEmpty {
+            if FileManager.default.fileExists(atPath: path) {
+                do {
+                    try FileManager.default.removeItem(atPath: path)
+                } catch {
+                    stderr("vch-shim: failed to remove stale result bundle at \(path): \(error.localizedDescription)")
+                    exit(1)
+                }
+            }
+        }
+
         // Create the directories we promised xcodebuild would find.
         for dir in plan.directoriesToEnsure where !dir.isEmpty {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
