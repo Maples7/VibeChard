@@ -6,9 +6,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 The English README is the source of truth; localized READMEs may lag.
 
-## [Unreleased]
+## Unreleased
 
-## [0.6.2] - 2026-05-13
+## 0.6.2 - 2026-05-13
 
 ### Changed
 - `vch build` and `vch test` summaries now repeat the relevant
@@ -32,7 +32,7 @@ The English README is the source of truth; localized READMEs may lag.
   xcodebuild ...` as a raw escape hatch that preserves isolation but
   does not tee or summarize xcodebuild output (#93).
 
-## [0.6.1] - 2026-05-12
+## 0.6.1 - 2026-05-12
 
 ### Fixed
 - `vch <build|test|run>` now appends an actionable hint after
@@ -49,7 +49,7 @@ The English README is the source of truth; localized READMEs may lag.
   typo suggestion suppresses the hint so the two diagnostics can't
   stack on the same error.
 
-## [0.6.0] - 2026-05-11
+## 0.6.0 - 2026-05-11
 
 ### Added
 - `vch test` learns first-class `--only-testing <id>` and
@@ -98,7 +98,7 @@ The English README is the source of truth; localized READMEs may lag.
   "vch should never contain logic" paragraph now cross-references
   discipline #7.
 
-## [0.5.1] - 2026-05-11
+## 0.5.1 - 2026-05-11
 
 ### Fixed
 - `vch prune` and `vch clean` no longer error with the
@@ -114,7 +114,7 @@ The English README is the source of truth; localized READMEs may lag.
   test suite asserts every reserved name short-circuits, preventing
   this class of regression from re-appearing.
 
-## [0.5.0] - 2026-05-11
+## 0.5.0 - 2026-05-11
 
 ### Added
 - `vch prune` — list (and optionally remove) every task whose branch
@@ -216,7 +216,7 @@ The English README is the source of truth; localized READMEs may lag.
   entry) when the first segment doesn't already match the target
   name, so the rerun command works without manual editing.
 
-## [0.4.0] - 2026-05-09
+## 0.4.0 - 2026-05-09
 
 ### Added
 - `vch land --keep-sim` — keep the per-task simulator clone even
@@ -439,7 +439,7 @@ The English README is the source of truth; localized READMEs may lag.
   `--keep` → manual copy → `vch rm` recovery flow. No behaviour
   change.
 
-## [0.3.0] - 2026-05-08
+## 0.3.0 - 2026-05-08
 
 ### Added
 - `vch list --git-status` enriches the table with `AHEAD/BEHIND`,
@@ -524,7 +524,7 @@ The English README is the source of truth; localized READMEs may lag.
   recipe.
   Closes #30.
 
-## [0.2.0] - 2026-05-07
+## 0.2.0 - 2026-05-07
 
 ### Added
 - `vch run <name>` builds the task's app, then installs and launches
@@ -732,7 +732,7 @@ The English README is the source of truth; localized READMEs may lag.
   boundaries (where a space *is* the convention) were left alone,
   matching the existing copy style.
 
-## [0.1.3] - 2026-05-07
+## 0.1.3 - 2026-05-07
 
 ### Added
 - ANSI colorization for `vch list` and `vch state` so the CLI matches
@@ -782,7 +782,7 @@ The English README is the source of truth; localized READMEs may lag.
   default-follows-TTY) and the exact SGR byte sequences emitted per
   style. Full suite: 185/185 passing.
 
-## [0.1.2] - 2026-05-06
+## 0.1.2 - 2026-05-06
 
 ### Added
 - `vch state <name>` — pretty-print a task's `.vch/state.json` (name,
@@ -867,7 +867,7 @@ The English README is the source of truth; localized READMEs may lag.
   and the SwiftyLab/setup-swift action to their Node-24 majors. The
   Node-20 deprecation annotations going forward are now silent.
 
-## [0.1.1] — 2026-05-06
+## 0.1.1 - 2026-05-06
 
 ### Added
 - `vch ls` alias for `vch list`, `vch rm` alias for `vch remove`. The
@@ -890,7 +890,7 @@ The English README is the source of truth; localized READMEs may lag.
   tree now reads as a normal Swift package (`TaskService.swift` rather
   than `M1-TaskService.swift`).
 
-## [0.1.0] — 2026-05-06
+## 0.1.0 - 2026-05-06
 
 Initial public release. Scope is the v1 plan locked in
 `/memories/repo/vibechard-plan.md`.
@@ -934,12 +934,3 @@ Initial public release. Scope is the v1 plan locked in
 - Two dependencies only: `swift-argument-parser`, `swift-system`.
 - Three fixed targets: `VibeChardCore`, `vch`, `vch-xcodebuild-shim`.
 - No config files in v1; per-worktree state lives in `.vch/state.json`.
-
-[Unreleased]: https://github.com/Maples7/VibeChard/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/Maples7/VibeChard/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/Maples7/VibeChard/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/Maples7/VibeChard/compare/v0.1.3...v0.2.0
-[0.1.3]: https://github.com/Maples7/VibeChard/compare/v0.1.2...v0.1.3
-[0.1.2]: https://github.com/Maples7/VibeChard/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/Maples7/VibeChard/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/Maples7/VibeChard/releases/tag/v0.1.0

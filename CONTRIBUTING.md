@@ -87,7 +87,7 @@ Examples: `feat/copy-untracked`, `fix/exec-tty-hang`,
 - All squash-merge. The PR title becomes the squashed commit
   subject — make sure it follows the Conventional Commits format
   above.
-- Update [`CHANGELOG.md`](CHANGELOG.md) under `## [Unreleased]`
+- Update [`CHANGELOG.md`](CHANGELOG.md) under `## Unreleased`
   in the same PR, in the appropriate section
   (`Added` / `Changed` / `Fixed` / `Removed` / `Tests` / `CI` /
   `Docs`). Lines wrap at ~70 chars to match existing entries.
@@ -135,16 +135,14 @@ protection, so the tag itself goes up after the release commit
 lands on `master`.
 
 1. **Land everything you want in the release** through PRs first.
-   `## [Unreleased]` in CHANGELOG should describe what's in it.
+   `## Unreleased` in CHANGELOG should describe what's in it.
 2. Open a `chore/release-x.y.z` branch. In one commit:
    - Bump `Sources/VibeChardCore/Domain/VibeChard.swift` →
      `public static let version = "x.y.z"`.
-   - In CHANGELOG, rename `## [Unreleased]` to
-     `## [x.y.z] - YYYY-MM-DD`, then re-add an empty `## [Unreleased]`
-     above it. Add a `[x.y.z]:
-     https://github.com/Maples7/VibeChard/compare/<prev>...v<x.y.z>`
-     compare link at the bottom and update the `[Unreleased]` link
-     to start from the new tag.
+   - In CHANGELOG, rename `## Unreleased` to
+     `## x.y.z - YYYY-MM-DD`, then re-add an empty `## Unreleased`
+     above it. GitHub Releases already provide the tag / PR /
+     commit links; CHANGELOG keeps the user-facing summary only.
    - Commit message: `chore(release): x.y.z` with a one-paragraph
      summary in the body.
 3. Open the PR, wait for CI green, squash-merge.
