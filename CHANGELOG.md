@@ -8,6 +8,19 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Breaking
+- `vch sim info --json` output schema changed (#99). Pre-#99 it
+  emitted `{"task": "...", "bound": {...} | null }` — a single
+  optional record. It now always emits
+  `{"task": "...", "bindings": [...] }` — an array of zero or more
+  records, with the field renamed from `bound` to `bindings`.
+  Scripts and agent automation that read `.bound` will silently see
+  no clone on multi-binding tasks (and `null` on unbound tasks);
+  migrate to iterating `.bindings`. The pretty-printed (non-`--json`)
+  form is unchanged for single-binding tasks and adds
+  `--- binding N of M ---` separators when a task owns multiple
+  clones.
+
 ### Added
 - `vch` now supports binding multiple simulator clones to a single
   task — e.g. an iOS clone for the phone target plus a watchOS clone

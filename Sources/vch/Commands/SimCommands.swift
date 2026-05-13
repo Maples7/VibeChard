@@ -37,7 +37,7 @@ struct SimCloneCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
-    @Option(name: .long, help: "Simulator device template (e.g. \"iPhone 16\"). Required when the task has no clone yet, or when adding a second platform binding (#99).")
+    @Option(name: .long, help: "Simulator device template (e.g. \"iPhone 16\"). Required when the task has no clone yet, or when adding a second platform binding.")
     var device: String?
 
     @Option(name: .long, help: "Pin the runtime version when cloning (e.g. \"18.0\"). Optional, but combined with --device it lets a task bind the same device across multiple OS versions.")
@@ -62,7 +62,8 @@ struct SimCloneCommand: ParsableCommand {
             // none matches. The previous "task is already bound"
             // error mode is gone — that was the bug #99 reported.
             let existing = try sim.lookupAllBindings(task: task)
-            if (device == nil || device!.isEmpty), existing.isEmpty {
+            let deviceMissing = (device ?? "").isEmpty
+            if deviceMissing, existing.isEmpty {
                 throw VibeChardError.missingArgument(
                     "--device (no clone is bound to '\(task.raw)' yet)"
                 )
@@ -99,10 +100,10 @@ struct SimEraseCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
-    @Option(name: .long, help: "Select which binding to erase when the task has multiple platform clones (#99). Optional with a single binding.")
+    @Option(name: .long, help: "Select which binding to erase when the task has multiple platform clones. Optional with a single binding.")
     var device: String?
 
-    @Option(name: .long, help: "Disambiguate when two bindings share a device but pin different runtimes (#99).")
+    @Option(name: .long, help: "Disambiguate when two bindings share a device but pin different runtimes.")
     var runtime: String?
 
     func run() throws {
@@ -139,10 +140,10 @@ struct SimShutdownCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
-    @Option(name: .long, help: "Select which binding to shut down when the task has multiple platform clones (#99). Optional with a single binding.")
+    @Option(name: .long, help: "Select which binding to shut down when the task has multiple platform clones. Optional with a single binding.")
     var device: String?
 
-    @Option(name: .long, help: "Disambiguate when two bindings share a device but pin different runtimes (#99).")
+    @Option(name: .long, help: "Disambiguate when two bindings share a device but pin different runtimes.")
     var runtime: String?
 
     func run() throws {
@@ -178,10 +179,10 @@ struct SimInfoCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String
 
-    @Option(name: .long, help: "Select which binding to inspect when the task has multiple platform clones (#99). Omit to print every binding.")
+    @Option(name: .long, help: "Select which binding to inspect when the task has multiple platform clones. Omit to print every binding.")
     var device: String?
 
-    @Option(name: .long, help: "Disambiguate when two bindings share a device but pin different runtimes (#99).")
+    @Option(name: .long, help: "Disambiguate when two bindings share a device but pin different runtimes.")
     var runtime: String?
 
     @Flag(name: .long, help: "Emit machine-readable JSON.")
@@ -215,11 +216,7 @@ struct SimInfoCommand: ParsableCommand {
 
             guard !bindings.isEmpty else {
                 if json {
-                    struct EmptyInfo: Encodable {
-                        let task: String
-                        let bindings: [String]
-                    }
-                    try printJSON(EmptyInfo(task: task.raw, bindings: []))
+                    try printJSON(SimInfoRenderer.Payload(task: task.raw, bindings: []))
                 } else {
                     print("task:        \(task.raw)")
                     print("bound clone: (none)")
@@ -227,56 +224,34 @@ struct SimInfoCommand: ParsableCommand {
                 return
             }
 
+            // Build rows once; both branches consume them. Each row
+            // costs one simctl `info` call so we don't want to do
+            // them twice.
+            var rows: [SimInfoRenderer.BindingRow] = []
+            rows.reserveCapacity(bindings.count)
+            for bound in bindings {
+                let live = try sim.info(udid: bound.cloneUDID)
+                rows.append(SimInfoRenderer.makeRow(record: bound, live: live))
+            }
+
             if json {
-                struct BindingJSON: Encodable {
-                    let cloneUDID: String
-                    let sourceUDID: String
-                    let name: String
-                    let templateName: String?
-                    let runtimeIdentifier: String?
-                    let state: String
-                    let presentInSimctl: Bool
-                }
-                struct InfoJSON: Encodable {
-                    let task: String
-                    let bindings: [BindingJSON]
-                }
-                var rows: [BindingJSON] = []
-                for bound in bindings {
-                    let live = try sim.info(udid: bound.cloneUDID)
-                    let liveState = live?.state ?? (live == nil ? "(missing — run `vch doctor`)" : "(unknown)")
-                    rows.append(BindingJSON(
-                        cloneUDID: bound.cloneUDID,
-                        sourceUDID: bound.sourceUDID,
-                        name: bound.name,
-                        templateName: bound.templateName,
-                        runtimeIdentifier: bound.runtimeIdentifier,
-                        state: liveState,
-                        presentInSimctl: live != nil
-                    ))
-                }
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let data = try encoder.encode(InfoJSON(task: task.raw, bindings: rows))
-                if let str = String(data: data, encoding: .utf8) { print(str) }
+                try printJSON(SimInfoRenderer.Payload(task: task.raw, bindings: rows))
             } else {
                 print("task:        \(task.raw)")
-                for (idx, bound) in bindings.enumerated() {
-                    if bindings.count > 1 {
-                        print("--- binding \(idx + 1) of \(bindings.count) ---")
+                for (idx, row) in rows.enumerated() {
+                    if rows.count > 1 {
+                        print("--- binding \(idx + 1) of \(rows.count) ---")
                     }
-                    let live = try sim.info(udid: bound.cloneUDID)
-                    let liveState = live?.state ?? (live == nil ? "(missing — run `vch doctor`)" : "(unknown)")
-                    print("clone UDID:  \(bound.cloneUDID)")
-                    print("source UDID: \(bound.sourceUDID)")
-                    print("name:        \(bound.name)")
-                    if let tmpl = bound.templateName {
+                    print("clone UDID:  \(row.cloneUDID)")
+                    print("source UDID: \(row.sourceUDID)")
+                    print("name:        \(row.name)")
+                    if let tmpl = row.templateName {
                         print("template:    \(tmpl)")
                     }
-                    if let rt = bound.runtimeIdentifier {
+                    if let rt = row.runtimeIdentifier {
                         print("runtime:     \(rt)")
                     }
-                    print("state:       \(liveState)")
+                    print("state:       \(row.state)")
                 }
             }
         }

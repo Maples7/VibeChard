@@ -124,6 +124,46 @@ final class TaskStateFieldTests: XCTestCase {
             .unset)
     }
 
+    // #99: `simulator.udid` / `simulator.*` dotted-path lookups
+    // continue to read the legacy `simulator` field. On v0.7+
+    // multi-binding tasks the legacy field is mirrored to the FIRST
+    // binding (downgrade safety, see `TaskState.setSimulators`), so
+    // `vch state <task> --field simulator.udid` deterministically
+    // returns the first binding's UDID. Scripts that need a non-first
+    // binding fall back to `vch sim info --device <name> --json`.
+    // This test pins that contract — if a future refactor accidentally
+    // changes which binding `simulator.*` reads, this will catch it.
+    func testSimulatorDottedPathReturnsFirstBindingOnMultiBindingTask() {
+        var s = state()
+        let ios = TaskState.SimulatorRecord(
+            cloneUDID: "IOS-CLONE", sourceUDID: "IOS-SRC",
+            name: "iPhone 16-vch-alpha",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0"
+        )
+        let watch = TaskState.SimulatorRecord(
+            cloneUDID: "WATCH-CLONE", sourceUDID: "WATCH-SRC",
+            name: "Apple Watch Series 10-vch-alpha",
+            templateName: "Apple Watch Series 10",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
+        )
+        s.setSimulators([ios, watch])
+
+        XCTAssertEqual(
+            TaskStateField.lookup("simulator.udid", in: s, worktreePath: "/x"),
+            .value("IOS-CLONE"),
+            "dotted-path lookup must return the first binding's UDID"
+        )
+        XCTAssertEqual(
+            TaskStateField.lookup("simulator.templateName", in: s, worktreePath: "/x"),
+            .value("iPhone 16")
+        )
+        XCTAssertEqual(
+            TaskStateField.lookup("simulator.runtimeIdentifier", in: s, worktreePath: "/x"),
+            .value("com.apple.CoreSimulator.SimRuntime.iOS-18-0")
+        )
+    }
+
     // MARK: - unset vs unknown distinction
 
     func testReturnsUnsetForKnownFieldsThatAreNil() {

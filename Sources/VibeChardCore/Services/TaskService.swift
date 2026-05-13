@@ -402,7 +402,8 @@ public struct TaskService: Sendable {
 
     /// Returns one summary per managed worktree, sorted by `createdAt`
     /// descending (newest first), with stateless worktrees ordered last.
-    public func listTasks() throws -> [TaskSummary] {        let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+    public func listTasks() throws -> [TaskSummary] {
+        let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
         var summaries: [TaskSummary] = []
 
         for entry in entries {
