@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-13
+
 ### Changed
 - `vch build` and `vch test` summaries now repeat the relevant
   artifact paths at the end of every run: build summaries include the
