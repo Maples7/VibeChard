@@ -222,7 +222,7 @@ template trap, and pruning merged tasks.
 | `vch test <name>` | `xcodebuild test` with `-resultBundlePath` injected; lazy sim clone (`--device`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`). |
 | `vch run <name>` | Build, install, launch on the task's sim clone (`--erase-clone`, `--shutdown-template`, `-- launch-args`). |
 | `vch logs <name>` | Print the most recent build/test xcodebuild log (`--test`/`--build`). |
-| `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone explicitly. |
+| `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone(s) explicitly; a task can own one clone per platform (e.g. iOS + watchOS) via repeated `vch sim clone --device <name>` ([#99](https://github.com/Maples7/VibeChard/issues/99)). |
 | `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (iOS/watchOS/tvOS/visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47)/[#58](https://github.com/Maples7/VibeChard/issues/58)). |
 | `vch land <name>` | Merge `agent/<name>` back into its base and clean up (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
 | `vch sync <name>` | Fetch the base's upstream and rebase the task branch onto it (`--onto`, `--merge`, `--no-fetch`, `--dry-run`). |

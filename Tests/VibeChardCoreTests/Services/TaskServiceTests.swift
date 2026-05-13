@@ -469,6 +469,55 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(summaries.first?.path, adoptedPath)
     }
 
+    // MARK: - listTasks simulator column (#99)
+
+    func testListShowsSingleSimulatorBindingByName() throws {
+        let (service, git, fs, _) = makeService()
+        git.entries.append(WorktreeEntry(path: "/Users/me/Repo-alpha", branch: "agent/alpha"))
+        var state = TaskState(
+            name: "alpha", branch: "agent/alpha",
+            createdAt: Date(timeIntervalSince1970: 1_000),
+            baseRef: "deadbeef"
+        )
+        state.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "U1", sourceUDID: "S1",
+                name: "iPhone 16-vch-alpha"
+            ),
+        ])
+        try fs.writeFileAtomic(state.jsonData(), to: "/Users/me/Repo-alpha/.vch/state.json")
+
+        let summaries = try service.listTasks()
+        XCTAssertEqual(summaries.first?.simulatorName, "iPhone 16-vch-alpha",
+                       "1 binding renders as the bare name")
+    }
+
+    func testListShowsMultiBindingAggregatedFirstPlusCount() throws {
+        let (service, git, fs, _) = makeService()
+        git.entries.append(WorktreeEntry(path: "/Users/me/Repo-alpha", branch: "agent/alpha"))
+        var state = TaskState(
+            name: "alpha", branch: "agent/alpha",
+            createdAt: Date(timeIntervalSince1970: 1_000),
+            baseRef: "deadbeef"
+        )
+        state.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "U1", sourceUDID: "S1",
+                name: "iPhone 16-vch-alpha"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "U2", sourceUDID: "S2",
+                name: "Apple Watch Series 10-vch-alpha"
+            ),
+        ])
+        try fs.writeFileAtomic(state.jsonData(), to: "/Users/me/Repo-alpha/.vch/state.json")
+
+        let summaries = try service.listTasks()
+        XCTAssertEqual(summaries.first?.simulatorName,
+                       "iPhone 16-vch-alpha (+1)",
+                       "2 bindings → first name + (+N) suffix")
+    }
+
     // MARK: - path
 
     func testPathThrowsTaskNotFoundWhenMissing() throws {

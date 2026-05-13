@@ -233,10 +233,31 @@ overwritten on each run.
 ### `vch sim`
 
 ```text
-vch sim {clone, erase, shutdown, info} <name>
+vch sim clone    <name> [--device <name>] [--runtime <version>]
+                        [--erase] [--shutdown-template]
+vch sim erase    <name> [--device <name>] [--runtime <version>]
+vch sim shutdown <name> [--device <name>] [--runtime <version>]
+vch sim info     <name> [--device <name>] [--runtime <version>] [--json]
 ```
 
-Manage the per-task simulator clone explicitly.
+Manage the per-task simulator clone(s) explicitly. A single task can
+own **multiple** clones — typically one per platform (e.g. an iOS
+clone for the phone target plus a watchOS clone for its companion,
+[#99](https://github.com/Maples7/VibeChard/issues/99)).
+
+- `clone` with a `--device` that doesn't match any existing binding
+  appends a new clone; with a matching `--device` (and optional
+  `--runtime`) it reuses the existing one.
+- `erase` / `shutdown` need `--device` (and optionally `--runtime`
+  to disambiguate two bindings of the same device) when the task
+  owns 2+ clones. With a single binding `--device` is optional.
+- `info` defaults to printing **every** binding (separated by
+  `--- binding N of M ---`); `--device`/`--runtime` filter to one.
+  The JSON form emits `{task, bindings: [...]}`.
+
+When a command can't pick a single binding it fails with the
+`simulatorBindingAmbiguous` business error (exit code 1) and lists
+every binding so you can re-run with the right selector.
 
 ### `vch sim warm-template`
 

@@ -295,4 +295,148 @@ final class TaskStateTests: XCTestCase {
         XCTAssertNil(state.simulator?.sourceKind)
         XCTAssertEqual(state.simulator?.cloneUDID, "C")
     }
+
+    // MARK: - simulators[] multi-binding schema (#99)
+
+    /// `setSimulators` must write `simulators` AND mirror the first
+    /// element back into the legacy `simulator` field, so a downgraded
+    /// vch binary (or any reader pinned to the pre-#99 schema) still
+    /// sees one binding instead of zero.
+    func testSimulatorsListRoundtripsAndMirrorsFirstToLegacySimulator() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_500)
+        var original = TaskState(
+            name: "alpha",
+            branch: "agent/alpha",
+            createdAt: now,
+            baseRef: "deadbee"
+        )
+        let ios = TaskState.SimulatorRecord(
+            cloneUDID: "IOS-CLONE", sourceUDID: "IOS-SRC",
+            name: "iPhone 16-vch-alpha",
+            templateName: "iPhone 16",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0"
+        )
+        let watch = TaskState.SimulatorRecord(
+            cloneUDID: "WATCH-CLONE", sourceUDID: "WATCH-SRC",
+            name: "Apple Watch Series 10-vch-alpha",
+            templateName: "Apple Watch Series 10",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
+        )
+        original.setSimulators([ios, watch])
+
+        let restored = try TaskState.parse(try original.jsonData())
+
+        // Multi-binding list survived the round-trip in order.
+        XCTAssertEqual(restored.simulators?.count, 2)
+        XCTAssertEqual(restored.simulators?[0], ios)
+        XCTAssertEqual(restored.simulators?[1], watch)
+
+        // Legacy mirror still points at first — this is the downgrade
+        // safety contract.
+        XCTAssertEqual(restored.simulator, ios,
+                       "legacy `simulator` must mirror first binding for downgrade safety")
+        // And the canonical accessor returns the full list.
+        XCTAssertEqual(restored.allSimulators, [ios, watch])
+    }
+
+    /// `setSimulators([])` must wipe BOTH the new and legacy fields
+    /// so an empty state.json doesn't leave a stray ghost-binding
+    /// behind. This is the contract `LandService` and `RemoveCommand`
+    /// rely on after a successful multi-clone reap.
+    func testSetSimulatorsEmptyClearsBothFields() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_500)
+        var state = TaskState(
+            name: "alpha",
+            branch: "agent/alpha",
+            createdAt: now,
+            baseRef: "deadbee"
+        )
+        state.setSimulators([
+            .init(cloneUDID: "C1", sourceUDID: "S1", name: "iPhone-1"),
+            .init(cloneUDID: "C2", sourceUDID: "S2", name: "Watch-1")
+        ])
+        XCTAssertEqual(state.simulators?.count, 2)
+        XCTAssertNotNil(state.simulator)
+
+        state.setSimulators([])
+        XCTAssertNil(state.simulators)
+        XCTAssertNil(state.simulator,
+                     "clearing must also drop the legacy mirror so downgraded readers see no binding")
+        XCTAssertTrue(state.allSimulators.isEmpty)
+    }
+
+    /// `setSimulators` with one element must collapse cleanly: the
+    /// new `simulators` field stays a single-element list AND legacy
+    /// `simulator` matches. The round-trip preserves both. This is
+    /// the post-#99 shape of a freshly-cloned single-binding task.
+    func testSetSimulatorsWithOneRecordKeepsBothFieldsInSync() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_500)
+        var state = TaskState(
+            name: "alpha",
+            branch: "agent/alpha",
+            createdAt: now,
+            baseRef: "deadbee"
+        )
+        let ios = TaskState.SimulatorRecord(
+            cloneUDID: "IOS-CLONE", sourceUDID: "IOS-SRC",
+            name: "iPhone 16-vch-alpha"
+        )
+        state.setSimulators([ios])
+
+        XCTAssertEqual(state.simulators, [ios])
+        XCTAssertEqual(state.simulator, ios)
+        XCTAssertEqual(state.allSimulators, [ios])
+
+        let restored = try TaskState.parse(try state.jsonData())
+        XCTAssertEqual(restored.simulators, [ios])
+        XCTAssertEqual(restored.simulator, ios)
+    }
+
+    /// Legacy state.json files written before #99 carry only the
+    /// singular `simulator` field. `allSimulators` must promote that
+    /// into a one-element list so every #99-aware consumer
+    /// (LandService, DoctorService, TaskService.summarize, etc.) can
+    /// treat the legacy path uniformly without a separate branch.
+    func testLegacyOnlyStateDecodesIntoSingletonAllSimulators() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "alpha",
+          "branch": "agent/alpha",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "deadbee",
+          "simulator": {
+            "cloneUDID": "LEGACY-CLONE",
+            "sourceUDID": "LEGACY-SRC",
+            "name": "iPhone 16-vch-alpha",
+            "templateName": "iPhone 16",
+            "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-18-0"
+          }
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNil(state.simulators,
+                     "legacy state must NOT auto-populate `simulators` at decode time")
+        XCTAssertEqual(state.allSimulators.count, 1)
+        XCTAssertEqual(state.allSimulators[0].cloneUDID, "LEGACY-CLONE")
+    }
+
+    /// State.json files without any simulator binding (a fresh
+    /// `vch new` with no `vch build` yet) must decode cleanly and
+    /// surface an empty `allSimulators`.
+    func testParsesStateWithoutAnySimulatorField() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "foo",
+          "branch": "agent/foo",
+          "createdAt": "2024-01-01T00:00:00Z",
+          "baseRef": "abc1234"
+        }
+        """
+        let state = try TaskState.parse(Data(json.utf8))
+        XCTAssertNil(state.simulators)
+        XCTAssertNil(state.simulator)
+        XCTAssertTrue(state.allSimulators.isEmpty)
+    }
 }

@@ -18,7 +18,7 @@ import VibeChardCore
 struct SimWarmTemplateCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "warm-template",
-        abstract: "Manage shared, pre-primed simulator templates (#47).",
+        abstract: "Manage shared, pre-primed simulator templates.",
         subcommands: [
             SimWarmTemplateCreateCommand.self,
             SimWarmTemplateListCommand.self,

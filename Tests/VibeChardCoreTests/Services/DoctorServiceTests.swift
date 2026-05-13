@@ -228,6 +228,96 @@ final class DoctorServiceTests: XCTestCase {
         XCTAssertTrue(report.staleBindings.isEmpty)
     }
 
+    // MARK: - multi-binding (#99)
+
+    /// Re-seed `state.json` for a task with the multi-binding shape
+    /// (`simulators: [...]` + legacy mirror). The base seed helper
+    /// only knows the singular `simulator` field, so we overwrite
+    /// the file after `makeService` lays it down.
+    private func reseedMultiBinding(
+        fs: InMemoryFileSystem,
+        workspace: Workspace,
+        taskName: String,
+        bindings: [TaskState.SimulatorRecord]
+    ) throws {
+        let task = try TaskName(taskName)
+        var state = TaskState(
+            name: taskName, branch: "agent/\(taskName)",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbee"
+        )
+        state.setSimulators(bindings)
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try state.jsonData())
+    }
+
+    /// A task with two recorded bindings (iOS + watchOS) must not
+    /// surface EITHER clone as orphan when both UDIDs are present in
+    /// simctl. Pre-#99 this code only checked `state.simulator` (a
+    /// single field), so the second binding would be mis-classified
+    /// and `vch doctor --clean` would happily delete a live user
+    /// clone. This test pins the multi-binding aware orphan scan.
+    func testDiagnoseDoesNotFlagAnyBindingOfMultiBindingTaskAsOrphan() throws {
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let (svc, fs, _, _) = makeService(
+            seed: [("alpha", nil)],
+            simctlDevices: [
+                dev("IOS-CLONE", "iPhone 16-vch-alpha"),
+                dev("WATCH-CLONE", "Apple Watch Series 10-vch-alpha"),
+            ]
+        )
+        try reseedMultiBinding(
+            fs: fs, workspace: workspace, taskName: "alpha",
+            bindings: [
+                .init(cloneUDID: "IOS-CLONE", sourceUDID: "IOS-SRC",
+                      name: "iPhone 16-vch-alpha"),
+                .init(cloneUDID: "WATCH-CLONE", sourceUDID: "WATCH-SRC",
+                      name: "Apple Watch Series 10-vch-alpha"),
+            ]
+        )
+
+        let report = try svc.diagnose()
+
+        XCTAssertTrue(
+            report.orphanClones.isEmpty,
+            "Every recorded binding must be tracked; the watch clone is NOT an orphan: \(report.orphanClones.map(\.name))"
+        )
+        XCTAssertTrue(report.staleBindings.isEmpty)
+    }
+
+    /// If a task records two bindings but only one device still
+    /// exists in simctl, the missing one must show up as a
+    /// `staleBinding` (not as an orphan — orphans are out-of-band
+    /// clones, stale bindings are tasks whose recorded UDID is gone).
+    /// The other binding stays clean.
+    func testDiagnoseFlagsOneMissingBindingAsStaleAndLeavesOtherClean() throws {
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let (svc, fs, _, _) = makeService(
+            seed: [("alpha", nil)],
+            simctlDevices: [
+                dev("IOS-CLONE", "iPhone 16-vch-alpha"),
+                // WATCH-CLONE deleted out-of-band — not in simctl.
+            ]
+        )
+        try reseedMultiBinding(
+            fs: fs, workspace: workspace, taskName: "alpha",
+            bindings: [
+                .init(cloneUDID: "IOS-CLONE", sourceUDID: "IOS-SRC",
+                      name: "iPhone 16-vch-alpha"),
+                .init(cloneUDID: "WATCH-CLONE", sourceUDID: "WATCH-SRC",
+                      name: "Apple Watch Series 10-vch-alpha"),
+            ]
+        )
+
+        let report = try svc.diagnose()
+
+        XCTAssertTrue(report.orphanClones.isEmpty,
+                      "iOS clone is bound; it must NOT be an orphan")
+        XCTAssertEqual(report.staleBindings.count, 1)
+        XCTAssertEqual(report.staleBindings[0].cloneUDID, "WATCH-CLONE")
+        XCTAssertEqual(report.staleBindings[0].taskName, "alpha")
+    }
+
     // MARK: - clean
 
     func testCleanDeletesOrphansBestEffort() throws {

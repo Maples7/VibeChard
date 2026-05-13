@@ -8,7 +8,57 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Breaking
+- `vch sim info --json` output schema changed (#99). Pre-#99 it
+  emitted `{"task": "...", "bound": {...} | null }` — a single
+  optional record. It now always emits
+  `{"task": "...", "bindings": [...] }` — an array of zero or more
+  records, with the field renamed from `bound` to `bindings`.
+  Scripts and agent automation that read `.bound` will silently see
+  no clone on multi-binding tasks (and `null` on unbound tasks);
+  migrate to iterating `.bindings`. The pretty-printed (non-`--json`)
+  form is unchanged for single-binding tasks and adds
+  `--- binding N of M ---` separators when a task owns multiple
+  clones.
+
 ### Added
+- `vch` now supports binding multiple simulator clones to a single
+  task — e.g. an iOS clone for the phone target plus a watchOS clone
+  for the companion target — instead of capping a task at exactly one
+  bound device (#99). `vch build sim --device <name>` and
+  `vch sim clone --device <name>` append a new binding when the
+  device (and optional `--runtime <version>`) doesn't match any
+  existing binding; an exact match still reuses the existing clone
+  with no work done. `vch test sim` and `vch run` reuse a single
+  binding implicitly, and require `--device` on tasks that own
+  multiple bindings.
+- `vch sim erase`, `vch sim shutdown`, and `vch sim info` accept new
+  `--device` and `--runtime` selectors to pick a specific binding on
+  multi-platform tasks. Without a selector, `vch sim info` prints
+  every binding (separated by `--- binding N of M ---`) and its JSON
+  form now emits `{task, bindings: [...]}` instead of a single record
+  (#99).
+- New business error `simulatorBindingAmbiguous` (exit code 1) when a
+  task has 2+ bindings and the invoked command cannot pick one. The
+  error message lists every binding so the agent can re-run with the
+  correct `--device` (and `--runtime` when two bindings share a
+  device) (#99).
+
+### Changed
+- `vch state` now emits one `sim:` line per binding rather than only
+  the first record; `vch list` shows `<first> (+N)` in the simulator
+  column when a task owns multiple clones (#99).
+- `vch rm` and `vch land` (without `--keep-sim`) now reap every
+  per-task clone on cleanup. A `simctl delete` failure on one
+  binding is reported but no longer blocks the rest from being
+  attempted (#99).
+- `.vch/state.json` schema (still v1, no version bump): added the
+  additive optional field `simulators: [SimulatorRecord]`. The
+  legacy single `simulator` field is still written and mirrors the
+  first binding, so older `vch` builds keep working against a state
+  file produced by this release. Legacy state files with only
+  `simulator` are read as a single-binding list (#99).
+
 - `vch new <name> --adopt-current` can register the current linked
   Git worktree as a vch task without creating another worktree, while
   still initializing `.vch/state.json` and the task-local build

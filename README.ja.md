@@ -210,7 +210,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 | `vch test <name>` | `xcodebuild test` を実行し `-resultBundlePath` を注入。シミュレーターは遅延クローン（`--device`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
 | `vch run <name>` | タスクのシミュレータークローン上でビルド・インストール・起動（`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
 | `vch logs <name>` | タスク直近のビルド/テストの完全な xcodebuild ログを表示（`--test`/`--build`）。 |
-| `vch sim {clone,erase,shutdown,info} <name>` | タスク用シミュレータークローンを明示的に管理。 |
+| `vch sim {clone,erase,shutdown,info} <name>` | タスク用シミュレータークローンを明示的に管理。`vch sim clone --device <name>` を繰り返すことで 1 タスクが複数（iOS + watchOS など、プラットフォームごとに 1 つ）の クローンを持てる ([#99](https://github.com/Maples7/VibeChard/issues/99))。 |
 | `vch sim warm-template {create,list,remove}` | 共有の *warm* シミュレーターテンプレートを管理（iOS / watchOS / tvOS / visionOS、[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
 | `vch land <name>` | `agent/<name>` を base にマージして後始末（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
 | `vch sync <name>` | base の upstream を fetch してタスクブランチを rebase（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |

@@ -87,16 +87,20 @@ public struct LandService: Sendable {
         public let removeError: String?
         /// `[base..task]` paths the merge touched, surfaced for `--dry-run`.
         public let touchedPaths: [String]
-        /// `true` when the per-task simulator clone was deleted after
-        /// a successful auto-`rm`. `false` when there was no clone
-        /// recorded, when `--keep` / `--keep-sim` was passed, when
-        /// auto-`rm` failed (worktree still on disk, so we leave the
-        /// sim alone), or when `simctl.delete` itself failed. (#61)
+        /// `true` when every per-task simulator clone was deleted
+        /// after a successful auto-`rm`. `false` when there was no
+        /// clone recorded, when `--keep` / `--keep-sim` was passed,
+        /// when auto-`rm` failed (worktree still on disk, so we
+        /// leave the sims alone), or when at least one `simctl.delete`
+        /// failed — in the partial-failure case, `simRemoveError`
+        /// carries the joined per-clone reasons. (#61, #99)
         public let simRemoved: Bool
-        /// Name of the simulator clone that was either deleted or
-        /// that we tried (and failed) to delete. `nil` when the task
-        /// had no recorded simulator. Surfaced even on failure so the
-        /// CLI can show which device vch tried. (#61)
+        /// Comma-joined display names of every simulator clone the
+        /// task bound, surfaced for both the success and the
+        /// "we tried but failed" path so the CLI can mention each
+        /// one. `nil` when the task had no recorded simulators.
+        /// Pre-#99 single-binding tasks stringify to one name —
+        /// the existing one-clone CLI output is unchanged. (#61, #99)
         public let simName: String?
         /// Human-readable description when the merge succeeded, the
         /// auto-`rm` succeeded, but `simctl delete` failed. The merge
@@ -201,6 +205,14 @@ public struct LandService: Sendable {
         )
 
         let decision = LandPlanner.plan(inputs)
+        // Multi-binding (#99): a task may have several simulator
+        // clones (e.g. iOS + watchOS). Land's cleanup symmetry is
+        // "remove every per-task clone", so iterate `allSimulators`.
+        // The legacy `state.simulator` field is promoted into the
+        // list by the accessor for backwards compatibility.
+        let allSimRecords = state.allSimulators
+        let joinedSimNames = allSimRecords.isEmpty ? nil
+            : allSimRecords.map(\.name).joined(separator: ", ")
         switch decision {
         case .abort(let reason):
             throw makeError(reason: reason, taskName: task.raw)
@@ -215,7 +227,7 @@ public struct LandService: Sendable {
                     removeError: nil,
                     touchedPaths: diff,
                     simRemoved: false,
-                    simName: state.simulator?.name,
+                    simName: joinedSimNames,
                     simRemoveError: nil
                 )
             }
@@ -246,25 +258,31 @@ public struct LandService: Sendable {
 
             // Per-task simulator clone cleanup. Symmetric with
             // `vch rm`: if auto-`rm` succeeded and the user did not
-            // pass `--keep-sim`, delete the sim clone bound to the
+            // pass `--keep-sim`, delete every sim clone bound to the
             // task. Skipped when:
             //   * `--keep` / `--keep-sim` was passed,
             //   * auto-`rm` failed (worktree still on disk — the
-            //     user may retry; reaping the sim now would leave
+            //     user may retry; reaping the sims now would leave
             //     them with a half-broken task),
             //   * the task never recorded a simulator (no `vch build sim`).
-            // Failure of `simctl.delete` is non-fatal and surfaces
-            // via `simRemoveError`; the merge is never rolled back.
-            // (#61)
+            // A failure on any individual clone is non-fatal: we
+            // attempt the rest, and `simRemoved` is true only when
+            // ALL deletes succeeded. The merge is never rolled back. (#61, #99)
             var simRemoved = false
             var simRemoveError: String?
-            let simRecord = state.simulator
-            if removed, !options.keepSim, let sim = simRecord {
-                do {
-                    try simctl.delete(udid: sim.cloneUDID)
+            if removed, !options.keepSim, !allSimRecords.isEmpty {
+                var failures: [String] = []
+                for sim in allSimRecords {
+                    do {
+                        try simctl.delete(udid: sim.cloneUDID)
+                    } catch {
+                        failures.append("'\(sim.name)': \(error)")
+                    }
+                }
+                if failures.isEmpty {
                     simRemoved = true
-                } catch {
-                    simRemoveError = String(describing: error)
+                } else {
+                    simRemoveError = failures.joined(separator: "; ")
                 }
             }
 
@@ -309,7 +327,7 @@ public struct LandService: Sendable {
                 removeError: removeError,
                 touchedPaths: diff,
                 simRemoved: simRemoved,
-                simName: simRecord?.name,
+                simName: joinedSimNames,
                 simRemoveError: simRemoveError,
                 pushed: pushed,
                 pushRemote: pushRemote,

@@ -33,7 +33,24 @@ public struct TaskState: Codable, Equatable, Sendable {
     public var scheme: String?
 
     /// Set on first `vch build`/`vch test` that needs a simulator (M5).
+    ///
+    /// **Legacy field, preserved for backward read-compat.** Prior to
+    /// #99 a task could only be bound to a single simulator clone; that
+    /// single record lived here. v0.7+ writers populate
+    /// `simulators` (the multi-binding list) and mirror the *first*
+    /// element back here so a downgraded vch can still see one binding
+    /// without crashing. Always read through `allSimulators` instead
+    /// of touching this directly.
     public var simulator: SimulatorRecord?
+
+    /// All per-task simulator clones (#99). Populated by v0.7+ on
+    /// first `vch build` / `vch test` / `vch sim clone` that needs
+    /// a sim, and grown additively each time the user binds a new
+    /// platform (e.g. iOS today, watchOS tomorrow). The legacy
+    /// `simulator` field is kept in sync with `first` for downgrade
+    /// safety. Use `allSimulators` to read either field through one
+    /// canonical accessor.
+    public var simulators: [SimulatorRecord]?
 
     /// Last successful `vch build`. M4.
     public var lastBuild: BuildRecord?
@@ -63,6 +80,7 @@ public struct TaskState: Codable, Equatable, Sendable {
         baseBranch: String? = nil,
         scheme: String? = nil,
         simulator: SimulatorRecord? = nil,
+        simulators: [SimulatorRecord]? = nil,
         lastBuild: BuildRecord? = nil,
         lastTest: TestRecord? = nil,
         lastExec: ExecRecord? = nil,
@@ -77,6 +95,7 @@ public struct TaskState: Codable, Equatable, Sendable {
         self.baseBranch = baseBranch
         self.scheme = scheme
         self.simulator = simulator
+        self.simulators = simulators
         self.lastBuild = lastBuild
         self.lastTest = lastTest
         self.lastExec = lastExec
@@ -91,6 +110,30 @@ public struct TaskState: Codable, Equatable, Sendable {
 
     public var ownsGitWorktree: Bool {
         worktreeOwnership != .adopted
+    }
+
+    /// Canonical accessor for simulator bindings (#99). Always read
+    /// bindings through this. Returns `simulators` when it has been
+    /// written, otherwise promotes legacy `simulator` into a
+    /// one-element list, otherwise empty.
+    public var allSimulators: [SimulatorRecord] {
+        if let list = simulators { return list }
+        if let one = simulator { return [one] }
+        return []
+    }
+
+    /// Canonical mutator for simulator bindings (#99). Writes the new
+    /// list into `simulators` and mirrors `first` back into the legacy
+    /// `simulator` field for downgrade-safety. Setting an empty list
+    /// clears both fields.
+    public mutating func setSimulators(_ list: [SimulatorRecord]) {
+        if list.isEmpty {
+            self.simulators = nil
+            self.simulator = nil
+        } else {
+            self.simulators = list
+            self.simulator = list.first
+        }
     }
 
     public struct SimulatorRecord: Codable, Equatable, Sendable {
