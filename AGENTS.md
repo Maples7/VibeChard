@@ -97,7 +97,7 @@ because past sessions repeatedly rediscovered them the hard way.
    green and you must say so in the PR.
 3. **Update CHANGELOG.md whenever the change is user-visible.**
    New flags, behaviour changes, deprecations, removals, and bug
-   fixes go under `[Unreleased]`. Pure docs and internal refactors
+   fixes go under `## Unreleased`. Pure docs and internal refactors
    are exempt. Every CHANGELOG line must be defensible from the
    diff — if a bullet has no matching code, you shipped a lie.
 4. **Keep README in sync with the source.** Command-table rows,
