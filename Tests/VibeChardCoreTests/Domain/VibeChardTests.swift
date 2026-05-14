@@ -20,4 +20,19 @@ final class VibeChardTests: XCTestCase {
             "tagline must remind users this is Apple-only: \(VibeChard.tagline)"
         )
     }
+
+    func testAgentRunbookURLIsVersionPinned() {
+        XCTAssertEqual(VibeChard.agentRunbookPath, "docs/agent-runbook.md")
+        XCTAssertEqual(
+            VibeChard.agentRunbookURL,
+            "\(VibeChard.repositoryURL)/blob/v\(VibeChard.version)/docs/agent-runbook.md"
+        )
+    }
+
+    func testHomebrewRunbookPathHintPointsUnderVchDocs() {
+        XCTAssertEqual(
+            VibeChard.homebrewAgentRunbookPath,
+            "$(brew --prefix vch)/share/doc/vch/agent-runbook.md"
+        )
+    }
 }

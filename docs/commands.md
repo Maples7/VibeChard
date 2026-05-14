@@ -39,6 +39,7 @@ one-line summary; this is where the flag detail lives. Run
 - [Meta commands](#meta-commands)
   - [`vch shellenv`](#vch-shellenv)
   - [`vch completions`](#vch-completions)
+  - [`vch runbook`](#vch-runbook)
   - [`vch version`](#vch-version)
 
 All commands that take a `<name>` complete it from the current
@@ -427,6 +428,17 @@ vch completions install [--shell <s>] [--print] [--force]
 Install the completion script for `zsh` / `bash` / `fish`
 (auto-detected from `$SHELL`). `--print` previews; `--force`
 overwrites.
+
+### `vch runbook`
+
+```text
+vch runbook [--json]
+```
+
+Print the Agent runbook reference for this exact `vch` binary. The
+human output includes the tag-pinned GitHub URL and the Homebrew doc
+path hint; `--json` emits `{vch, url, local, homebrew}` for agent
+scripts.
 
 ### `vch version`
 

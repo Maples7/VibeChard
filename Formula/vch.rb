@@ -32,6 +32,8 @@ class Vch < Formula
     # before `vch exec` has set up the per-task `.vch/bin` directory.
     libexec.install ".build/release/vch-xcodebuild-shim"
 
+    doc.install "docs/agent-runbook.md"
+
     # Bash, Zsh, Fish completions auto-generated from the
     # ArgumentParser tree. Standard Homebrew helper.
     generate_completions_from_executable(
@@ -48,6 +50,10 @@ class Vch < Formula
     # The shim must not leak into PATH.
     refute_path_exists bin/"vch-xcodebuild-shim"
     assert_path_exists libexec/"vch-xcodebuild-shim"
+
+    # Agent runbook is installed and discoverable through the CLI.
+    assert_path_exists doc/"agent-runbook.md"
+    assert_match (doc/"agent-runbook.md").to_s, shell_output("#{bin}/vch runbook")
 
     # Completion scripts were installed for every supported shell.
     assert_path_exists bash_completion/"vch"

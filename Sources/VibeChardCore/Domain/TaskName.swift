@@ -24,7 +24,7 @@ public struct TaskName: Hashable, Sendable {
         "clean", "sync",
         "remove", "rm", "repair", "doctor", "land",
         "prune",
-        "shellenv", "version", "help",
+        "shellenv", "runbook", "version", "help",
     ]
 
     public static let maxLength = 64

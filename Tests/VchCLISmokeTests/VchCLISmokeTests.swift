@@ -424,6 +424,40 @@ final class VchCLISmokeTests: XCTestCase {
         )
     }
 
+    // MARK: - Agent runbook discovery
+
+    func testRunbookPrintsVersionPinnedReference() throws {
+        let result = try runVch(["runbook"])
+
+        XCTAssertEqual(result.exitCode, 0, "stderr: \(result.stderr)")
+        XCTAssertTrue(result.stdout.contains("vch      \(VibeChard.version)"))
+        XCTAssertTrue(result.stdout.contains(VibeChard.agentRunbookURL))
+        XCTAssertTrue(result.stdout.contains(VibeChard.homebrewAgentRunbookPath))
+        XCTAssertTrue(result.stderr.isEmpty, "stderr: \(result.stderr)")
+    }
+
+    func testRunbookJSONPrintsVersionPinnedReference() throws {
+        struct RunbookJSON: Decodable {
+            let vch: String
+            let url: String
+            let local: String?
+            let homebrew: String
+        }
+
+        let result = try runVch(["runbook", "--json"])
+        XCTAssertEqual(result.exitCode, 0, "stderr: \(result.stderr)")
+        XCTAssertTrue(result.stdout.contains("\"local\""))
+
+        let decoded = try JSONDecoder().decode(
+            RunbookJSON.self,
+            from: Data(result.stdout.utf8)
+        )
+        XCTAssertEqual(decoded.vch, VibeChard.version)
+        XCTAssertEqual(decoded.url, VibeChard.agentRunbookURL)
+        XCTAssertEqual(decoded.homebrew, VibeChard.homebrewAgentRunbookPath)
+        XCTAssertNil(decoded.local)
+    }
+
     // MARK: - #98 follow-up: --adopt-current end-to-end
 
     func testNewWithoutNameRequiresNameUnlessAdoptingCurrent() throws {

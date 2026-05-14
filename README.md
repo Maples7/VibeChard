@@ -150,6 +150,19 @@ vch path add-paywall                  # absolute path of the worktree
 vch remove add-paywall                # deletes worktree + branch + sim clone
 ```
 
+### Agent runbook
+
+If an AI agent is driving the task, point it at the version-matched
+runbook:
+
+```sh
+vch runbook
+```
+
+Inside `vch <name>` / `vch exec`, the child also receives
+`VCH_AGENT_RUNBOOK_URL` with the same tag-pinned link. The source copy
+lives at **[docs/agent-runbook.md](docs/agent-runbook.md)**.
+
 ## Workflow: a series of tasks
 
 VibeChard's sweet spot isn't a single task — it's running **many short
@@ -233,6 +246,7 @@ template trap, and pruning merged tasks.
 | `vch doctor` | Detect orphan sim clones, stale state, corrupt `state.json` (`--clean`, `--bug-report`, `--json`). |
 | `vch shellenv` | Emit `vch_cd` / `vch_new` / `vch_clean` shell helpers (bash/zsh). |
 | `vch completions install` | Install the shell completion script (`--shell`, `--print`, `--force`). |
+| `vch runbook` | Print the version-pinned Agent runbook URL and installed Homebrew doc path hint (`--json`). |
 | `vch version` | Print version + toolchain info (`--json` for machine-readable). |
 
 All commands that take a `<name>` complete it from the current
@@ -276,6 +290,7 @@ env" command — `vch <name>` already is one:
 |---|---|
 | `VCH_TASK_NAME` | The task name (e.g. `add-paywall`). Useful for PS1 / window title. |
 | `VCH_TASK_ROOT` | Absolute worktree path. |
+| `VCH_AGENT_RUNBOOK_URL` | Version-pinned Agent runbook URL for this `vch` binary. |
 | `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData` (read by the shim). |
 | `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages` (read by the shim). |
 | `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult` (read by the shim). |

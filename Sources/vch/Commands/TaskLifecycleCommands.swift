@@ -174,6 +174,7 @@ struct NewCommand: ParsableCommand {
                     shimPath: shimPath,
                     baseEnv: env
                 )
+                CLIBridge.eprintln("→ agent runbook: \(VibeChard.agentRunbookURL)")
                 PlanLauncher.runReplacing(plan)
             }
         }

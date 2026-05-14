@@ -39,6 +39,7 @@ struct VchCLI: ParsableCommand {
             // Shell integration + meta.
             ShellEnvCommand.self,
             CompletionsCommand.self,
+            RunbookCommand.self,
             VersionCommand.self,
         ],
         defaultSubcommand: nil
@@ -106,6 +107,78 @@ struct VchCLI: ParsableCommand {
             }
             exit(withError: error)
         }
+    }
+}
+
+// MARK: - vch runbook
+
+struct RunbookCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "runbook",
+        abstract: "Print the version-pinned Agent runbook location."
+    )
+
+    @Flag(name: .long, help: "Emit machine-readable JSON.")
+    var json: Bool = false
+
+    func run() throws {
+        let info = AgentRunbookInfo.collect()
+        if json {
+            try info.printJSON()
+        } else {
+            info.printHuman()
+        }
+    }
+}
+
+private struct AgentRunbookInfo: Encodable {
+    let vch: String
+    let url: String
+    let local: String?
+    let homebrew: String
+
+    private enum CodingKeys: String, CodingKey {
+        case vch
+        case url
+        case local
+        case homebrew
+    }
+
+    static func collect() -> AgentRunbookInfo {
+        AgentRunbookInfo(
+            vch: VibeChard.version,
+            url: VibeChard.agentRunbookURL,
+            local: RunbookLocator.installedPath(
+                executablePath: CommandLine.arguments.first ?? ""
+            ),
+            homebrew: VibeChard.homebrewAgentRunbookPath
+        )
+    }
+
+    func printHuman() {
+        print("vch      \(vch)")
+        print("url      \(url)")
+        print("homebrew \(homebrew)")
+        if let local {
+            print("local    \(local)")
+        }
+    }
+
+    func printJSON() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(self)
+        if let str = String(data: data, encoding: .utf8) {
+            print(str)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(vch, forKey: .vch)
+        try container.encode(url, forKey: .url)
+        try container.encode(local, forKey: .local)
+        try container.encode(homebrew, forKey: .homebrew)
     }
 }
 
