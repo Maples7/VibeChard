@@ -445,6 +445,11 @@ public struct SimulatorService: Sendable {
     /// tiebreak by UDID). Templates with `isAvailable == false` are
     /// filtered out.
     ///
+    /// Lazy creation (#110): if the device type is valid but no base device
+    /// exists, vch auto-creates it via `simctl create`. The user still owns
+    /// the lifecycle (can delete via `vch doctor --clean`), but doesn't need
+    /// to manually run `xcrun simctl create` first.
+    ///
     /// `requestedRuntime` (#11) further filters by the runtime
     /// identifier. Accepted forms (per platform — iOS / watchOS /
     /// tvOS / visionOS):
@@ -460,12 +465,17 @@ public struct SimulatorService: Sendable {
     ) throws -> SimDevice {
         let all = try simctl.availableDevices()
         var matches = all.filter { $0.isAvailable && $0.name == name }
+
+        // If requestedRuntime is specified, filter further. But if no matches
+        // are found after filtering, DON'T throw yet — we may auto-create.
         if let req = requestedRuntime,
            let target = parseRuntimeRequest(req) {
-            matches = matches.filter { $0.runtimeVersion == target }
-            guard !matches.isEmpty else {
-                // Surface the runtimes we DO have for this device so
-                // the user can copy-paste the right `--runtime` value.
+            let runtimeFiltered = matches.filter { $0.runtimeVersion == target }
+            if !runtimeFiltered.isEmpty {
+                matches = runtimeFiltered
+            } else if !matches.isEmpty {
+                // We have devices with this name but NOT this runtime.
+                // Surface the runtimes we DO have so the user can copy-paste.
                 let available = all
                     .filter { $0.isAvailable && $0.name == name }
                     .compactMap { $0.runtimeVersion?.dottedLabel }
@@ -473,10 +483,16 @@ public struct SimulatorService: Sendable {
                     name: "\(name) (runtime '\(req)' — available: \(available.isEmpty ? "none" : available.joined(separator: ", ")))"
                 )
             }
+            // else: no devices with this name at all, matches stays empty,
+            // and we'll try auto-create below.
         }
+
         guard !matches.isEmpty else {
-            throw VibeChardError.simulatorTemplateNotFound(name: name)
+            // No available device found. Try lazy creation (#110):
+            // Attempt to auto-create the base device.
+            return try createBaseDeviceIfNeeded(name: name, requestedRuntime: requestedRuntime)
         }
+
         let sorted = matches.sorted { lhs, rhs in
             switch (lhs.runtimeVersion, rhs.runtimeVersion) {
             case let (l?, r?):
@@ -493,6 +509,62 @@ public struct SimulatorService: Sendable {
             throw VibeChardError.simulatorTemplateNotFound(name: name)
         }
         return pick
+    }
+
+    /// Attempt to auto-create a base device when the device type is valid
+    /// but no instance exists yet (#110). Throws with diagnostic if
+    /// device type is not installed or runtime is invalid.
+    private func createBaseDeviceIfNeeded(
+        name: String,
+        requestedRuntime: String?
+    ) throws -> SimDevice {
+        // Determine the target runtime. Must be specified.
+        guard let req = requestedRuntime else {
+            throw VibeChardError.simulatorTemplateNotFound(
+                name: "\(name) — no base device exists and --runtime not specified. Try: --runtime 'iOS 26.5'"
+            )
+        }
+
+        guard let targetRuntime = parseRuntimeRequest(req) else {
+            throw VibeChardError.simulatorTemplateNotFound(
+                name: "\(name) (runtime '\(req)') — unrecognized runtime format"
+            )
+        }
+
+        // Attempt to create the device with the target runtime.
+        let newUDID: String
+        do {
+            newUDID = try simctl.create(
+                name: name,
+                deviceTypeID: name,
+                runtimeID: targetRuntime.runtimeIdentifier
+            )
+        } catch let VibeChardError.externalCommandFailed(cmd, _, stderr) {
+            // Diagnose the failure to help the user.
+            let lower = stderr.lowercased()
+            if lower.contains("invalid device type") {
+                throw VibeChardError.simulatorTemplateNotFound(
+                    name: "Device type '\(name)' not installed. Check: xcrun simctl list devicetypes"
+                )
+            } else if lower.contains("no such runtime") || lower.contains("runtime.*not found") {
+                throw VibeChardError.simulatorTemplateNotFound(
+                    name: "Runtime '\(targetRuntime.dottedLabel)' not installed. Check: xcrun simctl list runtimes"
+                )
+            }
+            throw VibeChardError.externalCommandFailed(cmd: cmd, exitCode: -1, stderr: stderr)
+        } catch {
+            throw error
+        }
+
+        // Successfully created. Return the new device.
+        return SimDevice(
+            udid: newUDID,
+            name: name,
+            runtime: targetRuntime.runtimeIdentifier,
+            runtimeVersion: targetRuntime,
+            isAvailable: true,
+            state: "Shutdown"
+        )
     }
 
     /// Normalize the user's `--runtime` argument into a comparable

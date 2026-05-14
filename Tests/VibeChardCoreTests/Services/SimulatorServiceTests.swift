@@ -1023,6 +1023,147 @@ final class SimulatorServiceTests: XCTestCase {
         )
         XCTAssertEqual(bound?.cloneUDID, "C-26")
     }
+
+    // MARK: - auto-create base device (#110)
+
+    func testPickNewestTemplateAutoCreatesBaseDeviceWhenMissing() throws {
+        // No device with name "iPhone 17" exists, but the user passes
+        // --device "iPhone 17" --runtime "iOS 26.5". pickNewestTemplate
+        // should auto-create a base device for that combination.
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [],  // No existing devices
+            cloneReturnsUDID: "NEW-BASE-UDID"
+        )
+        simctl.createReturnsUDID = "NEW-BASE-UDID"
+
+        let pick = try service.pickNewestTemplate(
+            name: "iPhone 17",
+            requestedRuntime: "iOS 26.5"
+        )
+        XCTAssertEqual(pick.udid, "NEW-BASE-UDID")
+        XCTAssertEqual(pick.name, "iPhone 17")
+        XCTAssertEqual(pick.isAvailable, true)
+        XCTAssertEqual(pick.state, "Shutdown")
+        XCTAssertTrue(pick.runtime.contains("iOS-26-5"), "runtime identifier should match requested runtime")
+        XCTAssertEqual(pick.runtimeVersion?.platform, .iOS, "platform should be iOS")
+        XCTAssertEqual(pick.runtimeVersion?.major, 26, "major version should be 26")
+        XCTAssertEqual(pick.runtimeVersion?.minor, 5, "minor version should be 5")
+        XCTAssertEqual(simctl.createCalls.count, 1)
+        let call = simctl.createCalls[0]
+        XCTAssertEqual(call.name, "iPhone 17")
+        XCTAssertEqual(call.deviceTypeID, "iPhone 17")
+        XCTAssertTrue(call.runtimeID.contains("iOS-26-5"))
+    }
+
+    func testPickNewestTemplateThrowsWhenAutoCreateFailsNoRuntime() throws {
+        // User provides --device but not --runtime. Auto-create
+        // requires a runtime, so it should fail with a helpful message.
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: []
+        )
+        XCTAssertThrowsError(try service.pickNewestTemplate(
+            name: "iPhone 17",
+            requestedRuntime: nil
+        )) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(name.contains("no base device"), "error should mention 'no base device', got: \(name)")
+            XCTAssertTrue(name.contains("--runtime"), "error should mention '--runtime', got: \(name)")
+        }
+    }
+
+    func testPickNewestTemplateThrowsWhenAutoCreateFailsInvalidRuntime() throws {
+        // User specifies an invalid runtime format.
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: []
+        )
+        XCTAssertThrowsError(try service.pickNewestTemplate(
+            name: "iPhone 17",
+            requestedRuntime: "not-a-runtime"
+        )) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(name.contains("unrecognized runtime"), "error should mention runtime format, got: \(name)")
+        }
+    }
+
+    func testPickNewestTemplateThrowsWhenAutoCreateFailsDeviceTypeNotInstalled() throws {
+        // User specifies a device type that doesn't exist.
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: []
+        )
+        simctl.createThrows = .externalCommandFailed(
+            cmd: "xcrun simctl create",
+            exitCode: 1,
+            stderr: "Invalid device type: NonexistentDevice"
+        )
+        XCTAssertThrowsError(try service.pickNewestTemplate(
+            name: "NonexistentDevice",
+            requestedRuntime: "iOS 26.5"
+        )) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(name.contains("not installed"), "error should mention device type not installed, got: \(name)")
+        }
+    }
+
+    func testPickNewestTemplateThrowsWhenAutoCreateFailsRuntimeNotInstalled() throws {
+        // Runtime exists but user specified an uninstalled version.
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: []
+        )
+        simctl.createThrows = .externalCommandFailed(
+            cmd: "xcrun simctl create",
+            exitCode: 1,
+            stderr: "No such runtime: iOS 99.0"
+        )
+        XCTAssertThrowsError(try service.pickNewestTemplate(
+            name: "iPhone 17",
+            requestedRuntime: "iOS 99.0"
+        )) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(name.contains("not installed"), "error should mention runtime not installed, got: \(name)")
+        }
+    }
+
+    func testPickNewestTemplatePrefersExistingDeviceOverCreating() throws {
+        // When a device with the requested name already exists, reuse it
+        // instead of auto-creating.
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [
+                device("U-EXIST", "iPhone 17",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+                       .init(platform: .iOS, major: 26, minor: 5)),
+            ],
+            cloneReturnsUDID: "SHOULD-NOT-CREATE"
+        )
+        simctl.createReturnsUDID = "SHOULD-NOT-CREATE"
+
+        let pick = try service.pickNewestTemplate(
+            name: "iPhone 17",
+            requestedRuntime: "iOS 26.5"
+        )
+        XCTAssertEqual(pick.udid, "U-EXIST")
+        XCTAssertEqual(simctl.createCalls.count, 0, "should not create when device exists")
+    }
+
 }
 
 // MARK: - test double

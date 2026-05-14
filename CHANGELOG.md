@@ -8,6 +8,16 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- Simulator base device auto-creation (#110): when `vch build --device "iPhone 17" --runtime "iOS 26.5"` is invoked and the device type + runtime are installed but no base device instance exists, vch now automatically creates it via `xcrun simctl create`. This removes the need for users to manually run `simctl create` before their first build — the device type + runtime are sufficient. The created device is not auto-deleted; the user owns its lifecycle and can clean up via `vch doctor --clean` if desired.
+
+### Changed
+- Improved error messages when a simulator device cannot be found. The diagnostics now distinguish three failure modes:
+  1. Device type not installed → `Device type 'iPhone 17' not installed`
+  2. Runtime not installed → `Runtime 'iOS 26.5' not installed`
+  3. No base device exists and `--runtime` not specified → suggests adding `--runtime` to trigger auto-creation
+  The previous generic "available: none" message is replaced with actionable guidance (#110).
+
 ## 0.8.1 - 2026-05-14
 
 ### Fixed
