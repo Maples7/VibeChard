@@ -481,12 +481,22 @@ final class TaskServiceTests: XCTestCase {
 
     func testListSurvivesMissingStateFile() throws {
         let (service, git, _, _) = makeService()
-        // Worktree dir-pattern matches but no state.json on disk.
+        // Legacy vch-created worktree: dir-pattern and branch both
+        // match, but state.json is missing on disk.
         git.entries.append(WorktreeEntry(path: "/Users/me/Repo-orphan", branch: "agent/orphan"))
         let summaries = try service.listTasks()
         XCTAssertEqual(summaries.count, 1)
         XCTAssertEqual(summaries.first?.name, "orphan")
         XCTAssertNil(summaries.first?.createdAt)
+    }
+
+    func testListSkipsCanonicalWorktreeWithoutStateOnExternalBranch() throws {
+        let (service, git, _, _) = makeService()
+        git.entries.append(WorktreeEntry(path: "/Users/me/Repo-external", branch: "feature/external"))
+
+        let summaries = try service.listTasks()
+
+        XCTAssertTrue(summaries.isEmpty)
     }
 
     func testListIncludesAdoptedWorktreeWithArbitraryPath() throws {
@@ -571,8 +581,9 @@ final class TaskServiceTests: XCTestCase {
     }
 
     func testPathReturnsAbsolutePathWhenExists() throws {
-        let (service, _, fs, _) = makeService()
+        let (service, git, fs, _) = makeService()
         fs.seedDirectory("/Users/me/Repo-foo")
+        git.entries.append(WorktreeEntry(path: "/Users/me/Repo-foo", branch: "agent/foo"))
         let path = try service.pathForTask(TaskName("foo"))
         XCTAssertEqual(path, "/Users/me/Repo-foo")
     }
@@ -589,10 +600,11 @@ final class TaskServiceTests: XCTestCase {
     }
 
     func testStateThrowsStateFileMissingWhenWorktreeExistsButNoStateFile() throws {
-        let (service, _, fs, _) = makeService()
+        let (service, git, fs, _) = makeService()
         // Worktree dir exists but the user (or a half-finished checkout)
         // never wrote .vch/state.json.
         fs.seedDirectory("/Users/me/Repo-foo")
+        git.entries.append(WorktreeEntry(path: "/Users/me/Repo-foo", branch: "agent/foo"))
         XCTAssertThrowsError(try service.stateForTask(TaskName("foo"))) { error in
             guard case let VibeChardError.stateFileMissing(path) = error else {
                 return XCTFail("expected stateFileMissing, got \(error)")
@@ -646,6 +658,15 @@ final class TaskServiceTests: XCTestCase {
             .withWorktreePath(adoptedPath, for: task)
         let fs = InMemoryFileSystem()
         fs.seedDirectory(adoptedPath)
+        let state = TaskState(
+            name: "codex-task",
+            branch: "feature/codex",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        try fs.writeFileAtomic(state.jsonData(),
+                               to: "\(adoptedPath)/.vch/state.json")
         let service = TaskService(workspace: workspace, git: FakeGitClient(),
                                   fs: fs, clock: FixedClock(Date()))
 
@@ -776,6 +797,46 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertFalse(fs.directoryExists(at: "\(adoptedPath)/.agent-build"))
         XCTAssertTrue(git.removeCalls.isEmpty)
         XCTAssertTrue(git.branchDeleteCalls.isEmpty)
+        XCTAssertTrue(git.branches.contains("feature/foo"))
+    }
+
+    func testRemoveAdoptedCanonicalPathUnregistersWithoutRediscovery() throws {
+        let task = try TaskName("foo")
+        let adoptedPath = "/Users/me/Repo-foo"
+        let workspace = Workspace(mainWorktreePath: "/Users/me/Repo")
+            .withWorktreePath(adoptedPath, for: task)
+        let git = FakeGitClient()
+        git.entries = [
+            WorktreeEntry(path: "/Users/me/Repo", branch: "main"),
+            WorktreeEntry(path: adoptedPath, branch: "feature/foo"),
+        ]
+        git.branches.insert("feature/foo")
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory("/Users/me/Repo")
+        fs.seedDirectory(adoptedPath)
+        fs.seedFile("\(adoptedPath)/.agent-build/DerivedData/marker", data: Data("x".utf8))
+        let state = TaskState(
+            name: "foo",
+            branch: "feature/foo",
+            createdAt: Date(),
+            baseRef: "abc1234",
+            worktreeOwnership: .adopted
+        )
+        fs.seedFile("\(adoptedPath)/.vch/state.json", data: try state.jsonData())
+        let service = TaskService(workspace: workspace, git: git, fs: fs)
+
+        try service.removeTask(task)
+
+        XCTAssertTrue(fs.directoryExists(at: adoptedPath))
+        XCTAssertFalse(fs.directoryExists(at: "\(adoptedPath)/.vch"))
+        XCTAssertTrue(git.removeCalls.isEmpty)
+        XCTAssertTrue(try service.listTasks().isEmpty)
+        XCTAssertThrowsError(try service.removeTask(task, options: .forceAll)) { error in
+            guard case VibeChardError.taskNotFound = error else {
+                return XCTFail("expected taskNotFound, got \(error)")
+            }
+        }
+        XCTAssertTrue(git.removeCalls.isEmpty)
         XCTAssertTrue(git.branches.contains("feature/foo"))
     }
 
@@ -920,7 +981,7 @@ final class TaskServiceTests: XCTestCase {
     }
 
     func testGitStatusReportsMergedIntoBaseWhenAheadIsZero() throws {
-        let (service, git, _, _) = makeService()
+        let (service, _, _, _) = makeService()
         let summary = TaskSummary(
             name: "shipped",
             branch: "agent/shipped",

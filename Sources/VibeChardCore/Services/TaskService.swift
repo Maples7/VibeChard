@@ -440,7 +440,7 @@ public struct TaskService: Sendable {
             let raw: String
             if let state {
                 raw = state.name
-            } else if let inferred = workspace.taskNameRaw(forWorktreePath: entry.path) {
+            } else if let inferred = inferredVchCreatedTaskName(for: entry) {
                 raw = inferred
             } else {
                 continue
@@ -509,11 +509,25 @@ public struct TaskService: Sendable {
 
     // MARK: - path
 
-    /// Resolve the absolute path of a task's worktree. Throws
-    /// `taskNotFound` if the directory does not exist.
+    /// Resolve the absolute path of a managed task's worktree. Throws
+    /// `taskNotFound` if the directory does not exist, or if a
+    /// state-less canonical-looking worktree is not on vch's own
+    /// `agent/<name>` branch.
     public func pathForTask(_ task: TaskName) throws -> String {
         let p = workspace.worktreePath(for: task)
         if !fs.directoryExists(at: p) {
+            throw VibeChardError.taskNotFound(name: task.raw)
+        }
+        if fs.fileExists(at: PathOps.join(p, Workspace.stateJsonRelativePath)) {
+            return p
+        }
+        let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+        let normalizedPath = Workspace(mainWorktreePath: p).mainWorktreePath
+        let isStatelessVchCreated = entries.contains { entry in
+            Workspace(mainWorktreePath: entry.path).mainWorktreePath == normalizedPath
+                && inferredVchCreatedTaskName(for: entry) == task.raw
+        }
+        guard isStatelessVchCreated else {
             throw VibeChardError.taskNotFound(name: task.raw)
         }
         return p
@@ -526,11 +540,8 @@ public struct TaskService: Sendable {
     /// `stateFileMissing` / `stateFileCorrupt` if the file is gone or
     /// malformed.
     public func stateForTask(_ task: TaskName) throws -> TaskState {
-        let wtPath = workspace.worktreePath(for: task)
-        if !fs.directoryExists(at: wtPath) {
-            throw VibeChardError.taskNotFound(name: task.raw)
-        }
-        let statePath = workspace.statePath(for: task)
+        let wtPath = try pathForTask(task)
+        let statePath = PathOps.join(wtPath, Workspace.stateJsonRelativePath)
         if !fs.fileExists(at: statePath) {
             throw VibeChardError.stateFileMissing(path: statePath)
         }
@@ -569,10 +580,7 @@ public struct TaskService: Sendable {
     /// Git worktree and branch remain owned by the tool/user that made
     /// them.
     public func removeTask(_ task: TaskName, options: RemoveOptions = .init()) throws {
-        let wtPath = workspace.worktreePath(for: task)
-        if !fs.directoryExists(at: wtPath) {
-            throw VibeChardError.taskNotFound(name: task.raw)
-        }
+        let wtPath = try pathForTask(task)
 
         let state = try? stateForTask(task)
         if state?.worktreeOwnership == .adopted {
@@ -615,6 +623,15 @@ public struct TaskService: Sendable {
         if fs.directoryExists(at: buildDir) || fs.fileExists(at: buildDir) {
             try fs.removeItem(at: buildDir)
         }
+    }
+
+    private func inferredVchCreatedTaskName(for entry: WorktreeEntry) -> String? {
+        guard let raw = workspace.taskNameRaw(forWorktreePath: entry.path),
+              let task = try? TaskName(raw),
+              entry.branch == task.branchName else {
+            return nil
+        }
+        return raw
     }
 
     // MARK: - repair

@@ -352,7 +352,11 @@ vch remove <name> [--allow-dirty] [--force] [--allow-unmerged] [--keep-sim]
 For vch-created tasks, delete the worktree, branch, and (by default)
 simulator clone. For `--adopt-current` tasks, unregister vch by
 removing only `.vch/` and `.agent-build/`; the external Git worktree
-and branch remain intact.
+and branch remain intact. Adopted-task removal prints
+`unregistered <name>` instead of `removed <name>` to make that
+ownership boundary explicit; after unregistering, the task no longer
+appears in `vch list`. Use `git worktree remove` and `git branch -d`
+manually if you also want to delete the external worktree and branch.
 
 - `--allow-dirty` permits uncommitted changes.
 - `--force` overrides the held-open-files check (e.g. an editor still
