@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.8.0 - 2026-05-14
+
 ### Added
 - Added an official Agent runbook at `docs/agent-runbook.md`, a
   `vch runbook` discovery command, Homebrew doc installation, and
