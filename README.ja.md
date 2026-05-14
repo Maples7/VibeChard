@@ -128,7 +128,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. worktree 内で直接エージェントを走らせる：
 vch new fix-toast --exec "claude"     # 隔離された worktree 内で claude を起動
 vch new triage --copy-untracked       # .env / .vscode など未追跡ファイルも一緒にコピー
-vch new codex-fix --adopt-current     # agent が作成済みの linked worktree をそのまま採用
+vch new --adopt-current               # 現在の linked worktree を採用し、そのディレクトリ名を使う
 vch exec fix-toast -- npm run lint    # worktree 内でワンショット実行
 
 # 5. 確認とクリーンアップ
@@ -199,7 +199,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 
 | コマンド | 何をするか |
 |---|---|
-| `vch new <name>` | worktree と `agent/<name>` ブランチを作成（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--adopt-current`、`--cd`）。 |
+| `vch new [<name>]` | worktree と `agent/<name>` ブランチを作成、または現在の linked worktree を採用（`--adopt-current` では `<name>` を省略可；`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--cd`）。 |
 | `vch list` | ワークスペース内の全タスクを一覧表示（`--json`、`-v`、`--git-status`）。 |
 | `vch state <name>` | タスクの `.vch/state.json` を表示（`--json`、`--field <dotted>`）。 |
 | `vch path <name>` | タスクの worktree の絶対パスを表示。 |

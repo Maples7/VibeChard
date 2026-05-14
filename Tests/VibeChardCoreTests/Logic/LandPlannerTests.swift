@@ -192,7 +192,7 @@ final class LandPlannerTests: XCTestCase {
 
     // MARK: - adopted task branch names (#98 follow-up)
 
-    /// For a task adopted via `vch new <name> --adopt-current`, the
+    /// For a task adopted via `vch new [<name>] --adopt-current`, the
     /// branch git actually merges is `state.branch` (e.g. the user's
     /// pre-existing `feature/codex`), NOT `agent/<task.raw>`. The
     /// default merge commit subject must reflect the real branch so

@@ -118,11 +118,36 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(state.worktreeOwnership, .adopted)
     }
 
+    func testInferTaskNameForAdoptCurrentUsesLinkedWorktreeLeaf() throws {
+        let (service, git, fs, _) = makeService()
+        let currentPath = "/Users/me/agent-session"
+        fs.seedDirectory(currentPath)
+        git.entries.append(WorktreeEntry(path: currentPath, branch: "feature/foo"))
+
+        let task = try service.inferTaskNameForAdoptCurrent(
+            currentWorktreePath: currentPath
+        )
+
+        XCTAssertEqual(task.raw, "agent-session")
+    }
+
     func testAdoptCurrentWorktreeRejectsMainWorktree() throws {
         let (service, _, _, _) = makeService()
 
         XCTAssertThrowsError(try service.adoptCurrentWorktree(
             TaskName("foo"),
+            currentWorktreePath: "/Users/me/Repo"
+        )) { error in
+            guard case VibeChardError.adoptCurrentRequiresLinkedWorktree = error else {
+                return XCTFail("expected adoptCurrentRequiresLinkedWorktree, got \(error)")
+            }
+        }
+    }
+
+    func testInferTaskNameForAdoptCurrentRejectsMainWorktree() throws {
+        let (service, _, _, _) = makeService()
+
+        XCTAssertThrowsError(try service.inferTaskNameForAdoptCurrent(
             currentWorktreePath: "/Users/me/Repo"
         )) { error in
             guard case VibeChardError.adoptCurrentRequiresLinkedWorktree = error else {
@@ -144,6 +169,22 @@ final class TaskServiceTests: XCTestCase {
             }
         }
         XCTAssertFalse(fs.fileExists(at: "/Users/me/random-dir/.vch/state.json"))
+    }
+
+    func testInferTaskNameForAdoptCurrentRejectsInvalidWorktreeLeaf() throws {
+        let (service, git, fs, _) = makeService()
+        let currentPath = "/Users/me/agent session"
+        fs.seedDirectory(currentPath)
+        git.entries.append(WorktreeEntry(path: currentPath, branch: "feature/foo"))
+
+        XCTAssertThrowsError(try service.inferTaskNameForAdoptCurrent(
+            currentWorktreePath: currentPath
+        )) { error in
+            guard case let VibeChardError.invalidTaskName(name, _) = error else {
+                return XCTFail("expected invalidTaskName, got \(error)")
+            }
+            XCTAssertEqual(name, "agent session")
+        }
     }
 
     func testAdoptCurrentWorktreeRefusesAlreadyManagedCurrentWorktree() throws {

@@ -339,7 +339,7 @@ final class BuildServiceTests: XCTestCase {
 
     // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
 
-    /// For a task adopted via `vch new <name> --adopt-current`, the
+    /// For a task adopted via `vch new [<name>] --adopt-current`, the
     /// downstream services receive a `Workspace` whose
     /// `taskWorktreePaths` map overrides the conventional
     /// `<repo>-<task>` path. Every path BuildService computes —

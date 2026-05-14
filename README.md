@@ -141,7 +141,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. Driving an agent inside the worktree:
 vch new fix-toast --exec "claude"     # spawns claude inside the isolated worktree
 vch new triage --copy-untracked       # also bring over .env / .vscode / etc.
-vch new codex-fix --adopt-current     # adopt this linked worktree if an agent already made it
+vch new --adopt-current               # adopt this linked worktree, using its directory name
 vch exec fix-toast -- npm run lint    # one-shot command in the worktree
 
 # 5. Inspect & clean up
@@ -211,7 +211,7 @@ template trap, and pruning merged tasks.
 
 | Command | What it does |
 |---|---|
-| `vch new <name>` | Create worktree + `agent/<name>` branch (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--adopt-current`, `--cd`). |
+| `vch new [<name>]` | Create worktree + `agent/<name>` branch, or adopt the current linked worktree (`<name>` may be omitted with `--adopt-current`; `--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--cd`). |
 | `vch list` | List tasks in the workspace (`--json`, `-v`, `--git-status`). |
 | `vch state <name>` | Print `.vch/state.json` for a task (`--json`, `--field <dotted>`). |
 | `vch path <name>` | Print the absolute path of a task's worktree. |

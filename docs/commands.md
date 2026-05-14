@@ -49,10 +49,14 @@ workspace — install completions and hit `<TAB>`.
 ### `vch new`
 
 ```text
-vch new <name> [--exec "<cmd>" | --cd] [--copy-untracked] [--seed-spm-from <task>] [--adopt-current] [--base <ref>]
+vch new [<name>] [--exec "<cmd>" | --cd] [--copy-untracked] [--seed-spm-from <task>] [--adopt-current] [--base <ref>]
 ```
 
-Create worktree at `../<repo>-<name>` on branch `agent/<name>`.
+Without `--adopt-current`, create a worktree at `../<repo>-<name>` on
+branch `agent/<name>`.
+When `--adopt-current` is used, `<name>` may be omitted; vch infers it
+from the current linked worktree directory name and validates it with
+the normal task-name rules.
 
 - `--exec "<cmd>"` runs a command inside the new worktree (e.g. an
   AI agent like `claude` or `codex`).

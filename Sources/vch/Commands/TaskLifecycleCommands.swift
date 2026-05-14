@@ -10,8 +10,15 @@ struct NewCommand: ParsableCommand {
         abstract: "Create a new isolated worktree + branch for a task."
     )
 
-    @Argument(help: "Task name (used as <repo>-<name> dir and agent/<name> branch).")
-    var name: String
+    @Argument(
+        help: ArgumentHelp(
+            "Task name (used as <repo>-<name> dir and agent/<name> branch). "
+                + "With --adopt-current, omit to use the current linked "
+                + "worktree directory name.",
+            valueName: "name"
+        )
+    )
+    var name: String?
 
     @Option(name: .long, help: "Base ref for the new branch (default: HEAD).")
     var base: String?
@@ -88,7 +95,10 @@ struct NewCommand: ParsableCommand {
                 throw VibeChardError.newConflictingCdExec
             }
 
-            let task = try TaskName(name)
+            if name == nil, !adoptCurrent {
+                throw VibeChardError.missingArgument("task name")
+            }
+
             let cwd = FileManager.default.currentDirectoryPath
             let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
             let workspace = location.workspace
@@ -96,6 +106,14 @@ struct NewCommand: ParsableCommand {
                 workspace: workspace,
                 git: DiskGitClient()
             )
+            let task: TaskName
+            if let name {
+                task = try TaskName(name)
+            } else {
+                task = try service.inferTaskNameForAdoptCurrent(
+                    currentWorktreePath: location.currentWorktreePath
+                )
+            }
             let seedTask = try seedSpmFrom.map(TaskName.init)
             let path: String
             let effectiveWorkspace: Workspace

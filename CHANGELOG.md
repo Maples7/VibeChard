@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Changed
+- `vch new --adopt-current` can now omit `<name>`; vch infers it from
+  the current linked worktree directory name after confirming the
+  directory is a linked worktree and validating the normal task-name
+  rules.
+
 ## 0.7.0 - 2026-05-14
 
 ### Breaking
