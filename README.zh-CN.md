@@ -128,7 +128,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. 在 worktree 里直接驱动 agent：
 vch new fix-toast --exec "claude"     # 在隔离的 worktree 里启动 claude
 vch new triage --copy-untracked       # 顺便拷贝 .env / .vscode 等未跟踪文件
-vch new codex-fix --adopt-current     # 如果 agent 已经建好 linked worktree，就直接接管当前 worktree
+vch new --adopt-current               # 接管当前 linked worktree，并使用它的目录名
 vch exec fix-toast -- npm run lint    # 在 worktree 里跑一次性命令
 
 # 5. 查看与清理
@@ -196,7 +196,7 @@ warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板
 
 | 命令 | 作用 |
 |---|---|
-| `vch new <name>` | 创建 worktree + `agent/<name>` 分支（`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--adopt-current`、`--cd`）。 |
+| `vch new [<name>]` | 创建 worktree + `agent/<name>` 分支，或接管当前 linked worktree（配合 `--adopt-current` 时可省略 `<name>`；`--exec "<cmd>"`、`--copy-untracked`、`--seed-spm-from <task>`、`--cd`）。 |
 | `vch list` | 列出工作区下所有任务（`--json`、`-v`、`--git-status`）。 |
 | `vch state <name>` | 打印任务的 `.vch/state.json`（`--json`、`--field <dotted>`）。 |
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |

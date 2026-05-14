@@ -19,7 +19,7 @@ public enum LandPlan {
         public let task: TaskName
         /// The actual git branch being merged. For vch-created tasks
         /// this equals `task.branchName` (`agent/<name>`); for tasks
-        /// adopted via `vch new <name> --adopt-current` it's whatever
+        /// adopted via `vch new [<name>] --adopt-current` it's whatever
         /// branch was checked out at adopt time (e.g. `feature/codex`).
         /// Used in the merge commit message and the `noOp` reason so
         /// both reflect the branch git actually operates on, not the

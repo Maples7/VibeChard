@@ -557,7 +557,7 @@ final class LandServiceTests: XCTestCase {
 
     // MARK: - adopted auto-rm contract (#98 follow-up)
 
-    /// For a task adopted via `vch new <name> --adopt-current`,
+    /// For a task adopted via `vch new [<name>] --adopt-current`,
     /// `vch land <name>` must merge the *user's* branch
     /// (`state.branch`, e.g. `feature/codex`) but on success only
     /// scrub vch-owned artefacts (`.vch/`, `.agent-build/`) — never

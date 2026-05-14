@@ -58,7 +58,7 @@ final class NewTaskHintTests: XCTestCase {
 
     // MARK: - command-level suppressions (#98 follow-up)
 
-    /// `vch new <name> --adopt-current` means the user is already
+    /// `vch new [<name>] --adopt-current` means the user is already
     /// inside the worktree they want vch to know about — auto-cd has
     /// nothing to do. Suppress the hint regardless of TTY / env state
     /// so the per-command policy lives next to the rest of the rules.

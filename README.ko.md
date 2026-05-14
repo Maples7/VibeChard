@@ -131,7 +131,7 @@ vch test  add-paywall --scheme MyApp --device "iPhone 16"
 # 4. worktree 안에서 직접 에이전트 구동:
 vch new fix-toast --exec "claude"     # 격리된 worktree 에서 claude 실행
 vch new triage --copy-untracked       # .env / .vscode 등 추적되지 않은 파일도 함께 복사
-vch new codex-fix --adopt-current     # agent 가 이미 만든 linked worktree 를 현재 위치에서 채택
+vch new --adopt-current               # 현재 linked worktree 를 채택하고 디렉터리 이름을 사용
 vch exec fix-toast -- npm run lint    # worktree 안에서 일회성 명령 실행
 
 # 5. 점검과 정리
@@ -200,7 +200,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 
 | 명령어 | 하는 일 |
 |---|---|
-| `vch new <name>` | worktree 와 `agent/<name>` 브랜치 생성 (`--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--adopt-current`, `--cd`). |
+| `vch new [<name>]` | worktree 와 `agent/<name>` 브랜치 생성 또는 현재 linked worktree 채택 (`--adopt-current` 에서는 `<name>` 생략 가능; `--exec "<cmd>"`, `--copy-untracked`, `--seed-spm-from <task>`, `--cd`). |
 | `vch list` | 워크스페이스의 모든 작업을 나열 (`--json`, `-v`, `--git-status`). |
 | `vch state <name>` | 작업의 `.vch/state.json` 출력 (`--json`, `--field <dotted>`). |
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |

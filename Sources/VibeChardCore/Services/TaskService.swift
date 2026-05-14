@@ -241,18 +241,7 @@ public struct TaskService: Sendable {
         copyUntracked: Bool = false,
         seedSpmFrom: TaskName? = nil
     ) throws -> String {
-        let wtPath = Workspace(mainWorktreePath: currentWorktreePath).mainWorktreePath
-        if wtPath == workspace.mainWorktreePath {
-            throw VibeChardError.adoptCurrentRequiresLinkedWorktree(path: wtPath)
-        }
-        let worktreeEntries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
-        let isLinkedWorktree = worktreeEntries.contains { entry in
-            Workspace(mainWorktreePath: entry.path).mainWorktreePath == wtPath
-                && wtPath != workspace.mainWorktreePath
-        }
-        if !isLinkedWorktree {
-            throw VibeChardError.adoptCurrentRequiresLinkedWorktree(path: wtPath)
-        }
+        let wtPath = try linkedWorktreePathForAdoption(currentWorktreePath)
         guard fs.directoryExists(at: wtPath) else {
             throw VibeChardError.taskNotFound(name: task.raw)
         }
@@ -316,6 +305,36 @@ public struct TaskService: Sendable {
             try fs.cloneItem(from: srcRepos, to: dstRepos)
         }
 
+        return wtPath
+    }
+
+    /// Default task name for `vch new --adopt-current` when the CLI
+    /// omitted `<name>`. The current directory must already be a linked
+    /// git worktree, and the worktree directory leaf must satisfy the
+    /// normal `TaskName` rules.
+    public func inferTaskNameForAdoptCurrent(
+        currentWorktreePath: String
+    ) throws -> TaskName {
+        let wtPath = try linkedWorktreePathForAdoption(currentWorktreePath)
+        let leaf = URL(fileURLWithPath: wtPath).lastPathComponent
+        return try TaskName(leaf)
+    }
+
+    private func linkedWorktreePathForAdoption(
+        _ currentWorktreePath: String
+    ) throws -> String {
+        let wtPath = Workspace(mainWorktreePath: currentWorktreePath).mainWorktreePath
+        if wtPath == workspace.mainWorktreePath {
+            throw VibeChardError.adoptCurrentRequiresLinkedWorktree(path: wtPath)
+        }
+        let worktreeEntries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+        let isLinkedWorktree = worktreeEntries.contains { entry in
+            Workspace(mainWorktreePath: entry.path).mainWorktreePath == wtPath
+                && wtPath != workspace.mainWorktreePath
+        }
+        if !isLinkedWorktree {
+            throw VibeChardError.adoptCurrentRequiresLinkedWorktree(path: wtPath)
+        }
         return wtPath
     }
 

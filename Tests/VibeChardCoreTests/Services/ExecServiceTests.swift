@@ -188,7 +188,7 @@ final class ExecServiceTests: XCTestCase {
 
     // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)
 
-    /// `vch new <name> --adopt-current` is followed (when `--exec` is
+    /// `vch new [<name>] --adopt-current` is followed (when `--exec` is
     /// passed) by an `ExecService.prepare` call against a Workspace
     /// whose `taskWorktreePaths` overrides the conventional path.
     /// Every artefact ExecService installs must land inside the
