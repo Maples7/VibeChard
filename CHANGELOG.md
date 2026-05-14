@@ -18,6 +18,9 @@ The English README is the source of truth; localized READMEs may lag.
   3. No base device exists and `--runtime` not specified → suggests adding `--runtime` to trigger auto-creation
   The previous generic "available: none" message is replaced with actionable guidance (#110).
 
+### Fixed
+- Pruned stale simulator bindings before simulator selection, so a clone deleted outside vch no longer causes `vch build`, `vch test`, or `vch sim` commands to report false multi-binding ambiguity (#111).
+
 ## 0.8.1 - 2026-05-14
 
 ### Fixed

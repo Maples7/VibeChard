@@ -86,7 +86,10 @@ public struct SimulatorService: Sendable {
         let data = try fs.readFile(at: statePath)
         var state = try TaskState.parse(data)
 
-        let existing = state.allSimulators
+        let existing = try pruneStaleSimulatorBindings(
+            statePath: statePath,
+            state: &state
+        )
 
         // No --device: pure-reuse path. 0 → nil, 1 → reuse, ≥2 → ambiguous.
         // When the caller knows the scheme's simulator platform, scope
@@ -347,9 +350,12 @@ public struct SimulatorService: Sendable {
         }
     }
 
-    /// Read every simulator binding persisted for `task` (#99).
+    /// Read every live simulator binding persisted for `task` (#99).
+    /// Bindings whose clone UDID has disappeared from `simctl list`
+    /// are pruned from state before returning (#111).
     /// Always returns a (possibly empty) list — never throws on
-    /// ambiguity. Throws when `state.json` is missing/corrupt.
+    /// ambiguity. Throws when `state.json` is missing/corrupt, or
+    /// when simctl cannot be queried for a non-empty binding list.
     public func lookupAllBindings(task: TaskName) throws -> [TaskState.SimulatorRecord] {
         let statePath = workspace.statePath(for: task)
         guard fs.fileExists(at: statePath) else {
@@ -359,8 +365,27 @@ public struct SimulatorService: Sendable {
             )
         }
         let data = try fs.readFile(at: statePath)
-        let state = try TaskState.parse(data)
-        return state.allSimulators
+        var state = try TaskState.parse(data)
+        return try pruneStaleSimulatorBindings(
+            statePath: statePath,
+            state: &state
+        )
+    }
+
+    private func pruneStaleSimulatorBindings(
+        statePath: String,
+        state: inout TaskState
+    ) throws -> [TaskState.SimulatorRecord] {
+        let existing = state.allSimulators
+        guard !existing.isEmpty else { return [] }
+
+        let liveUDIDs = Set(try simctl.allDevices().map(\.udid))
+        let live = existing.filter { liveUDIDs.contains($0.cloneUDID) }
+        guard live.count != existing.count else { return existing }
+
+        state.setSimulators(live)
+        try fs.writeFileAtomic(state.jsonData(), to: statePath)
+        return live
     }
 
     /// Resolve which binding a CLI subcommand should operate on (#99).
