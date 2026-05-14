@@ -10,8 +10,8 @@ name: Release
 #   HOMEBREW_TAP_TOKEN  — a PAT with `repo` scope on the tap repo.
 #                         The default GITHUB_TOKEN can't push to other
 #                         repositories, so this PAT is mandatory.
-#                         If unset, the tap-bump step is skipped and
-#                         the rest of the release still completes.
+#                         If unset, the release fails before publishing
+#                         artifacts so Homebrew can't silently lag behind.
 
 on:
   push:
@@ -27,13 +27,18 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 30
     env:
-      # Hoist the secret to a job-level env var so per-step `if:`
-      # expressions can compare against it (the `secrets` context is
-      # not allowed inside `if:`).
+      # Hoist the secret to a job-level env var so shell steps can verify it.
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Verify Homebrew tap token
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is required; refusing to publish a release without updating maples7/homebrew-tap." >&2
+            exit 1
+          fi
 
       - name: Verify tag matches source version
         run: |
@@ -94,17 +99,7 @@ jobs:
             }
           done
 
-      - name: Create GitHub Release
-        # v3 = first Node 24 major (April 2026); inputs unchanged from v2.
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          draft: false
-          # Anything like `v0.1.0-beta1` is treated as a prerelease.
-          prerelease: ${{ contains(github.ref_name, '-') }}
-
       - name: Check out Homebrew tap
-        if: env.TAP_TOKEN != ''
         uses: actions/checkout@v5
         with:
           repository: maples7/homebrew-tap
@@ -113,7 +108,6 @@ jobs:
           token: ${{ env.TAP_TOKEN }}
 
       - name: Bump Homebrew formula in tap
-        if: env.TAP_TOKEN != ''
         run: |
           set -euo pipefail
 
@@ -145,3 +139,12 @@ jobs:
           git commit -m "vch ${version}" \
             -m "Auto-bumped from VibeChard ${tag}."
           git push origin master
+
+      - name: Create GitHub Release
+        # v3 = first Node 24 major (April 2026); inputs unchanged from v2.
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          draft: false
+          # Anything like `v0.1.0-beta1` is treated as a prerelease.
+          prerelease: ${{ contains(github.ref_name, '-') }}
