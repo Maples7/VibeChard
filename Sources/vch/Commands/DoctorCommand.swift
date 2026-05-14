@@ -79,8 +79,8 @@ struct DoctorCommand: ParsableCommand {
         clean: DoctorService.CleanReport?,
         didClean: Bool
     ) {
-        if report.prunedStaleEntries {
-            print("pruned stale worktree entries")
+        if report.worktreePruneRan {
+            print("ran git worktree prune")
         }
         let checked = report.checkedTasks.isEmpty
             ? "(none)" : report.checkedTasks.joined(separator: ", ")
@@ -108,7 +108,7 @@ struct DoctorCommand: ParsableCommand {
             for s in report.staleBindings {
                 CLIBridge.eprintln("  - \(s.taskName) → \(s.cloneName) (\(s.cloneUDID))")
             }
-            CLIBridge.eprintln("  (run `vch sim clone <task> --device …` or `vch repair`)")
+            CLIBridge.eprintln("  (\(DoctorService.staleBindingRepairHint))")
         }
 
         if !report.warmTemplates.isEmpty {
@@ -148,11 +148,16 @@ struct DoctorCommand: ParsableCommand {
             let failedDeletes: [String]
         }
         struct Out: Encodable {
+            let worktreePruneRan: Bool
+            /// Deprecated compatibility field. Kept false because
+            /// doctor no longer claims `git worktree prune` mutated
+            /// anything; read `worktreePruneRan` instead.
             let prunedStaleEntries: Bool
             let checkedTasks: [String]
             let stateProblems: [String]
             let orphanClones: [OrphanJSON]
             let staleBindings: [StaleJSON]
+            let staleBindingRepairHint: String?
             // Encoded directly via WarmTemplateRecord's Encodable
             // conformance — sharing the schema with `vch sim
             // warm-template list --json` and the bug-report tarball.
@@ -160,6 +165,7 @@ struct DoctorCommand: ParsableCommand {
             let cleaned: CleanJSON?
         }
         let out = Out(
+            worktreePruneRan: report.worktreePruneRan,
             prunedStaleEntries: report.prunedStaleEntries,
             checkedTasks: report.checkedTasks,
             stateProblems: report.stateProblems,
@@ -171,6 +177,8 @@ struct DoctorCommand: ParsableCommand {
                 StaleJSON(taskName: $0.taskName, cloneUDID: $0.cloneUDID,
                           cloneName: $0.cloneName)
             },
+            staleBindingRepairHint: report.staleBindings.isEmpty
+                ? nil : DoctorService.staleBindingRepairHint,
             warmTemplates: report.warmTemplates,
             cleaned: clean.map { c in
                 CleanJSON(

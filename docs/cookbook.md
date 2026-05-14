@@ -243,6 +243,17 @@ rejects booted devices), so it also collapses any leftover boot
 state. Costs ~10–20 s — off by default to keep the fast path fast.
 Drop the flag once the test passes; daily runs don't need it.
 
+The same reset is the first recovery step for xcodebuild launch
+failures like:
+
+```
+SBMainWorkspace Busy ("Application failed preflight checks")
+```
+
+When `vch build` / `vch test` recognizes that failure in the log, it
+prints a hint to rerun once with `--erase-clone` or reset the clone
+explicitly with `vch sim erase <task> --device <template>`.
+
 If you find yourself reaching for `--erase-clone` constantly,
 consider keeping a development-only template separate from the
 warm template that vch clones from. The warm template should be

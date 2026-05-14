@@ -14,8 +14,9 @@ import Foundation
 ///   deletes these.
 /// - **Stale simulator bindings** — a task's `state.simulator.cloneUDID`
 ///   doesn't exist in `simctl list` anymore (someone deleted the
-///   device out-of-band). `--clean` does NOT auto-fix these — the
-///   right answer is `vch repair` or a manual `vch sim clone`.
+///   device out-of-band). `--clean` does NOT auto-fix these — doctor
+///   reports them with a repair hint, while build/test/sim selection
+///   prunes stale records before reusing or recreating a binding.
 /// - **State.json problems** — same set as `vch repair` would surface.
 public struct DoctorService: Sendable {
     public let workspace: Workspace
@@ -63,6 +64,15 @@ public struct DoctorService: Sendable {
     }
 
     public struct Report: Equatable, Sendable {
+        /// True when `git worktree prune` was invoked. Git does not
+        /// report whether it actually removed stale admin entries, so
+        /// this deliberately records the action rather than claiming a
+        /// persistent mutation occurred.
+        public var worktreePruneRan: Bool
+        /// Deprecated JSON compatibility field. Older vch versions set
+        /// this to true after running `git worktree prune`, but that
+        /// name implied a mutation we could not prove. New callers
+        /// should read `worktreePruneRan` instead.
         public var prunedStaleEntries: Bool
         public var checkedTasks: [String]
         public var stateProblems: [String]
@@ -77,6 +87,7 @@ public struct DoctorService: Sendable {
         public var warmTemplates: [WarmTemplateRecord]
 
         public init(
+            worktreePruneRan: Bool = false,
             prunedStaleEntries: Bool = false,
             checkedTasks: [String] = [],
             stateProblems: [String] = [],
@@ -84,6 +95,7 @@ public struct DoctorService: Sendable {
             staleBindings: [StaleBinding] = [],
             warmTemplates: [WarmTemplateRecord] = []
         ) {
+            self.worktreePruneRan = worktreePruneRan
             self.prunedStaleEntries = prunedStaleEntries
             self.checkedTasks = checkedTasks
             self.stateProblems = stateProblems
@@ -105,13 +117,16 @@ public struct DoctorService: Sendable {
         }
     }
 
+    public static let staleBindingRepairHint =
+        "stale simulator bindings are reported only; doctor does not mutate task state. Recreate with `vch sim clone <task> --device ...`, or run the next `vch build` / `vch test` with --device so vch can prune and rebind."
+
     /// Read-only sweep. Never deletes anything.
     public func diagnose() throws -> Report {
         var report = Report()
 
         // Worktree-level checks (delegates to TaskService.repair() shape).
         try git.worktreePrune(repoCwd: workspace.mainWorktreePath)
-        report.prunedStaleEntries = true
+        report.worktreePruneRan = true
 
         // Walk live tasks; collect bound UDIDs and surface state problems.
         var boundByUDID: [String: StaleBinding] = [:]

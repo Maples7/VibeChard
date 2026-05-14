@@ -65,6 +65,14 @@ final class VchCLISmokeTests: XCTestCase {
         let gitEnv: [String: String]
     }
 
+    private struct ManagedTaskFixture {
+        let rootDir: URL
+        let repoPath: String
+        let taskPath: String
+        let taskName: String
+        let gitEnv: [String: String]
+    }
+
     private func runVch(_ args: [String]) throws -> Result {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: try Self.vchPath())
@@ -424,6 +432,122 @@ final class VchCLISmokeTests: XCTestCase {
         )
     }
 
+    // MARK: - xcodebuild failure recovery hint integration
+
+    func testTestPreflightBusyFailurePrintsRecoveryHintOnStderr() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let runtime = "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: .init(
+                cloneUDID: "SIM-1",
+                sourceUDID: "SRC-1",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: runtime
+            )
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+
+        let devicesJSON = """
+        {"devices":{"\(runtime)":[{"udid":"SIM-1","name":"iPhone 16-vch-alpha",\
+        "state":"Shutdown","isAvailable":true}]}}
+        """
+        let toolEnv = try installFakeToolchain(
+            rootDir: fixture.rootDir,
+            devicesJSON: devicesJSON,
+            xcodebuildStderr: """
+            Failed to install or launch the test runner.
+            Simulator device failed to launch com.maples7.BeanLedger.
+            The request was denied by service delegate (SBMainWorkspace) for reason: Busy ("Application failed preflight checks").
+            """,
+            xcodebuildExitCode: 65
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+
+        let result = try runVch(
+            ["test", "alpha", "--scheme", "App", "--device", "iPhone 16"],
+            cwd: fixture.repoPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, 65, "stderr: \(result.stderr)")
+        XCTAssertTrue(
+            result.stderr.contains("hint: xcodebuild reported SBMainWorkspace Busy"),
+            "expected recovery hint on stderr; got: \(result.stderr)"
+        )
+        XCTAssertTrue(result.stderr.contains("vch test 'alpha' --erase-clone [same flags]"))
+        XCTAssertTrue(result.stderr.contains("vch sim erase 'alpha' --device 'iPhone 16'"))
+        XCTAssertFalse(
+            result.stdout.contains("hint: xcodebuild reported SBMainWorkspace Busy"),
+            "recovery hint must go to stderr, not stdout; stdout: \(result.stdout)"
+        )
+    }
+
+    // MARK: - doctor JSON integration
+
+    func testDoctorJSONReportsWorktreePruneAndStaleBindingHint() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: .init(
+                cloneUDID: "SIM-GONE",
+                sourceUDID: "SRC-1",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+            )
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let toolEnv = try installFakeToolchain(
+            rootDir: fixture.rootDir,
+            devicesJSON: #"{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-5":[]}}"#,
+            xcodebuildStderr: "",
+            xcodebuildExitCode: 0
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+
+        let result = try runVch(
+            ["doctor", "--json"],
+            cwd: fixture.repoPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, ExitCode.business, "stderr: \(result.stderr)")
+        struct DoctorJSON: Decodable {
+            struct StaleBinding: Decodable {
+                let taskName: String
+                let cloneUDID: String
+                let cloneName: String
+            }
+            let worktreePruneRan: Bool
+            let prunedStaleEntries: Bool
+            let staleBindings: [StaleBinding]
+            let staleBindingRepairHint: String?
+        }
+        let decoded = try JSONDecoder().decode(
+            DoctorJSON.self,
+            from: Data(result.stdout.utf8)
+        )
+        XCTAssertTrue(decoded.worktreePruneRan)
+        XCTAssertFalse(decoded.prunedStaleEntries)
+        XCTAssertEqual(decoded.staleBindings.count, 1)
+        XCTAssertEqual(decoded.staleBindings[0].taskName, "alpha")
+        XCTAssertEqual(decoded.staleBindings[0].cloneUDID, "SIM-GONE")
+        XCTAssertEqual(decoded.staleBindings[0].cloneName, "iPhone 16-vch-alpha")
+        XCTAssertTrue(
+            decoded.staleBindingRepairHint?.contains("vch sim clone <task> --device") ?? false
+        )
+    }
+
     // MARK: - Agent runbook discovery
 
     func testRunbookPrintsVersionPinnedReference() throws {
@@ -694,6 +818,163 @@ final class VchCLISmokeTests: XCTestCase {
 
     // MARK: - smoke-test git helpers
 
+    private func makeManagedTaskFixture(
+        taskName: String,
+        simulator: TaskState.SimulatorRecord?
+    ) throws -> ManagedTaskFixture {
+        let rootDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("vch-managed-smoke-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: rootDir, withIntermediateDirectories: true
+        )
+        var keepRootDir = false
+        defer {
+            if !keepRootDir {
+                try? FileManager.default.removeItem(at: rootDir)
+            }
+        }
+
+        let repoPath = rootDir.appendingPathComponent("Repo").path
+        let taskPath = rootDir.appendingPathComponent("Repo-\(taskName)").path
+        try FileManager.default.createDirectory(
+            atPath: repoPath, withIntermediateDirectories: true
+        )
+        let gitEnv = hermeticGitEnv(rootDir: rootDir)
+        try runGit(["init", "-q", "-b", "main"], cwd: repoPath, env: gitEnv)
+        try runGit(["config", "commit.gpgsign", "false"], cwd: repoPath, env: gitEnv)
+        try "hello\n".write(
+            toFile: "\(repoPath)/README.md",
+            atomically: true, encoding: .utf8
+        )
+        try runGit(["add", "README.md"], cwd: repoPath, env: gitEnv)
+        try runGit(["commit", "-q", "-m", "initial"], cwd: repoPath, env: gitEnv)
+        try runGit(
+            ["worktree", "add", "-b", "agent/\(taskName)", taskPath],
+            cwd: repoPath, env: gitEnv
+        )
+
+        try FileManager.default.createDirectory(
+            atPath: "\(taskPath)/.vch",
+            withIntermediateDirectories: true
+        )
+        var state = TaskState(
+            name: taskName,
+            branch: "agent/\(taskName)",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            baseRef: "deadbee",
+            baseBranch: "main"
+        )
+        if let simulator {
+            state.setSimulators([simulator])
+        }
+        try state.jsonData().write(
+            to: URL(fileURLWithPath: "\(taskPath)/.vch/state.json")
+        )
+
+        keepRootDir = true
+        return ManagedTaskFixture(
+            rootDir: rootDir,
+            repoPath: repoPath,
+            taskPath: taskPath,
+            taskName: taskName,
+            gitEnv: gitEnv
+        )
+    }
+
+    private func installFakeToolchain(
+        rootDir: URL,
+        devicesJSON: String,
+        xcodebuildStderr: String,
+        xcodebuildExitCode: Int32
+    ) throws -> [String: String] {
+        let fakeRoot = rootDir.appendingPathComponent("FakeXcode")
+        let developerDir = fakeRoot.appendingPathComponent("Contents/Developer")
+        let developerBin = developerDir.appendingPathComponent("usr/bin")
+        let pathBin = rootDir.appendingPathComponent("fake-bin")
+        try FileManager.default.createDirectory(
+            at: developerBin,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: pathBin,
+            withIntermediateDirectories: true
+        )
+
+        let devicesPath = rootDir.appendingPathComponent("simctl-devices.json")
+        try devicesJSON.write(to: devicesPath, atomically: true, encoding: .utf8)
+
+        try writeExecutable(
+            developerBin.appendingPathComponent("xcrun"),
+            body: """
+            #!/bin/sh
+            tool="$1"
+            shift
+                        if [ "$tool" = "git" ]; then
+                            unset DEVELOPER_DIR
+                            exec /usr/bin/git "$@"
+                        fi
+            exec "$DEVELOPER_DIR/usr/bin/$tool" "$@"
+            """
+        )
+        try writeExecutable(
+            developerBin.appendingPathComponent("simctl"),
+            body: """
+            #!/bin/sh
+            if [ "$1" = "list" ] && [ "$2" = "devices" ]; then
+              cat "$VCH_SMOKE_SIMCTL_DEVICES_JSON"
+              exit 0
+            fi
+            if [ "$1" = "bootstatus" ] || [ "$1" = "shutdown" ] || [ "$1" = "erase" ] || [ "$1" = "delete" ]; then
+              exit 0
+            fi
+            echo "unexpected simctl invocation: $*" >&2
+            exit 1
+            """
+        )
+        let xcodebuildBody = """
+        #!/bin/sh
+        cat <<'EOF' >&2
+        \(xcodebuildStderr)
+        EOF
+        exit \(xcodebuildExitCode)
+        """
+        try writeExecutable(
+            developerBin.appendingPathComponent("xcodebuild"),
+            body: xcodebuildBody
+        )
+        try writeExecutable(
+            pathBin.appendingPathComponent("xcodebuild"),
+            body: xcodebuildBody
+        )
+
+        return [
+            "DEVELOPER_DIR": developerDir.path,
+            "PATH": "\(pathBin.path):/usr/bin:/bin",
+            "VCH_SMOKE_SIMCTL_DEVICES_JSON": devicesPath.path,
+        ]
+    }
+
+    private func writeExecutable(_ url: URL, body: String) throws {
+        try body.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private func hermeticGitEnv(rootDir: URL) -> [String: String] {
+        [
+            "PATH": "/usr/bin:/bin",
+            "HOME": rootDir.path,
+            "XDG_CONFIG_HOME": rootDir.appendingPathComponent("xdg").path,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "vch test",
+            "GIT_AUTHOR_EMAIL": "vch@test.local",
+            "GIT_COMMITTER_NAME": "vch test",
+            "GIT_COMMITTER_EMAIL": "vch@test.local",
+        ]
+    }
+
     private func makeAdoptCurrentFixture(
         worktreeLeaf: String,
         branch: String
@@ -718,16 +999,7 @@ final class VchCLISmokeTests: XCTestCase {
         // Stay strictly inside `rootDir`: HOME, XDG_CONFIG_HOME, and
         // GIT_CONFIG_NOSYSTEM together keep the test from picking up
         // the developer's real git config (signing, hooks, …).
-        let gitEnv: [String: String] = [
-            "PATH": "/usr/bin:/bin",
-            "HOME": rootDir.path,
-            "XDG_CONFIG_HOME": rootDir.appendingPathComponent("xdg").path,
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_AUTHOR_NAME": "vch test",
-            "GIT_AUTHOR_EMAIL": "vch@test.local",
-            "GIT_COMMITTER_NAME": "vch test",
-            "GIT_COMMITTER_EMAIL": "vch@test.local",
-        ]
+        let gitEnv = hermeticGitEnv(rootDir: rootDir)
         try runGit(["init", "-q", "-b", "main"], cwd: repoPath, env: gitEnv)
         try runGit(["config", "commit.gpgsign", "false"], cwd: repoPath, env: gitEnv)
         try "hello\n".write(

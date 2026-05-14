@@ -411,6 +411,15 @@ vch doctor --bug-report [--out <path>] [--json]
 Detect orphan simulator clones, stale state bindings, and corrupt
 `state.json`s. Exits non-zero on any finding.
 
+`vch doctor` runs `git worktree prune` as part of the sweep. JSON
+output reports this as `worktreePruneRan`; the legacy
+`prunedStaleEntries` field is retained for compatibility but no
+longer claims a mutation occurred. Stale simulator bindings are
+reported only: doctor does not edit task state for missing clone
+UDIDs. Recreate the binding with `vch sim clone <task> --device ...`,
+or run the next `vch build` / `vch test` with `--device` so vch can
+prune and rebind during simulator selection.
+
 `--bug-report` bundles a redacted local diagnostics tarball: every
 task's `state.json` + `last-test.log`, the porcelain worktree list,
 and `sw_vers` / `xcode-select -p` / `xcrun -f xcodebuild` /
