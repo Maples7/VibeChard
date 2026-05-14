@@ -523,6 +523,16 @@ final class BuildServiceTests: XCTestCase {
         ]
         """#.utf8))
         let simctl = FakeSimctl()
+        simctl.allDevicesOverride = [
+            SimDevice(udid: "WATCH-CLONE", name: "Apple Watch Series 10-vch-alpha",
+                      runtime: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0",
+                      runtimeVersion: .init(platform: .watchOS, major: 11, minor: 0),
+                      isAvailable: true),
+            SimDevice(udid: "IOS-CLONE", name: "iPhone 16-vch-alpha",
+                      runtime: "com.apple.CoreSimulator.SimRuntime.iOS-18-2",
+                      runtimeVersion: .init(major: 18, minor: 2),
+                      isAvailable: true),
+        ]
         let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
         let service = BuildService(
             workspace: workspace,

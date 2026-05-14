@@ -22,6 +22,18 @@ final class SimulatorServiceTests: XCTestCase {
         }
         let simctl = FakeSimctl()
         simctl.devices = devices
+        if let state = seedingState, !state.allSimulators.isEmpty {
+            simctl.allDevicesOverride = devices + state.allSimulators.map { record in
+                SimDevice(
+                    udid: record.cloneUDID,
+                    name: record.name,
+                    runtime: record.runtimeIdentifier ?? "com.apple.CoreSimulator.SimRuntime.iOS-18-0",
+                    runtimeVersion: record.runtimeVersion,
+                    isAvailable: true,
+                    state: "Shutdown"
+                )
+            }
+        }
         simctl.cloneReturnsUDID = cloneReturnsUDID
         return (SimulatorService(workspace: workspace, simctl: simctl, fs: fs), fs, simctl)
     }
@@ -409,7 +421,14 @@ final class SimulatorServiceTests: XCTestCase {
         )
         fs.seedFile(workspace.statePath(for: task),
                     data: try state.jsonData())
-        let service = SimulatorService(workspace: workspace, simctl: FakeSimctl(), fs: fs)
+        let simctl = FakeSimctl()
+        simctl.allDevicesOverride = [
+            SimDevice(udid: "C-9", name: "iPhone 16 · vch[codex-task]",
+                      runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
+                      runtimeVersion: .init(major: 26, minor: 4),
+                      isAvailable: true),
+        ]
+        let service = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
 
         let bound = try service.lookupBound(task: task)
         XCTAssertEqual(bound?.cloneUDID, "C-9")
@@ -874,6 +893,51 @@ final class SimulatorServiceTests: XCTestCase {
         XCTAssertEqual(resolved?.udid, "WATCH-CLONE")
         XCTAssertEqual(resolved?.platform, .watchOS)
         XCTAssertEqual(simctl.cloneCalls.count, 0)
+    }
+
+    func testEnsureClonePrunesStaleBindingBeforePlatformAmbiguity() throws {
+        // #111: if one of the stored watchOS bindings was deleted
+        // directly with simctl, it must not keep participating in
+        // the build/test ambiguity check. The remaining live binding
+        // should be reused and state.json should be compacted.
+        var seed = emptyState("alpha")
+        seed.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "WATCH-LIVE", sourceUDID: "WATCH-TPL-1",
+                name: "BeanLedger Template Watch S11 26.5-vch-alpha",
+                templateName: "BeanLedger Template Watch S11 26.5",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-26-5"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "WATCH-GONE", sourceUDID: "WATCH-TPL-2",
+                name: "Apple Watch Series 11 (46mm)-vch-alpha",
+                templateName: "Apple Watch Series 11 (46mm)",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-26-5"
+            ),
+        ])
+        let (service, fs, simctl) = makeService(seedingTask: "alpha", seedingState: seed)
+        simctl.allDevicesOverride = [
+            device("WATCH-LIVE", "BeanLedger Template Watch S11 26.5-vch-alpha",
+                   "com.apple.CoreSimulator.SimRuntime.watchOS-26-5",
+                   .init(platform: .watchOS, major: 26, minor: 5)),
+        ]
+
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: nil,
+            requestedPlatform: .watchOS
+        )
+
+        XCTAssertEqual(resolved?.udid, "WATCH-LIVE")
+        XCTAssertFalse(resolved?.createdNow ?? true)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let after = try TaskState.parse(
+            try fs.readFile(at: workspace.statePath(for: try TaskName("alpha")))
+        )
+        XCTAssertEqual(after.allSimulators.map(\.cloneUDID), ["WATCH-LIVE"])
+        XCTAssertEqual(after.simulator?.cloneUDID, "WATCH-LIVE")
     }
 
     func testEnsureCloneRejectsSingleBindingFromWrongPlatform() throws {
