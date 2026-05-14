@@ -126,4 +126,61 @@ public enum BuildSettingsParser {
     ) -> String? {
         buildSettings(in: data, targetMatching: scheme)?[key]
     }
+
+    /// Infer the simulator platform for a scheme from build settings.
+    /// `xcodebuild` may expose this as `PLATFORM_NAME`, `SDKROOT`, or
+    /// `SUPPORTED_PLATFORMS` depending on project shape and Xcode
+    /// version, so we check all three.
+    public static func simulatorPlatform(
+        in data: Data,
+        targetMatching scheme: String
+    ) -> SimRuntimeVersion.Platform? {
+        guard
+            let arr = try? JSONSerialization.jsonObject(with: data) as? [Any]
+        else { return nil }
+
+        var fallbackPlatforms: [SimRuntimeVersion.Platform] = []
+        for entry in arr {
+            guard let dict = entry as? [String: Any],
+                  let settings = dict["buildSettings"] as? [String: String],
+                  let platform = simulatorPlatform(in: settings) else {
+                continue
+            }
+            if let target = dict["target"] as? String,
+               target == scheme {
+                return platform
+            }
+            if !fallbackPlatforms.contains(platform) {
+                fallbackPlatforms.append(platform)
+            }
+        }
+
+        return fallbackPlatforms.count == 1 ? fallbackPlatforms[0] : nil
+    }
+
+    private static func simulatorPlatform(
+        in settings: [String: String]
+    ) -> SimRuntimeVersion.Platform? {
+        let probes = [
+            settings["PLATFORM_NAME"],
+            settings["SDKROOT"],
+            settings["SUPPORTED_PLATFORMS"],
+        ].compactMap { $0?.lowercased() }
+
+        for raw in probes {
+            if raw.contains("watchsimulator") {
+                return .watchOS
+            }
+            if raw.contains("appletvsimulator") {
+                return .tvOS
+            }
+            if raw.contains("xrsimulator") || raw.contains("visionossimulator") {
+                return .visionOS
+            }
+            if raw.contains("iphonesimulator") {
+                return .iOS
+            }
+        }
+        return nil
+    }
 }

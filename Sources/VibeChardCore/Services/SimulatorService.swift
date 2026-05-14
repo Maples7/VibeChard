@@ -28,11 +28,15 @@ public struct SimulatorService: Sendable {
         /// True when `ensureClone` performed a clone in this call.
         /// Helps the CLI emit a one-line "cloning ..." message.
         public let createdNow: Bool
-        /// Parsed iOS version of the clone's runtime, surfaced into
+        /// Parsed simulator version of the clone's runtime, surfaced into
         /// the `vch build` / `vch test` log so the user can spot
         /// silent runtime drift (#11). nil for legacy state
-        /// (vch ≤ v0.1.x) or non-iOS runtimes.
+        /// (vch ≤ v0.1.x) or unknown future runtimes.
         public let runtime: SimRuntimeVersion?
+
+        public var platform: SimRuntimeVersion.Platform? {
+            runtime?.platform
+        }
 
         public init(udid: String, name: String, createdNow: Bool,
                     runtime: SimRuntimeVersion? = nil) {
@@ -50,10 +54,9 @@ public struct SimulatorService: Sendable {
     /// watchOS clone for the companion). The resolution rules are:
     ///
     ///   * No `--device`:
-    ///     0 bindings → return nil (xcodebuild runs without a `-destination`);
-    ///     1 binding  → reuse it;
-    ///     ≥2 bindings → throw `simulatorBindingAmbiguous` — the
-    ///     caller must disambiguate with `--device`.
+    ///     with `requestedPlatform`, reuse only bindings from that
+    ///     platform; without it, 0 bindings → return nil, 1 binding →
+    ///     reuse it, ≥2 bindings → throw `simulatorBindingAmbiguous`.
     ///
     ///   * With `--device` (and optionally `--runtime`):
     ///     filter existing bindings by `templateName` (and runtime
@@ -70,6 +73,7 @@ public struct SimulatorService: Sendable {
         task: TaskName,
         requestedDevice: String?,
         requestedRuntime: String? = nil,
+        requestedPlatform: SimRuntimeVersion.Platform? = nil,
         shutdownTemplate: Bool = false
     ) throws -> Resolved? {
         let statePath = workspace.statePath(for: task)
@@ -85,7 +89,33 @@ public struct SimulatorService: Sendable {
         let existing = state.allSimulators
 
         // No --device: pure-reuse path. 0 → nil, 1 → reuse, ≥2 → ambiguous.
+        // When the caller knows the scheme's simulator platform, scope
+        // reuse to that platform so a watchOS binding cannot leak into
+        // an iOS build just because it is the only recorded clone.
         guard let requested = requestedDevice, !requested.isEmpty else {
+            if let requestedPlatform {
+                let matches = try existing.filter { rec in
+                    try platform(for: rec) == requestedPlatform
+                }
+                switch matches.count {
+                case 0:
+                    if existing.isEmpty { return nil }
+                    throw VibeChardError.simulatorBindingPlatformUnavailable(
+                        taskName: task.raw,
+                        platform: requestedPlatform.xcodebuildDestinationPlatform,
+                        candidates: existing.map(\.name)
+                    )
+                case 1:
+                    let only = matches[0]
+                    try assertRuntimeMatches(existing: only, requestedRuntime: requestedRuntime, task: task)
+                    return try resolved(from: only, createdNow: false)
+                default:
+                    throw VibeChardError.simulatorBindingAmbiguous(
+                        taskName: task.raw,
+                        candidates: matches.map(\.name)
+                    )
+                }
+            }
             switch existing.count {
             case 0:
                 return nil
@@ -95,7 +125,7 @@ public struct SimulatorService: Sendable {
                 // single-binding case: when the user pinned
                 // `--runtime` but recorded runtime disagrees, refuse.
                 try assertRuntimeMatches(existing: only, requestedRuntime: requestedRuntime, task: task)
-                return resolved(from: only, createdNow: false)
+                return try resolved(from: only, createdNow: false)
             default:
                 throw VibeChardError.simulatorBindingAmbiguous(
                     taskName: task.raw,
@@ -110,7 +140,7 @@ public struct SimulatorService: Sendable {
         }
         switch matches.count {
         case 1:
-            return resolved(from: matches[0], createdNow: false)
+            return try resolved(from: matches[0], createdNow: false)
         case 2...:
             throw VibeChardError.simulatorBindingAmbiguous(
                 taskName: task.raw,
@@ -165,13 +195,24 @@ public struct SimulatorService: Sendable {
     /// Build a `Resolved` from an existing binding. Centralised so
     /// the parsing of `runtimeIdentifier → SimRuntimeVersion` stays
     /// in one place.
-    private func resolved(from rec: TaskState.SimulatorRecord, createdNow: Bool) -> Resolved {
+    private func resolved(from rec: TaskState.SimulatorRecord, createdNow: Bool) throws -> Resolved {
         Resolved(
             udid: rec.cloneUDID,
             name: rec.name,
             createdNow: createdNow,
-            runtime: rec.runtimeIdentifier.flatMap { SimRuntimeVersion.parse(runtimeIdentifier: $0) }
+            runtime: try runtime(for: rec)
         )
+    }
+
+    private func runtime(for rec: TaskState.SimulatorRecord) throws -> SimRuntimeVersion? {
+        if let runtime = rec.runtimeVersion {
+            return runtime
+        }
+        return try info(udid: rec.cloneUDID)?.runtimeVersion
+    }
+
+    private func platform(for rec: TaskState.SimulatorRecord) throws -> SimRuntimeVersion.Platform? {
+        try runtime(for: rec)?.platform
     }
 
     /// Predicate used by the `--device` filter. Compares against the
@@ -225,8 +266,8 @@ public struct SimulatorService: Sendable {
         let device = existing.templateName ?? Self.stripCloneSuffix(from: existing.name, task: task)
         throw VibeChardError.simulatorAlreadyBound(
             taskName: task.raw,
-            currentName: "\(existing.name) (runtime iOS \(bound.major).\(bound.minor))",
-            requestedName: "\(device) (runtime iOS \(target.major).\(target.minor))"
+            currentName: "\(existing.name) (runtime \(bound.dottedLabel))",
+            requestedName: "\(device) (runtime \(target.dottedLabel))"
         )
     }
 
@@ -462,64 +503,7 @@ public struct SimulatorService: Sendable {
     /// decide whether to surface that as an error or fall through to
     /// the unfiltered path.
     func parseRuntimeRequest(_ raw: String) -> SimRuntimeVersion? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Form 1: full CoreSimulator runtime identifier
-        // (`com.apple.CoreSimulator.SimRuntime.<slug>-<M>-<m>`).
-        if let parsed = SimRuntimeVersion.parse(runtimeIdentifier: trimmed) {
-            return parsed
-        }
-
-        // Form 2 & 3: short forms. For each platform, try the dashed
-        // (`iOS-26-4`) and dotted (`iOS 26.4`) forms. visionOS
-        // accepts both `visionOS` and `xrOS` prefixes since simctl
-        // emits the latter in identifiers but the former in human
-        // labels.
-        for platform in SimRuntimeVersion.Platform.allCases {
-            let prefixes: [String] = (platform == .visionOS)
-                ? ["visionOS", "xrOS"]
-                : [platform.rawValue]
-            for prefix in prefixes {
-                if let v = parseShortRuntimeForm(
-                    trimmed: trimmed, platform: platform, prefix: prefix
-                ) {
-                    return v
-                }
-            }
-        }
-        return nil
-    }
-
-    /// Parse a single platform's short forms — `<prefix>-<M>-<m>` or
-    /// `<prefix> <M>.<m>`. Comparisons are case-insensitive on the
-    /// prefix so `ios 26.4` / `iOS 26.4` / `IOS-26-4` all resolve.
-    private func parseShortRuntimeForm(
-        trimmed: String,
-        platform: SimRuntimeVersion.Platform,
-        prefix: String
-    ) -> SimRuntimeVersion? {
-        let lower = trimmed.lowercased()
-
-        // Dashed: `<prefix>-<M>[-<m>]`.
-        let dashed = (prefix + "-").lowercased()
-        if lower.hasPrefix(dashed) {
-            let body = trimmed.dropFirst(dashed.count)
-            let parts = body.split(separator: "-")
-            guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
-            let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-            return SimRuntimeVersion(platform: platform, major: major, minor: minor)
-        }
-
-        // Dotted: `<prefix> <M>[.<m>]`.
-        let dotted = (prefix + " ").lowercased()
-        if lower.hasPrefix(dotted) {
-            let body = trimmed.dropFirst(dotted.count)
-            let parts = body.split(whereSeparator: { $0 == "." || $0 == "-" })
-            guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
-            let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-            return SimRuntimeVersion(platform: platform, major: major, minor: minor)
-        }
-        return nil
+        SimRuntimeVersion.parse(runtimeLabel: raw)
     }
 
     /// `<original>-vch-<task>` — plain ASCII suffix, friendlier for

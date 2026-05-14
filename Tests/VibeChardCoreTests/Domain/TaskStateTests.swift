@@ -296,6 +296,28 @@ final class TaskStateTests: XCTestCase {
         XCTAssertEqual(state.simulator?.cloneUDID, "C")
     }
 
+    func testSimulatorRecordDerivesRuntimeVersionAndPlatform() {
+        let watch = TaskState.SimulatorRecord(
+            cloneUDID: "WATCH-CLONE",
+            sourceUDID: "WATCH-SRC",
+            name: "Apple Watch Series 10-vch-alpha",
+            runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-5"
+        )
+        XCTAssertEqual(
+            watch.runtimeVersion,
+            SimRuntimeVersion(platform: .watchOS, major: 11, minor: 5)
+        )
+        XCTAssertEqual(watch.platform, .watchOS)
+
+        let legacy = TaskState.SimulatorRecord(
+            cloneUDID: "LEGACY-CLONE",
+            sourceUDID: "LEGACY-SRC",
+            name: "iPhone 16-vch-alpha"
+        )
+        XCTAssertNil(legacy.runtimeVersion)
+        XCTAssertNil(legacy.platform)
+    }
+
     // MARK: - simulators[] multi-binding schema (#99)
 
     /// `setSimulators` must write `simulators` AND mirror the first

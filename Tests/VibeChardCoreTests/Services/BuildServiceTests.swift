@@ -295,6 +295,7 @@ final class BuildServiceTests: XCTestCase {
             task: try TaskName("alpha"),
             options: .init(scheme: "App", device: "iPhone 16"),
             resolvedSimulatorUDID: "CLONE-UDID-1",
+            resolvedSimulatorPlatform: .iOS,
             baseEnv: ["PATH": "/usr/bin"]
         )
         // Destination is `id=`, NOT `name=`.
@@ -308,6 +309,33 @@ final class BuildServiceTests: XCTestCase {
         XCTAssertEqual(plan.env["SIMCTL_CHILD_SIMULATOR_UDID"], "CLONE-UDID-1")
     }
 
+    func testPrepareBuildEmitsResolvedSimulatorPlatform() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "WatchApp", device: "Apple Watch Series 10 (46mm)"),
+            resolvedSimulatorUDID: "WATCH-UDID-1",
+            resolvedSimulatorPlatform: .watchOS,
+            baseEnv: [:]
+        )
+        let i = plan.argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(plan.argv[i + 1], "platform=watchOS Simulator,arch=\(BuildPlanner.hostArch),id=WATCH-UDID-1")
+    }
+
+    func testPrepareBuildRefusesUDIDWhenPlatformUnknown() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        XCTAssertThrowsError(try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(scheme: "App", device: "Apple Watch Series 10 (46mm)"),
+            resolvedSimulatorUDID: "WATCH-UDID-1",
+            baseEnv: [:]
+        )) { err in
+            guard case VibeChardError.simulatorPlatformUnknown = err else {
+                return XCTFail("expected simulatorPlatformUnknown, got \(err)")
+            }
+        }
+    }
+
     func testPrepareBuildFallsBackToNameDestinationWhenNoUDID() throws {
         let (service, _) = makeService(seedingTask: "alpha")
         let plan = try service.prepareBuild(
@@ -319,6 +347,23 @@ final class BuildServiceTests: XCTestCase {
         let i = plan.argv.firstIndex(of: "-destination")!
         XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,arch=\(BuildPlanner.hostArch),name=iPhone 16")
         XCTAssertNil(plan.env["SIMCTL_CHILD_SIMULATOR_UDID"])
+    }
+
+    func testPrepareBuildUsesRuntimePlatformForNoSimNameDestination() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(
+                scheme: "WatchApp",
+                device: "Apple Watch Series 10 (46mm)",
+                runtime: "watchOS 11.0",
+                noSim: true
+            ),
+            resolvedSimulatorUDID: nil,
+            baseEnv: [:]
+        )
+        let i = plan.argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(plan.argv[i + 1], "platform=watchOS Simulator,arch=\(BuildPlanner.hostArch),name=Apple Watch Series 10 (46mm)")
     }
 
     func testBootSimulatorDelegatesToSimctl() throws {
@@ -335,6 +380,177 @@ final class BuildServiceTests: XCTestCase {
         let service = BuildService(workspace: workspace, fs: fs, simulator: sim)
         try service.bootSimulator(.init(udid: "U-1", name: "x", createdNow: false))
         XCTAssertEqual(simctl.bootCalls, ["U-1"])
+    }
+
+    func testInferSimulatorPlatformReadsBuildSettings() throws {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        let lister = FakeBuildSettingsLister(stub: Data(#"""
+        [
+          {
+            "target": "WatchApp",
+            "buildSettings": {
+              "PLATFORM_NAME": "watchsimulator"
+            }
+          }
+        ]
+        """#.utf8))
+        let service = BuildService(
+            workspace: workspace,
+            fs: fs,
+            settingsLister: lister
+        )
+        XCTAssertEqual(
+            service.inferSimulatorPlatform(
+                task: task,
+                scheme: "WatchApp",
+                configuration: nil
+            ),
+            .watchOS
+        )
+        XCTAssertEqual(lister.lastCwd, workspace.worktreePath(for: task))
+        XCTAssertNil(lister.lastDestination)
+    }
+
+    func testDestinationPlatformHintSkipsBuildSettingsWhenExplicitLazyCloneDeviceCanResolvePlatform() throws {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        let lister = FakeBuildSettingsLister(stub: Data(#"""
+        [
+          {
+            "target": "WatchApp",
+            "buildSettings": {
+              "PLATFORM_NAME": "watchsimulator"
+            }
+          }
+        ]
+        """#.utf8))
+        let service = BuildService(
+            workspace: workspace,
+            fs: fs,
+            settingsLister: lister
+        )
+
+        let platform = service.destinationPlatformHint(
+            task: task,
+            scheme: "WatchApp",
+            configuration: nil,
+            requestedDevice: "Apple Watch Series 10 (46mm)",
+            requestedRuntime: nil,
+            noSim: false
+        )
+
+        XCTAssertNil(platform)
+        XCTAssertNil(lister.lastCwd,
+                     "explicit lazy-clone --device should not run a build-settings probe")
+    }
+
+    func testDestinationPlatformHintUsesRuntimeBeforeBuildSettingsProbe() throws {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        let lister = FakeBuildSettingsLister(stub: Data(#"""
+        [
+          {
+            "target": "WrongScheme",
+            "buildSettings": {
+              "PLATFORM_NAME": "iphonesimulator"
+            }
+          }
+        ]
+        """#.utf8))
+        let service = BuildService(
+            workspace: workspace,
+            fs: fs,
+            settingsLister: lister
+        )
+
+        let platform = service.destinationPlatformHint(
+            task: task,
+            scheme: "WrongScheme",
+            configuration: nil,
+            requestedDevice: nil,
+            requestedRuntime: "watchOS 11.5",
+            noSim: false
+        )
+
+        XCTAssertEqual(platform, .watchOS)
+        XCTAssertNil(lister.lastCwd,
+                     "runtime carries the platform; no build-settings probe is needed")
+    }
+
+    func testResolveSimulatorUsesInferredSchemePlatformToDisambiguateTwoBindings() throws {
+        let fs = InMemoryFileSystem()
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        fs.seedDirectory(workspace.vchDir(for: task))
+        var seed = emptyState("alpha")
+        seed.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "WATCH-CLONE",
+                sourceUDID: "WATCH-TPL",
+                name: "Apple Watch Series 10-vch-alpha",
+                templateName: "Apple Watch Series 10 (46mm)",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
+            ),
+            TaskState.SimulatorRecord(
+                cloneUDID: "IOS-CLONE",
+                sourceUDID: "IOS-TPL",
+                name: "iPhone 16-vch-alpha",
+                templateName: "iPhone 16",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-2"
+            ),
+        ])
+        fs.seedFile(workspace.statePath(for: task), data: try seed.jsonData())
+        let lister = FakeBuildSettingsLister(stub: Data(#"""
+        [
+          {
+            "target": "WatchApp",
+            "buildSettings": {
+              "PLATFORM_NAME": "watchsimulator"
+            }
+          }
+        ]
+        """#.utf8))
+        let simctl = FakeSimctl()
+        let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
+        let service = BuildService(
+            workspace: workspace,
+            fs: fs,
+            simulator: sim,
+            settingsLister: lister
+        )
+        let platform = service.destinationPlatformHint(
+            task: task,
+            scheme: "WatchApp",
+            configuration: nil,
+            requestedDevice: nil,
+            requestedRuntime: nil,
+            noSim: false
+        )
+
+        let resolved = try service.resolveSimulator(
+            task: task,
+            requestedDevice: nil,
+            requestedRuntime: nil,
+            requestedPlatform: platform,
+            noSim: false
+        )
+
+        XCTAssertEqual(platform, .watchOS)
+        XCTAssertEqual(resolved?.udid, "WATCH-CLONE")
+        XCTAssertEqual(resolved?.platform, .watchOS)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
     }
 
     // MARK: - adopted worktrees at arbitrary paths (#98 follow-up)

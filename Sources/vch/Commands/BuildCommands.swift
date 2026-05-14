@@ -37,7 +37,8 @@ private enum BuildOrTest {
         let service = BuildService(
             workspace: workspace,
             simulator: simulator,
-            developerDir: XcodeSelectDeveloperDirResolver()
+            developerDir: XcodeSelectDeveloperDirResolver(),
+            settingsLister: DiskBuildSettingsLister()
         )
 
         // #6 reduced — single-scheme auto-pick. CLI flag wins, then
@@ -60,12 +61,21 @@ private enum BuildOrTest {
             }
         }
 
-        let opts = BuildService.Options(
+        var opts = BuildService.Options(
             scheme: resolvedScheme?.scheme ?? scheme,
             configuration: configuration,
             device: device,
+            runtime: runtime,
             noSim: noSim,
             extraArgs: extraArgs
+        )
+        opts.destinationPlatform = service.destinationPlatformHint(
+            task: task,
+            scheme: opts.scheme,
+            configuration: configuration,
+            requestedDevice: device,
+            requestedRuntime: runtime,
+            noSim: noSim
         )
 
         // M5: lazy-clone simulator if needed, then boot. We do this
@@ -75,9 +85,22 @@ private enum BuildOrTest {
             task: task,
             requestedDevice: device,
             requestedRuntime: runtime,
+            requestedPlatform: opts.destinationPlatform,
             noSim: noSim,
             shutdownTemplate: shutdownTemplate
         )
+        let resolvedPlatform: SimRuntimeVersion.Platform?
+        if let resolved {
+            guard let platform = resolved.platform else {
+                throw VibeChardError.simulatorPlatformUnknown(
+                    udid: resolved.udid,
+                    name: resolved.name
+                )
+            }
+            resolvedPlatform = platform
+        } else {
+            resolvedPlatform = nil
+        }
         if let resolved {
             if resolved.createdNow {
                 CLIBridge.eprintln("→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))")
@@ -104,12 +127,14 @@ private enum BuildOrTest {
             plan = try service.prepareBuild(
                 task: task, options: opts,
                 resolvedSimulatorUDID: resolved?.udid,
+                resolvedSimulatorPlatform: resolvedPlatform,
                 baseEnv: baseEnv
             )
         case .test:
             plan = try service.prepareTest(
                 task: task, options: opts,
                 resolvedSimulatorUDID: resolved?.udid,
+                resolvedSimulatorPlatform: resolvedPlatform,
                 baseEnv: baseEnv
             )
         }
@@ -207,7 +232,7 @@ private enum BuildOrTest {
     /// the build/test log line stays single-line.
     fileprivate static func formatRuntime(_ rt: SimRuntimeVersion?) -> String {
         guard let rt else { return "" }
-        return ", runtime: iOS \(rt.major).\(rt.minor)"
+        return ", runtime: \(rt.dottedLabel)"
     }
 }
 

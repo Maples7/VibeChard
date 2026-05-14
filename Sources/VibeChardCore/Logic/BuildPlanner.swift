@@ -33,8 +33,9 @@ public enum BuildPlanner {
         public let resultBundlePath: String?
         /// Per-task cloned simulator UDID (M5). When set, takes
         /// precedence over `destinationDevice` and emits
-        /// `-destination 'platform=iOS Simulator,id=<UDID>'`.
+        /// `-destination 'platform=<platform> Simulator,id=<UDID>'`.
         public let destinationUDID: String?
+        public let destinationPlatform: SimRuntimeVersion.Platform
         public let destinationDevice: String?
         public let extraArgs: [String]
 
@@ -46,6 +47,7 @@ public enum BuildPlanner {
             clonedSourcePackagesDir: String,
             resultBundlePath: String?,
             destinationUDID: String? = nil,
+            destinationPlatform: SimRuntimeVersion.Platform = .iOS,
             destinationDevice: String?,
             extraArgs: [String]
         ) {
@@ -56,6 +58,7 @@ public enum BuildPlanner {
             self.clonedSourcePackagesDir = clonedSourcePackagesDir
             self.resultBundlePath = resultBundlePath
             self.destinationUDID = destinationUDID
+            self.destinationPlatform = destinationPlatform
             self.destinationDevice = destinationDevice
             self.extraArgs = extraArgs
         }
@@ -86,17 +89,30 @@ public enum BuildPlanner {
             // arch is pinned (#5) so xcodebuild stops emitting the
             // multi-match warning when both arm64 and x86_64 entries
             // exist for the same UDID.
-            argv += ["-destination", "platform=iOS Simulator,arch=\(Self.hostArch),id=\(udid)"]
+            argv += ["-destination", destination(
+                platform: input.destinationPlatform,
+                selector: "id=\(udid)"
+            )]
         } else if let device = input.destinationDevice {
             // Fallback when the user explicitly opts out of the lazy
             // clone via `--no-sim`. xcodebuild picks any matching
             // simulator by name (last-wins runtime).
-            argv += ["-destination", "platform=iOS Simulator,arch=\(Self.hostArch),name=\(device)"]
+            argv += ["-destination", destination(
+                platform: input.destinationPlatform,
+                selector: "name=\(device)"
+            )]
         }
         // Pass the user's extras BEFORE the action so flags like
         // `-quiet` apply to the action.
         argv += input.extraArgs
         argv.append(input.action)
         return argv
+    }
+
+    private static func destination(
+        platform: SimRuntimeVersion.Platform,
+        selector: String
+    ) -> String {
+        "platform=\(platform.xcodebuildDestinationPlatform),arch=\(Self.hostArch),\(selector)"
     }
 }
