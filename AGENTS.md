@@ -142,6 +142,15 @@ because past sessions repeatedly rediscovered them the hard way.
    first place. New code in `vch/` should be a few lines that call
    into Core; if a `Commands/*.swift` file grows a decision tree,
    the decision tree belongs in `Logic/` or `Services/`.
+8. **Release docs sweep.** Every release PR must explicitly check
+   whether the official Agent runbook (`docs/agent-runbook.md`),
+   README family (`README.md` plus localized READMEs when the
+   README sync rule applies), command reference (`docs/commands.md`),
+   cookbook, and any other user-facing documentation need updates for
+   the release contents. Update stale docs in the release PR, or state
+   in the PR body that the docs were reviewed and no changes were
+   needed. Do not push a release tag when user-facing docs describe a
+   different CLI than the version being released.
 
 ## Architecture map
 
