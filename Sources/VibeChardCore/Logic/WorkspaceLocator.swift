@@ -65,6 +65,7 @@ public enum WorkspaceLocator {
         let taskName = taskNameForCurrentWorktree(
             toplevel: toplevel,
             workspace: workspace,
+            entries: entries,
             fs: fs
         )
         return WorkspaceLocation(
@@ -114,6 +115,7 @@ public enum WorkspaceLocator {
     private static func taskNameForCurrentWorktree(
         toplevel: String,
         workspace: Workspace,
+        entries: [WorktreeEntry],
         fs: FileSystem
     ) -> TaskName? {
         let normalizedTop = Workspace(mainWorktreePath: toplevel).mainWorktreePath
@@ -134,6 +136,10 @@ public enum WorkspaceLocator {
         // `BeanLedger-foo bar`). Treat that as "not a vch worktree".
         if let raw = workspace.taskNameRaw(forWorktreePath: normalizedTop),
            let task = try? TaskName(raw) {
+            let entry = entries.first {
+                Workspace(mainWorktreePath: $0.path).mainWorktreePath == normalizedTop
+            }
+            guard entry?.branch == task.branchName else { return nil }
             return task
         }
         return nil

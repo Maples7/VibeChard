@@ -709,7 +709,12 @@ struct RemoveCommand: ParsableCommand {
                 }
             }
 
-            print("removed \(task.raw)")
+            if state?.worktreeOwnership == .adopted {
+                let branch = state?.branch ?? "<unknown>"
+                print("unregistered \(task.raw); kept external worktree \(wtPath) and branch \(branch)")
+            } else {
+                print("removed \(task.raw)")
+            }
         }
     }
 

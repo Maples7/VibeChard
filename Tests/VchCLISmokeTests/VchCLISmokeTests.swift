@@ -493,8 +493,9 @@ final class VchCLISmokeTests: XCTestCase {
     /// 3.  `vch state --field worktreeOwnership` reports `adopted`.
     /// 4.  `vch list --json` reports the adopted path AND the user's
     ///     branch (`feature/codex`, not the synthetic `agent/<task>`).
-    /// 5.  `vch rm` deletes only vch-owned scratch under the adopted
-    ///     worktree; the worktree itself and the user's branch are
+    /// 5.  `vch rm` unregisters the task with explicit output,
+    ///     deletes only vch-owned scratch under the adopted worktree,
+    ///     and leaves the worktree itself and the user's branch
     ///     untouched.
     func testAdoptCurrentEndToEnd() throws {
         try XCTSkipIf(
@@ -581,6 +582,29 @@ final class VchCLISmokeTests: XCTestCase {
             ["rm", "codex-session"], cwd: sidecarPath, env: gitEnv
         )
         XCTAssertEqual(rmResult.exitCode, 0, "stderr: \(rmResult.stderr)")
+        XCTAssertTrue(
+            rmResult.stdout.contains("unregistered codex-session"),
+            "adopted remove should say it unregistered the task, got: \(rmResult.stdout)"
+        )
+        XCTAssertTrue(
+            rmResult.stdout.contains("kept external worktree"),
+            "adopted remove should explain that the external worktree remains, got: \(rmResult.stdout)"
+        )
+        XCTAssertTrue(
+            rmResult.stdout.contains("feature/codex"),
+            "adopted remove should mention the preserved branch, got: \(rmResult.stdout)"
+        )
+
+        let listAfterRemoveResult = try runVch(
+            ["list", "--json"], cwd: sidecarPath, env: gitEnv
+        )
+        XCTAssertEqual(listAfterRemoveResult.exitCode, 0, "stderr: \(listAfterRemoveResult.stderr)")
+        let listAfterRemoveData = Data(listAfterRemoveResult.stdout.utf8)
+        let listAfterRemoveJSON = try JSONSerialization.jsonObject(with: listAfterRemoveData) as? [[String: Any]]
+        XCTAssertEqual(
+            listAfterRemoveJSON?.count, 0,
+            "unregistered adopted task should disappear from vch list. raw: \(listAfterRemoveResult.stdout)"
+        )
 
         // ---------- 6. Adopted worktree + branch survive ----------
         var isDir: ObjCBool = false

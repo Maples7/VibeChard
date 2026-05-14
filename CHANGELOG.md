@@ -20,6 +20,7 @@ The English README is the source of truth; localized READMEs may lag.
 
 ### Fixed
 - Pruned stale simulator bindings before simulator selection, so a clone deleted outside vch no longer causes `vch build`, `vch test`, or `vch sim` commands to report false multi-binding ambiguity (#111).
+- Made `vch remove` distinguish adopted tasks from vch-created tasks: adopted tasks now report that they were unregistered while keeping the external worktree/branch, and unregistered canonical-looking adopted worktrees no longer reappear in `vch list` or get treated as removable vch-owned worktrees (#112).
 
 ## 0.8.1 - 2026-05-14
 
