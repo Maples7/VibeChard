@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Changed
+- Clarified `vch doctor --json` stale-prune reporting: new output uses `worktreePruneRan` for the `git worktree prune` sweep, keeps `prunedStaleEntries` as a deprecated compatibility field, and includes an explicit repair hint for stale simulator bindings.
+
+### Fixed
+- Added a recovery hint when `vch build` / `vch test` logs show `SBMainWorkspace Busy` / `Application failed preflight checks`, pointing users to `--erase-clone` or `vch sim erase`.
+
 ## 0.9.0 - 2026-05-14
 
 ### Added

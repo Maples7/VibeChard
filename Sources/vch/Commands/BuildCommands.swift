@@ -140,13 +140,14 @@ private enum BuildOrTest {
         }
 
         let result: PlanLauncher.RunResult
+        let logURL: URL
         switch action {
         case .build:
             // #48: Build now mirrors the test path — concise summary
             // by default, full firehose only with --verbose. The full
             // log is always tee'd to <wt>/.vch/last-build.log so
             // `vch logs <name> --build` can recover it.
-            let logURL = URL(fileURLWithPath: workspace.lastBuildLogPath(for: task))
+            logURL = URL(fileURLWithPath: workspace.lastBuildLogPath(for: task))
             CLIBridge.eprintln("→ building\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
             let s = BuildOutputSummarizer()
             result = try PlanLauncher.runTee(
@@ -164,7 +165,7 @@ private enum BuildOrTest {
             // Test goes through the tee path so we can summarize at
             // the end (#9). The full log is always preserved at
             // <wt>/.vch/last-test.log regardless of --verbose.
-            let logURL = URL(fileURLWithPath: workspace.lastTestLogPath(for: task))
+            logURL = URL(fileURLWithPath: workspace.lastTestLogPath(for: task))
             CLIBridge.eprintln("→ running tests\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
             let s = TestOutputSummarizer()
             result = try PlanLauncher.runTee(
@@ -203,6 +204,23 @@ private enum BuildOrTest {
                     logPath: logURL.path,
                     resultBundlePath: bundlePath
                 ))
+            }
+        }
+
+        if result.exitCode != 0, resolved != nil,
+           let logText = try? String(contentsOf: logURL, encoding: .utf8) {
+            let hintCommand: XcodebuildFailureHint.Command
+            switch action {
+            case .build: hintCommand = .build
+            case .test: hintCommand = .test
+            }
+            if let hint = XcodebuildFailureHint.simulatorPreflightBusyHint(
+                logText: logText,
+                command: hintCommand,
+                taskName: task.raw,
+                device: device
+            ) {
+                CLIBridge.eprintln(hint)
             }
         }
 

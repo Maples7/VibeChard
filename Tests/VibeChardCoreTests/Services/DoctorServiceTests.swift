@@ -77,7 +77,8 @@ final class DoctorServiceTests: XCTestCase {
         let report = try svc.diagnose()
 
         XCTAssertEqual(git.pruneCalls, 1)
-        XCTAssertTrue(report.prunedStaleEntries)
+        XCTAssertTrue(report.worktreePruneRan)
+        XCTAssertFalse(report.prunedStaleEntries)
         XCTAssertEqual(report.checkedTasks, ["alpha"])
         XCTAssertTrue(report.stateProblems.isEmpty)
         XCTAssertTrue(report.orphanClones.isEmpty)
@@ -169,6 +170,16 @@ final class DoctorServiceTests: XCTestCase {
     }
 
     // MARK: - stale bindings
+
+    func testDiagnoseDoesNotClaimWorktreePruneMutatedState() throws {
+        let (svc, _, git, _) = makeService()
+
+        let report = try svc.diagnose()
+
+        XCTAssertEqual(git.pruneCalls, 1)
+        XCTAssertTrue(report.worktreePruneRan)
+        XCTAssertFalse(report.prunedStaleEntries)
+    }
 
     func testDiagnoseDetectsStaleBindingWhenSimGone() throws {
         // `alpha` points at C-GONE but simctl no longer lists it.
