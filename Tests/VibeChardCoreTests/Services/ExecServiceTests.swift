@@ -136,6 +136,7 @@ final class ExecServiceTests: XCTestCase {
         XCTAssertEqual(env["VCH_TASK_NAME"],          "alpha")
         XCTAssertEqual(env["VCH_TASK_ROOT"],          "/repos/Demo-alpha")
         XCTAssertEqual(env["VCH_RESULT_BUNDLE_DIR"],  "/repos/Demo-alpha/.agent-build")
+        XCTAssertEqual(env["VCH_AGENT_RUNBOOK_URL"], VibeChard.agentRunbookURL)
     }
 
     // MARK: - DEVELOPER_DIR injection (#31)
@@ -232,8 +233,8 @@ final class ExecServiceTests: XCTestCase {
     }
 
     /// `buildEnv` is the single function the CLI calls to populate
-    /// shim and tooling vars. For adopted tasks every `VCH_*` env
-    /// var must be rooted at the override, including the PATH
+    /// shim and tooling vars. For adopted tasks every path-like `VCH_*`
+    /// env var must be rooted at the override, including the PATH
     /// prepend.
     func testBuildEnvRootsShimVarsAtAdoptedWorktree() {
         let adoptedPath = "/Users/me/codex-session"

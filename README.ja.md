@@ -137,6 +137,19 @@ vch path add-paywall                  # worktree の絶対パス
 vch remove add-paywall                # worktree + ブランチ + シミュレータークローンを削除
 ```
 
+### Agent runbook
+
+AI エージェントがタスクを進める場合は、現在のバージョンに対応する
+runbook を渡してください：
+
+```sh
+vch runbook
+```
+
+`vch <name>` / `vch exec` の中では、子プロセスにも同じ tag 固定リンクを
+指す `VCH_AGENT_RUNBOOK_URL` が渡されます。ソース上のコピーは
+**[docs/agent-runbook.md](docs/agent-runbook.md)** です。
+
 ## ワークフロー：連続したタスク群
 
 vch が本当に振るうのは、単発タスクではなく**互いに独立した短いタスクを連続**
@@ -221,6 +234,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 | `vch doctor` | 孤児シミュレータークローン、不正バインディング、壊れた `state.json` を検出（`--clean`、`--bug-report`、`--json`）。 |
 | `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` の shell 補助関数を出力（bash/zsh）。 |
 | `vch completions install` | `zsh` / `bash` / `fish` の補完スクリプトをインストール（`--shell`、`--print`、`--force`）。 |
+| `vch runbook` | バージョン固定の Agent runbook URL と Homebrew インストール済みドキュメントパスのヒントを表示（`--json`）。 |
 | `vch version` | バージョンとツールチェーン情報を表示（`--json` で機械可読）。 |
 
 `<name>` を受け取るコマンドは現在のワークスペースから補完されます ——
@@ -257,6 +271,7 @@ Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的�
 |---|---|
 | `VCH_TASK_NAME` | タスク名（例 `add-paywall`）。PS1 や端末タイトルに便利。 |
 | `VCH_TASK_ROOT` | worktree の絶対パス。 |
+| `VCH_AGENT_RUNBOOK_URL` | この `vch` バイナリに対応するバージョン固定の Agent runbook URL。 |
 | `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData`（シムが読む）。 |
 | `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages`（シムが読む）。 |
 | `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult`（シムが読む）。 |

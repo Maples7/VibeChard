@@ -140,6 +140,18 @@ vch path add-paywall                  # worktree 의 절대 경로
 vch remove add-paywall                # worktree + 브랜치 + 시뮬레이터 클론 삭제
 ```
 
+### Agent runbook
+
+AI 에이전트가 작업을 진행한다면 현재 버전에 맞는 runbook 을 전달하세요:
+
+```sh
+vch runbook
+```
+
+`vch <name>` / `vch exec` 안에서는 자식 프로세스도 같은 tag 고정 링크를
+가리키는 `VCH_AGENT_RUNBOOK_URL` 을 받습니다. 소스 사본은
+**[docs/agent-runbook.md](docs/agent-runbook.md)** 입니다.
+
 ## 워크플로우: 일련의 작업들
 
 vch 가 제일 빛을 발하는 장면은 단일 작업이 아니라 **서로 고립된 짧은 작업들을
@@ -222,6 +234,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 | `vch doctor` | 고아 시뮬레이터 클론, 깨진 바인딩, 손상된 `state.json` 검출 (`--clean`, `--bug-report`, `--json`). |
 | `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` 셸 헬퍼 출력 (bash/zsh). |
 | `vch completions install` | `zsh` / `bash` / `fish` 자동완성 설치 (`--shell`, `--print`, `--force`). |
+| `vch runbook` | 버전 고정 Agent runbook URL 과 Homebrew 설치 문서 경로 힌트 출력 (`--json`). |
 | `vch version` | 버전과 툴체인 정보 출력 (`--json` 은 머신 리더블). |
 
 `<name>` 을 받는 모든 명령어는 현재 워크스페이스의 작업 이름으로 자동완성
@@ -261,6 +274,7 @@ build` 와 동일하게 동작합니다. "작업 환경에 들어가기" 전용�
 |---|---|
 | `VCH_TASK_NAME` | 작업 이름(예: `add-paywall`). PS1 / 터미널 타이틀에 유용. |
 | `VCH_TASK_ROOT` | worktree 절대 경로. |
+| `VCH_AGENT_RUNBOOK_URL` | 이 `vch` 바이너리에 대응하는 버전 고정 Agent runbook URL. |
 | `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData` (shim 이 읽음). |
 | `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages` (shim 이 읽음). |
 | `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult` (shim 이 읽음). |

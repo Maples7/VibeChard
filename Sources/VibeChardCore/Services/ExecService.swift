@@ -15,8 +15,8 @@ import Foundation
 ///     — honored directly by clang / SwiftPM, so isolation survives
 ///     even when the shim is bypassed.
 ///   • descriptive env: `VCH_TASK_NAME`, `VCH_TASK_ROOT`,
-///     `VCH_RESULT_BUNDLE_DIR` — used by Q12 shellenv helpers and
-///     downstream agent scripts.
+///     `VCH_RESULT_BUNDLE_DIR`, `VCH_AGENT_RUNBOOK_URL` — used by
+///     Q12 shellenv helpers and downstream agent scripts.
 public struct ExecService: Sendable {
     public let workspace: Workspace
     public let git: GitClient
@@ -122,6 +122,7 @@ public struct ExecService: Sendable {
         env["VCH_TASK_ROOT"] = worktree
         env["VCH_RESULT_BUNDLE_DIR"] =
             (workspace.resultBundlePath(for: task) as NSString).deletingLastPathComponent
+        env["VCH_AGENT_RUNBOOK_URL"] = VibeChard.agentRunbookURL
         // #31: pin the toolchain root so a hand-typed xcrun inside the
         // child shell hits the same Xcode that the parent picked. User
         // override (already in baseEnv) always wins.

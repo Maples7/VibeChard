@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- Added an official Agent runbook at `docs/agent-runbook.md`, a
+  `vch runbook` discovery command, Homebrew doc installation, and
+  `VCH_AGENT_RUNBOOK_URL` inside task environments so agents can find
+  version-pinned operating guidance.
+
 ## 0.7.1 - 2026-05-14
 
 ### Changed

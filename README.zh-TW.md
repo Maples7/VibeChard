@@ -135,6 +135,18 @@ vch path add-paywall                  # worktree 的絕對路徑
 vch remove add-paywall                # 刪除 worktree + 分支 + 模擬器副本
 ```
 
+### Agent runbook
+
+如果是 AI agent 在驅動任務，把它指向與目前版本相符的 runbook：
+
+```sh
+vch runbook
+```
+
+在 `vch <name>` / `vch exec` 裡，子行程還會拿到
+`VCH_AGENT_RUNBOOK_URL`，指向同一個按 tag 固定的連結。原始碼副本在
+**[docs/agent-runbook.md](docs/agent-runbook.md)**。
+
 ## 工作流：一連串任務
 
 vch 的最佳使用姿態不是單一任務，而是**連續短任務**（或平行任務）：
@@ -216,6 +228,7 @@ warm 模擬器模板的快速路徑、重置每任務的模擬器狀態、模板
 | `vch doctor` | 檢測孤兒模擬器克隆、失效綁定、損壞的 `state.json`（`--clean`、`--bug-report`、`--json`）。 |
 | `vch shellenv` | 輸出 `vch_cd` / `vch_new` / `vch_clean` shell 輔助函式（bash/zsh）。 |
 | `vch completions install` | 安裝 shell 補全腳本（`--shell`、`--print`、`--force`）。 |
+| `vch runbook` | 印出按版本固定的 Agent runbook URL 與 Homebrew 安裝文件路徑提示（`--json`）。 |
 | `vch version` | 印出版本與工具鏈資訊（`--json` 為機器可讀格式）。 |
 
 所有接受 `<name>` 的指令都會從目前工作區拿任務名做補全——裝好補全腳本按
@@ -253,6 +266,7 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 |---|---|
 | `VCH_TASK_NAME` | 任務名稱（如 `add-paywall`），常用於 PS1 / 終端標題。 |
 | `VCH_TASK_ROOT` | worktree 絕對路徑。 |
+| `VCH_AGENT_RUNBOOK_URL` | 目前 `vch` 二進位對應的按版本固定 Agent runbook URL。 |
 | `VCH_DERIVED_DATA_PATH` | `<wt>/.agent-build/DerivedData`（shim 讀取）。 |
 | `VCH_SPM_CLONE_DIR` | `<wt>/.agent-build/SourcePackages`（shim 讀取）。 |
 | `VCH_RESULT_BUNDLE_PATH` | `<wt>/.agent-build/Result.xcresult`（shim 讀取）。 |
