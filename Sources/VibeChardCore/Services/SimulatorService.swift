@@ -169,7 +169,8 @@ public struct SimulatorService: Sendable {
             sourceKind = .warmTemplate
         } else {
             template = try pickNewestTemplate(name: requested,
-                                              requestedRuntime: requestedRuntime)
+                                              requestedRuntime: requestedRuntime,
+                                              requestedPlatform: requestedPlatform)
             sourceKind = .appleTemplate
         }
         let cloneName = cloneDisplayName(originalName: requested, task: task)
@@ -486,7 +487,8 @@ public struct SimulatorService: Sendable {
     /// accepts the user-friendly `visionOS` prefix as an alias.
     func pickNewestTemplate(
         name: String,
-        requestedRuntime: String? = nil
+        requestedRuntime: String? = nil,
+        requestedPlatform: SimRuntimeVersion.Platform? = nil
     ) throws -> SimDevice {
         let all = try simctl.availableDevices()
         var matches = all.filter { $0.isAvailable && $0.name == name }
@@ -515,7 +517,11 @@ public struct SimulatorService: Sendable {
         guard !matches.isEmpty else {
             // No available device found. Try lazy creation (#110):
             // Attempt to auto-create the base device.
-            return try createBaseDeviceIfNeeded(name: name, requestedRuntime: requestedRuntime)
+            return try createBaseDeviceIfNeeded(
+                name: name,
+                requestedRuntime: requestedRuntime,
+                requestedPlatform: requestedPlatform
+            )
         }
 
         let sorted = matches.sorted { lhs, rhs in
@@ -541,12 +547,13 @@ public struct SimulatorService: Sendable {
     /// device type is not installed or runtime is invalid.
     private func createBaseDeviceIfNeeded(
         name: String,
-        requestedRuntime: String?
+        requestedRuntime: String?,
+        requestedPlatform: SimRuntimeVersion.Platform?
     ) throws -> SimDevice {
         // Determine the target runtime. Must be specified.
         guard let req = requestedRuntime else {
             throw VibeChardError.simulatorTemplateNotFound(
-                name: "\(name) — no base device exists and --runtime not specified. Try: --runtime 'iOS 26.5'"
+                name: "\(name) — no base device exists and --runtime not specified. \(missingRuntimeHint(deviceName: name, requestedPlatform: requestedPlatform))"
             )
         }
 
@@ -590,6 +597,43 @@ public struct SimulatorService: Sendable {
             isAvailable: true,
             state: "Shutdown"
         )
+    }
+
+    private func missingRuntimeHint(
+        deviceName: String,
+        requestedPlatform: SimRuntimeVersion.Platform?
+    ) -> String {
+        let platform = requestedPlatform ?? Self.inferPlatform(deviceName: deviceName)
+        if let platform {
+            if let runtime = newestAvailableRuntime(for: platform) {
+                return "Try: --runtime '\(runtime.dottedLabel)'"
+            }
+            return "Pass a \(platform.rawValue) runtime from `xcrun simctl list runtimes`, "
+                + "for example: --runtime '\(platform.rawValue) <version>'"
+        }
+        return "Pass --runtime <version> using a label from `xcrun simctl list runtimes`, "
+            + "or the full SimRuntime identifier"
+    }
+
+    private func newestAvailableRuntime(
+        for platform: SimRuntimeVersion.Platform
+    ) -> SimRuntimeVersion? {
+        (try? simctl.availableRuntimes())?
+            .filter { $0.platform == platform }
+            .max()
+    }
+
+    private static func inferPlatform(
+        deviceName: String
+    ) -> SimRuntimeVersion.Platform? {
+        let lower = deviceName.lowercased()
+        if lower.contains("watch") { return .watchOS }
+        if lower.contains("apple tv") || lower.contains("tv") { return .tvOS }
+        if lower.contains("vision") { return .visionOS }
+        if lower.contains("iphone") || lower.contains("ipad") || lower.contains("ipod") {
+            return .iOS
+        }
+        return nil
     }
 
     /// Normalize the user's `--runtime` argument into a comparable

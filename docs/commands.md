@@ -157,6 +157,9 @@ vch build <name> [flags] [-- xcodebuild-extras]
   vch reuses it on subsequent calls.
 - `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`,
   `'visionOS 2.5'`) pins the simulator runtime.
+- If no base device exists and `--runtime` is omitted, vch suggests
+  the newest installed runtime matching the requested device platform
+  (for example, watchOS for Apple Watch templates).
 - `--erase-clone` runs `simctl shutdown && simctl erase` on the
   per-task clone first (off by default; see
   [Resetting per-task simulator state](cookbook.md#resetting-per-task-simulator-state)).
@@ -253,6 +256,9 @@ clone for the phone target plus a watchOS clone for its companion,
 - `clone` with a `--device` that doesn't match any existing binding
   appends a new clone; with a matching `--device` (and optional
   `--runtime`) it reuses the existing one.
+- If the requested base device has not been created yet and
+  `--runtime` is omitted, the error suggests an installed runtime for
+  that device family instead of assuming iOS.
 - `erase` / `shutdown` need `--device` (and optionally `--runtime`
   to disambiguate two bindings of the same device) when the task
   owns 2+ clones. With a single binding `--device` is optional.

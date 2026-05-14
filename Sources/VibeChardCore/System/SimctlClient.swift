@@ -228,6 +228,11 @@ public protocol SimctlClient: Sendable {
     /// Equivalent to `xcrun simctl list devices available --json`.
     func availableDevices() throws -> [SimDevice]
 
+    /// Available simulator runtimes, parsed from
+    /// `xcrun simctl list runtimes --json`. Used for diagnostics when
+    /// a device type exists but no base device has been created yet.
+    func availableRuntimes() throws -> [SimRuntimeVersion]
+
     /// Every device known to simctl, including ones whose runtime is
     /// no longer available (e.g. an iOS 17 clone after the iOS 17
     /// runtime was uninstalled). `vch doctor` needs this superset to
@@ -278,6 +283,10 @@ public protocol SimctlClient: Sendable {
     func launch(udid: String, bundleID: String, args: [String]) throws
 }
 
+public extension SimctlClient {
+    func availableRuntimes() throws -> [SimRuntimeVersion] { [] }
+}
+
 /// Production implementation backed by `/usr/bin/xcrun simctl`.
 public struct DiskSimctlClient: SimctlClient {
     public let runner: ProcessRunner
@@ -304,6 +313,21 @@ public struct DiskSimctlClient: SimctlClient {
             )
         }
         return try SimctlListParser.parse(result.stdout)
+    }
+
+    public func availableRuntimes() throws -> [SimRuntimeVersion] {
+        let result = try runner.run(
+            xcrunPath,
+            args: ["simctl", "list", "runtimes", "--json"]
+        )
+        guard result.succeeded else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl list runtimes --json",
+                exitCode: result.exitCode,
+                stderr: result.stderr
+            )
+        }
+        return try SimctlRuntimesParser.parse(result.stdout)
     }
 
     public func allDevices() throws -> [SimDevice] {
@@ -517,5 +541,57 @@ enum SimctlListParser {
             }
         }
         return out
+    }
+}
+
+/// Pure JSON parser for `xcrun simctl list runtimes --json`.
+enum SimctlRuntimesParser {
+    static func parse(_ stdout: String) throws -> [SimRuntimeVersion] {
+        guard let data = stdout.data(using: .utf8) else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl list runtimes --json",
+                exitCode: -1,
+                stderr: "non-UTF8 stdout"
+            )
+        }
+        let json: Any
+        do {
+            json = try JSONSerialization.jsonObject(with: data, options: [])
+        } catch {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl list runtimes --json",
+                exitCode: -1,
+                stderr: "could not parse JSON: \(error)"
+            )
+        }
+        guard let root = json as? [String: Any],
+              let runtimes = root["runtimes"] as? [[String: Any]] else {
+            throw VibeChardError.externalCommandFailed(
+                cmd: "xcrun simctl list runtimes --json",
+                exitCode: -1,
+                stderr: "missing top-level `runtimes` array"
+            )
+        }
+
+        var out: [SimRuntimeVersion] = []
+        for runtime in runtimes {
+            let isAvailable: Bool
+            if let value = runtime["isAvailable"] as? Bool {
+                isAvailable = value
+            } else if let value = runtime["availability"] as? String {
+                isAvailable = !value.lowercased().contains("unavailable")
+            } else {
+                isAvailable = true
+            }
+            guard isAvailable else { continue }
+
+            let parsed = (runtime["identifier"] as? String)
+                .flatMap(SimRuntimeVersion.parse(runtimeIdentifier:))
+                ?? (runtime["name"] as? String)
+                    .flatMap(SimRuntimeVersion.parse(runtimeLabel:))
+            guard let parsed, !out.contains(parsed) else { continue }
+            out.append(parsed)
+        }
+        return out.sorted(by: >)
     }
 }
