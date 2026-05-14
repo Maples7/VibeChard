@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.9.0 - 2026-05-14
+
 ### Added
 - Simulator base device auto-creation (#110): when `vch build --device "iPhone 17" --runtime "iOS 26.5"` is invoked and the device type + runtime are installed but no base device instance exists, vch now automatically creates it via `xcrun simctl create`. This removes the need for users to manually run `simctl create` before their first build — the device type + runtime are sufficient. The created device is not auto-deleted; the user owns its lifecycle and can clean up via `vch doctor --clean` if desired.
 
