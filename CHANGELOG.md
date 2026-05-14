@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.9.1 - 2026-05-15
+
 ### Changed
 - Clarified `vch doctor --json` stale-prune reporting: new output uses `worktreePruneRan` for the `git worktree prune` sweep, keeps `prunedStaleEntries` as a deprecated compatibility field, and includes an explicit repair hint for stale simulator bindings.
 
