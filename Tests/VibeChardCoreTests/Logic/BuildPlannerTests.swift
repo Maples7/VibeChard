@@ -9,6 +9,7 @@ final class BuildPlannerTests: XCTestCase {
         configuration: String? = nil,
         resultBundle: String? = nil,
         udid: String? = nil,
+        platform: SimRuntimeVersion.Platform = .iOS,
         device: String? = nil,
         extra: [String] = []
     ) -> BuildPlanner.Inputs {
@@ -20,6 +21,7 @@ final class BuildPlannerTests: XCTestCase {
             clonedSourcePackagesDir: "/wt/.agent-build/SwiftPM",
             resultBundlePath: resultBundle,
             destinationUDID: udid,
+            destinationPlatform: platform,
             destinationDevice: device,
             extraArgs: extra
         )
@@ -104,6 +106,24 @@ final class BuildPlannerTests: XCTestCase {
         let i = argv.firstIndex(of: "-destination")!
         XCTAssertTrue(argv[i + 1].contains("arch=\(BuildPlanner.hostArch),"),
                       "destination string must pin host arch (#5); got \(argv[i + 1])")
+    }
+
+    func testUDIDDestinationUsesRequestedSimulatorPlatform() {
+        let argv = BuildPlanner.args(baseInputs(
+            udid: "WATCH-1234",
+            platform: .watchOS
+        ))
+        let i = argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(argv[i + 1], "platform=watchOS Simulator,arch=\(BuildPlanner.hostArch),id=WATCH-1234")
+    }
+
+    func testNameDestinationUsesRequestedSimulatorPlatform() {
+        let argv = BuildPlanner.args(baseInputs(
+            platform: .visionOS,
+            device: "Apple Vision Pro"
+        ))
+        let i = argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(argv[i + 1], "platform=visionOS Simulator,arch=\(BuildPlanner.hostArch),name=Apple Vision Pro")
     }
 
     func testNoDestinationFlagWhenNeitherUDIDNorDeviceProvided() {

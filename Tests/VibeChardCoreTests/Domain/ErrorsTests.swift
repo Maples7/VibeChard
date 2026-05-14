@@ -188,4 +188,37 @@ final class ErrorsTests: XCTestCase {
         XCTAssertTrue(msg.contains("--shutdown-template"),
                       "expected --shutdown-template hint in: \(msg)")
     }
+
+    func testSimulatorPlatformUnavailableMessageIsActionableAndBusinessExit() {
+        let err = VibeChardError.simulatorBindingPlatformUnavailable(
+            taskName: "alpha",
+            platform: "iOS Simulator",
+            candidates: ["Apple Watch Series 10-vch-alpha"]
+        )
+        let msg = err.description
+        XCTAssertTrue(msg.contains("alpha"), "expected task name in: \(msg)")
+        XCTAssertTrue(msg.contains("iOS Simulator"), "expected platform in: \(msg)")
+        XCTAssertTrue(msg.contains("--device <name>"), "expected device hint in: \(msg)")
+        XCTAssertTrue(msg.contains("Apple Watch Series 10-vch-alpha"),
+                      "expected candidate listing in: \(msg)")
+        XCTAssertEqual(err.exitCode, ExitCode.business)
+    }
+
+    func testSimulatorPlatformUnknownMessageIsActionableAndBusinessExit() {
+        let udid = "ABCDEF12-3456-7890-ABCD-EF1234567890"
+        let err = VibeChardError.simulatorPlatformUnknown(
+            udid: udid,
+            name: "Apple Watch Series 10-vch-alpha"
+        )
+        let msg = err.description
+        XCTAssertTrue(msg.contains("Apple Watch Series 10-vch-alpha"),
+                      "expected clone name in: \(msg)")
+        XCTAssertTrue(msg.contains("ABCDEF12"),
+                      "expected UDID prefix in: \(msg)")
+        XCTAssertTrue(msg.contains("--device <name>"),
+                      "expected explicit device remediation in: \(msg)")
+        XCTAssertTrue(msg.contains("--runtime <version>"),
+                      "expected optional runtime hint in: \(msg)")
+        XCTAssertEqual(err.exitCode, ExitCode.business)
+    }
 }

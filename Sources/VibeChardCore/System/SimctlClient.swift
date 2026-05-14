@@ -76,6 +76,12 @@ public struct SimRuntimeVersion: Equatable, Comparable, Sendable {
             }
         }
 
+        /// Human-facing platform token used by `xcodebuild
+        /// -destination`, e.g. `watchOS Simulator`.
+        public var xcodebuildDestinationPlatform: String {
+            "\(rawValue) Simulator"
+        }
+
         /// Map a CoreSimulator slug back to the platform. Accepts
         /// `xrOS` (canonical) and `visionOS` (user-typed alias) for
         /// the visionOS case so `--runtime "visionOS-2-5"` works.
@@ -136,6 +142,34 @@ public struct SimRuntimeVersion: Equatable, Comparable, Sendable {
         "com.apple.CoreSimulator.SimRuntime.\(platform.coreSimulatorSlug)-\(major)-\(minor)"
     }
 
+    /// Parse any user-facing runtime label vch accepts:
+    ///   • raw identifier:  `com.apple.CoreSimulator.SimRuntime.iOS-26-4`
+    ///   • dashed form:     `iOS-26-4` / `watchOS-11-5` / `xrOS-2-5`
+    ///   • dotted form:     `iOS 26.4` / `watchOS 11.5` / `visionOS 2.5`
+    public static func parse(runtimeLabel raw: String) -> SimRuntimeVersion? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let parsed = parse(runtimeIdentifier: trimmed) {
+            return parsed
+        }
+
+        for platform in Platform.allCases {
+            let prefixes: [String] = (platform == .visionOS)
+                ? ["visionOS", "xrOS"]
+                : [platform.rawValue]
+            for prefix in prefixes {
+                if let parsed = parseShortRuntimeForm(
+                    trimmed: trimmed,
+                    platform: platform,
+                    prefix: prefix
+                ) {
+                    return parsed
+                }
+            }
+        }
+        return nil
+    }
+
     /// Parse from a runtime identifier like
     /// `com.apple.CoreSimulator.SimRuntime.iOS-26-4` or
     /// `com.apple.CoreSimulator.SimRuntime.xrOS-2-5`. Returns `nil`
@@ -155,6 +189,35 @@ public struct SimRuntimeVersion: Equatable, Comparable, Sendable {
         guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
         let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
         return SimRuntimeVersion(platform: platform, major: major, minor: minor)
+    }
+
+    /// Parse a single platform's short forms — `<prefix>-<M>-<m>` or
+    /// `<prefix> <M>.<m>`.
+    private static func parseShortRuntimeForm(
+        trimmed: String,
+        platform: Platform,
+        prefix: String
+    ) -> SimRuntimeVersion? {
+        let lower = trimmed.lowercased()
+
+        let dashed = (prefix + "-").lowercased()
+        if lower.hasPrefix(dashed) {
+            let body = trimmed.dropFirst(dashed.count)
+            let parts = body.split(separator: "-")
+            guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
+            let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+            return SimRuntimeVersion(platform: platform, major: major, minor: minor)
+        }
+
+        let dotted = (prefix + " ").lowercased()
+        if lower.hasPrefix(dotted) {
+            let body = trimmed.dropFirst(dotted.count)
+            let parts = body.split(whereSeparator: { $0 == "." || $0 == "-" })
+            guard let major = parts.first.flatMap({ Int($0) }) else { return nil }
+            let minor = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+            return SimRuntimeVersion(platform: platform, major: major, minor: minor)
+        }
+        return nil
     }
 }
 

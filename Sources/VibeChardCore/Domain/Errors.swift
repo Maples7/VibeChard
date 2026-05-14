@@ -31,6 +31,16 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// business exit code so scripts can `if vch sim info foo;
     /// then …; else if exit==1 then disambiguate`.
     case simulatorBindingAmbiguous(taskName: String, candidates: [String])
+    /// The current scheme/platform needs a simulator family that is
+    /// not among the task's recorded bindings. This prevents a single
+    /// watchOS binding from being silently reused for a later iOS
+    /// scheme (or vice versa).
+    case simulatorBindingPlatformUnavailable(taskName: String, platform: String, candidates: [String])
+    /// A clone UDID was selected, but neither state.json nor simctl
+    /// could tell us which simulator platform it belongs to. Refuse to
+    /// invent `platform=iOS Simulator` because that is exactly how
+    /// platform/UDID mismatches reach xcodebuild.
+    case simulatorPlatformUnknown(udid: String, name: String)
     /// `xcrun simctl clone` refused because the source template is in
     /// the `Booted` state. The user (or some other tool — Simulator.app,
     /// Xcode UI tests, an explicit `simctl boot`) booted the template
@@ -174,6 +184,11 @@ public enum VibeChardError: Error, CustomStringConvertible {
         case let .simulatorBindingAmbiguous(task, candidates):
             let listing = candidates.map { "  - \($0)" }.joined(separator: "\n")
             return "task '\(task)' has \(candidates.count) simulator bindings — pass --device <name> (and --runtime <version> when two bindings share a device) to pick one:\n\(listing)"
+        case let .simulatorBindingPlatformUnavailable(task, platform, candidates):
+            let listing = candidates.map { "  - \($0)" }.joined(separator: "\n")
+            return "task '\(task)' has no \(platform) simulator binding — pass --device <name> to create or select one. Existing bindings:\n\(listing)"
+        case let .simulatorPlatformUnknown(udid, name):
+            return "could not determine simulator platform for '\(name)' (\(udid.prefix(8))…) — pass --device <name> (and optionally --runtime <version>) to recreate or select a binding, or run `vch sim info` to inspect stale state"
         case let .simulatorTemplateBooted(name, udid):
             let prefix = String(udid.prefix(8))
             return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it)"
@@ -200,7 +215,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
         case let .runBundleIDNotFound(scheme):
             return "could not resolve PRODUCT_BUNDLE_IDENTIFIER for scheme '\(scheme)' — does this scheme build an app?"
         case let .runAppBundleNotFound(path):
-            return "built app bundle not found at \(path) — was the build targeted at iOS Simulator?"
+            return "built app bundle not found at \(path) — was the build targeted at the correct simulator platform?"
         case let .cleanBlockedByHolders(task, holders):
             let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
             let body = lines.joined(separator: "\n")

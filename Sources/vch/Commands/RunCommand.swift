@@ -91,7 +91,8 @@ struct RunCommand: ParsableCommand {
         let buildService = BuildService(
             workspace: workspace,
             simulator: simulator,
-            developerDir: XcodeSelectDeveloperDirResolver()
+            developerDir: XcodeSelectDeveloperDirResolver(),
+            settingsLister: DiskBuildSettingsLister()
         )
 
         // Reuse the same scheme-resolution rules as `vch build`/`vch
@@ -118,12 +119,21 @@ struct RunCommand: ParsableCommand {
         }
         let effectiveScheme = resolvedScheme?.scheme ?? scheme
 
-        let opts = BuildService.Options(
+        var opts = BuildService.Options(
             scheme: effectiveScheme,
             configuration: configuration,
             device: device,
+            runtime: runtime,
             noSim: false,
             extraArgs: []
+        )
+        opts.destinationPlatform = buildService.destinationPlatformHint(
+            task: task,
+            scheme: opts.scheme,
+            configuration: configuration,
+            requestedDevice: device,
+            requestedRuntime: runtime,
+            noSim: false
         )
 
         // `vch run` always needs a simulator clone to install onto.
@@ -134,6 +144,7 @@ struct RunCommand: ParsableCommand {
             task: task,
             requestedDevice: device,
             requestedRuntime: runtime,
+            requestedPlatform: opts.destinationPlatform,
             noSim: false,
             shutdownTemplate: shutdownTemplate
         ) else {
@@ -141,6 +152,12 @@ struct RunCommand: ParsableCommand {
             // is always wired in. Treat as a usage error so callers
             // can react appropriately.
             throw VibeChardError.missingArgument("--device")
+        }
+        guard let resolvedPlatform = resolved.platform else {
+            throw VibeChardError.simulatorPlatformUnknown(
+                udid: resolved.udid,
+                name: resolved.name
+            )
         }
 
         if resolved.createdNow {
@@ -172,6 +189,7 @@ struct RunCommand: ParsableCommand {
             task: task,
             options: opts,
             resolvedSimulatorUDID: resolved.udid,
+            resolvedSimulatorPlatform: resolvedPlatform,
             baseEnv: baseEnv
         )
 
@@ -212,7 +230,8 @@ struct RunCommand: ParsableCommand {
             task: task,
             scheme: scheme,
             configuration: configuration,
-            simulatorUDID: resolved.udid
+            simulatorUDID: resolved.udid,
+            simulatorPlatform: resolvedPlatform
         )
         CLIBridge.eprintln(
             "→ installing '\(target.bundleID)' on \(resolved.name) …"
@@ -246,6 +265,6 @@ struct RunCommand: ParsableCommand {
 
     private static func formatRuntime(_ rt: SimRuntimeVersion?) -> String {
         guard let rt else { return "" }
-        return ", runtime: iOS \(rt.major).\(rt.minor)"
+        return ", runtime: \(rt.dottedLabel)"
     }
 }

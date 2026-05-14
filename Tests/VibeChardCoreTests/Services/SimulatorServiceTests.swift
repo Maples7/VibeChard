@@ -861,6 +861,50 @@ final class SimulatorServiceTests: XCTestCase {
         }
     }
 
+    func testEnsureCloneUsesRequestedPlatformWhenNoDevice() throws {
+        // The build/test path can infer the scheme platform. With two
+        // bindings it should use that to pick the matching platform
+        // instead of requiring --device.
+        let (service, _, simctl) = makeServiceWithTwoBindings()
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: nil,
+            requestedPlatform: .watchOS
+        )
+        XCTAssertEqual(resolved?.udid, "WATCH-CLONE")
+        XCTAssertEqual(resolved?.platform, .watchOS)
+        XCTAssertEqual(simctl.cloneCalls.count, 0)
+    }
+
+    func testEnsureCloneRejectsSingleBindingFromWrongPlatform() throws {
+        // Regression for #102: after a task has only a watchOS binding,
+        // a later iOS scheme with no --device must not silently reuse
+        // that watch UDID.
+        var seed = emptyState("alpha")
+        seed.setSimulators([
+            TaskState.SimulatorRecord(
+                cloneUDID: "WATCH-CLONE",
+                sourceUDID: "WATCH-TPL",
+                name: "Apple Watch Series 10-vch-alpha",
+                templateName: "Apple Watch Series 10 (46mm)",
+                runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.watchOS-11-0"
+            ),
+        ])
+        let (service, _, _) = makeService(seedingTask: "alpha", seedingState: seed)
+        XCTAssertThrowsError(try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: nil,
+            requestedPlatform: .iOS
+        )) { err in
+            guard case let VibeChardError.simulatorBindingPlatformUnavailable(task, platform, candidates) = err else {
+                return XCTFail("expected simulatorBindingPlatformUnavailable, got \(err)")
+            }
+            XCTAssertEqual(task, "alpha")
+            XCTAssertEqual(platform, "iOS Simulator")
+            XCTAssertEqual(candidates, ["Apple Watch Series 10-vch-alpha"])
+        }
+    }
+
     func testEnsureCloneAmbiguousWhenTwoBindingsSameDeviceAndNoRuntime() throws {
         // Same device on two runtimes (iOS 18.2 + iOS 26.4) + caller
         // passes `--device "iPhone 16"` only. Filter narrows to 2

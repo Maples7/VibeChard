@@ -90,4 +90,87 @@ final class BuildSettingsParserTests: XCTestCase {
         )
         XCTAssertNil(bs)
     }
+
+    func test_simulatorPlatform_readsPlatformName() {
+        let json = #"""
+        [
+          {
+            "target": "WatchApp",
+            "buildSettings": {
+              "PLATFORM_NAME": "watchsimulator"
+            }
+          }
+        ]
+        """#
+        XCTAssertEqual(
+            BuildSettingsParser.simulatorPlatform(
+                in: data(json),
+                targetMatching: "WatchApp"
+            ),
+            .watchOS
+        )
+    }
+
+    func test_simulatorPlatform_fallsBackToSDKRootAndSupportedPlatforms() {
+        let tvJSON = #"""
+        [
+          {
+            "target": "TVApp",
+            "buildSettings": {
+              "SDKROOT": "appletvsimulator18.0"
+            }
+          }
+        ]
+        """#
+        XCTAssertEqual(
+            BuildSettingsParser.simulatorPlatform(
+                in: data(tvJSON),
+                targetMatching: "TVApp"
+            ),
+            .tvOS
+        )
+
+        let visionJSON = #"""
+        [
+          {
+            "target": "VisionApp",
+            "buildSettings": {
+              "SUPPORTED_PLATFORMS": "xrsimulator xros"
+            }
+          }
+        ]
+        """#
+        XCTAssertEqual(
+            BuildSettingsParser.simulatorPlatform(
+                in: data(visionJSON),
+                targetMatching: "VisionApp"
+            ),
+            .visionOS
+        )
+    }
+
+    func test_simulatorPlatformReturnsNilWhenFallbackTargetsDisagree() {
+        let json = #"""
+        [
+          {
+            "target": "PhoneApp",
+            "buildSettings": {
+              "PLATFORM_NAME": "iphonesimulator"
+            }
+          },
+          {
+            "target": "WatchApp",
+            "buildSettings": {
+              "PLATFORM_NAME": "watchsimulator"
+            }
+          }
+        ]
+        """#
+        XCTAssertNil(
+            BuildSettingsParser.simulatorPlatform(
+                in: data(json),
+                targetMatching: "SharedScheme"
+            )
+        )
+    }
 }

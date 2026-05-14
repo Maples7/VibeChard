@@ -14,6 +14,14 @@ The English README is the source of truth; localized READMEs may lag.
   directory is a linked worktree and validating the normal task-name
   rules.
 
+### Fixed
+- `vch build`, `vch test`, and `vch run` now preserve the selected
+  simulator platform when generating `xcodebuild` destinations, so
+  watchOS/tvOS/visionOS clone UDIDs are no longer passed as
+  `platform=iOS Simulator`. Implicit simulator reuse is also scoped by
+  the inferred scheme platform when available, preventing a lone
+  watchOS binding from being reused for a later iOS scheme (#102).
+
 ## 0.7.0 - 2026-05-14
 
 ### Breaking

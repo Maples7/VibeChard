@@ -8,7 +8,7 @@ import Foundation
 ///   1. resolve scheme / simulator clone (delegated to
 ///      `SchemeResolver` + `BuildService.resolveSimulator`)
 ///   2. boot the clone (delegated to `BuildService.bootSimulator`)
-///   3. build for the iOS Simulator destination
+///   3. build for the selected simulator destination
 ///      (`BuildService.prepareBuild` → `PlanLauncher.run`)
 ///   4. resolve the just-built `.app` bundle path + its
 ///      `PRODUCT_BUNDLE_IDENTIFIER` (`resolveTarget` below)
@@ -61,10 +61,11 @@ public struct RunService: Sendable {
         task: TaskName,
         scheme: String,
         configuration: String?,
-        simulatorUDID: String
+        simulatorUDID: String,
+        simulatorPlatform: SimRuntimeVersion.Platform = .iOS
     ) throws -> Target {
         let cwd = workspace.worktreePath(for: task)
-        let destination = "platform=iOS Simulator,id=\(simulatorUDID)"
+        let destination = "platform=\(simulatorPlatform.xcodebuildDestinationPlatform),id=\(simulatorUDID)"
         let derived = workspace.derivedDataDir(for: task)
         let json: Data
         do {

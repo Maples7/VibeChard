@@ -178,6 +178,14 @@ public struct TaskState: Codable, Equatable, Sendable {
             self.runtimeIdentifier = runtimeIdentifier
             self.sourceKind = sourceKind
         }
+
+        public var runtimeVersion: SimRuntimeVersion? {
+            runtimeIdentifier.flatMap { SimRuntimeVersion.parse(runtimeIdentifier: $0) }
+        }
+
+        public var platform: SimRuntimeVersion.Platform? {
+            runtimeVersion?.platform
+        }
     }
 
     /// Provenance of a clone's source device (#47). Stored as a

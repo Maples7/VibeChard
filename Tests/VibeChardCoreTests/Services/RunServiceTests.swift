@@ -70,7 +70,8 @@ final class RunServiceTests: XCTestCase {
             task: task,
             scheme: "App",
             configuration: "Debug",
-            simulatorUDID: "UDID-1"
+            simulatorUDID: "UDID-1",
+            simulatorPlatform: .iOS
         )
         XCTAssertEqual(lister.lastCwd, workspace.worktreePath(for: task))
         XCTAssertEqual(lister.lastScheme, "App")
@@ -115,6 +116,43 @@ final class RunServiceTests: XCTestCase {
             }
             XCTAssertEqual(scheme, "App")
         }
+    }
+
+    func test_resolveTarget_usesSimulatorPlatformInDestination() throws {
+        let workspace = makeWorkspace()
+        let fs = InMemoryFileSystem()
+        try fs.createDirectory(at: "/products/Debug-watchsimulator/WatchApp.app")
+        let lister = makeFakeSettings(#"""
+        [
+          {
+            "action": "build",
+            "target": "WatchApp",
+            "buildSettings": {
+              "PRODUCT_BUNDLE_IDENTIFIER": "com.example.watch",
+              "FULL_PRODUCT_NAME": "WatchApp.app",
+              "WRAPPER_NAME": "WatchApp.app",
+              "TARGET_BUILD_DIR": "/products/Debug-watchsimulator"
+            }
+          }
+        ]
+        """#)
+        let svc = RunService(
+            workspace: workspace,
+            simctl: FakeSimctl(),
+            settingsLister: lister,
+            fs: fs
+        )
+        _ = try svc.resolveTarget(
+            task: try TaskName("alpha"),
+            scheme: "WatchApp",
+            configuration: "Debug",
+            simulatorUDID: "WATCH-UDID-1",
+            simulatorPlatform: .watchOS
+        )
+        XCTAssertEqual(
+            lister.lastDestination,
+            "platform=watchOS Simulator,id=WATCH-UDID-1"
+        )
     }
 
     func test_resolveTarget_throws_runAppBundleNotFound_whenAppMissingOnDisk() throws {
@@ -268,7 +306,8 @@ final class RunServiceTests: XCTestCase {
             task: task,
             scheme: "App",
             configuration: "Debug",
-            simulatorUDID: "UDID-1"
+            simulatorUDID: "UDID-1",
+            simulatorPlatform: .iOS
         )
         XCTAssertEqual(lister.lastCwd, adoptedPath)
         XCTAssertEqual(
