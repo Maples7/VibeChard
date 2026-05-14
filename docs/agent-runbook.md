@@ -78,6 +78,14 @@ Run the app on the task's simulator clone:
 vch run fix-login --scheme MyApp --device "iPhone 16" -- -UITestMode
 ```
 
+If the requested device type and runtime are installed but no base
+simulator exists yet, pass the runtime explicitly. vch will create the
+base simulator before cloning it for the task:
+
+```sh
+vch test fix-login --scheme MyApp --device "iPhone 17" --runtime "iOS 26.5"
+```
+
 Open the worktree in Xcode for manual inspection or to read build logs:
 
 ```sh
@@ -147,6 +155,11 @@ If the task is abandoned:
 ```sh
 vch remove fix-login
 ```
+
+For tasks registered with `vch new --adopt-current`, `vch remove`
+unregisters vch and deletes only `.vch/` and `.agent-build/`. The
+external git worktree and branch remain in place; use git directly if
+the user also wants those removed.
 
 Clean up already-merged tasks:
 
