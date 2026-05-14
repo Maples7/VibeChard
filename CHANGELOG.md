@@ -13,6 +13,7 @@ The English README is the source of truth; localized READMEs may lag.
 
 ### Fixed
 - Added a recovery hint when `vch build` / `vch test` logs show `SBMainWorkspace Busy` / `Application failed preflight checks`, pointing users to `--erase-clone` or `vch sim erase`.
+- Fixed missing-base-device runtime hints so Apple Watch, Apple TV, and Apple Vision Pro templates suggest a matching installed runtime instead of a hardcoded iOS runtime (#119).
 
 ## 0.9.0 - 2026-05-14
 

@@ -1141,6 +1141,75 @@ final class SimulatorServiceTests: XCTestCase {
         }
     }
 
+    func testEnsureCloneSuggestsWatchRuntimeWhenAppleWatchBaseMissing() throws {
+        let (service, _, simctl) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: []
+        )
+        simctl.runtimes = [
+            SimRuntimeVersion(platform: .iOS, major: 26, minor: 5),
+            SimRuntimeVersion(platform: .watchOS, major: 26, minor: 5),
+        ]
+
+        XCTAssertThrowsError(try service.ensureClone(
+            task: try TaskName("alpha"),
+            requestedDevice: "Apple Watch Series 10 (46mm)",
+            requestedRuntime: nil
+        )) { err in
+            guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+            }
+            XCTAssertTrue(
+                name.contains("Try: --runtime 'watchOS 26.5'"),
+                "Apple Watch missing-template hint should suggest watchOS, got: \(name)"
+            )
+            XCTAssertFalse(
+                name.contains("iOS 26.5"),
+                "Apple Watch missing-template hint must not suggest iOS, got: \(name)"
+            )
+        }
+    }
+
+    func testEnsureCloneSuggestsPlatformRuntimeWhenNonIOSBaseMissing() throws {
+        let cases: [(device: String, expectedRuntime: String)] = [
+            ("Apple TV 4K (3rd generation)", "tvOS 18.0"),
+            ("Apple Vision Pro", "visionOS 2.5"),
+        ]
+
+        for c in cases {
+            let (service, _, simctl) = makeService(
+                seedingTask: "alpha",
+                seedingState: emptyState("alpha"),
+                devices: []
+            )
+            simctl.runtimes = [
+                SimRuntimeVersion(platform: .iOS, major: 26, minor: 5),
+                SimRuntimeVersion(platform: .watchOS, major: 26, minor: 5),
+                SimRuntimeVersion(platform: .tvOS, major: 18, minor: 0),
+                SimRuntimeVersion(platform: .visionOS, major: 2, minor: 5),
+            ]
+
+            XCTAssertThrowsError(try service.ensureClone(
+                task: try TaskName("alpha"),
+                requestedDevice: c.device,
+                requestedRuntime: nil
+            )) { err in
+                guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
+                    return XCTFail("expected simulatorTemplateNotFound, got \(err)")
+                }
+                XCTAssertTrue(
+                    name.contains("Try: --runtime '\(c.expectedRuntime)'"),
+                    "\(c.device) missing-template hint should suggest \(c.expectedRuntime), got: \(name)"
+                )
+                XCTAssertFalse(
+                    name.contains("iOS 26.5"),
+                    "\(c.device) missing-template hint must not suggest iOS, got: \(name)"
+                )
+            }
+        }
+    }
+
     func testPickNewestTemplateThrowsWhenAutoCreateFailsInvalidRuntime() throws {
         // User specifies an invalid runtime format.
         let (service, _, _) = makeService(
@@ -1234,6 +1303,7 @@ final class SimulatorServiceTests: XCTestCase {
 
 class FakeSimctl: SimctlClient, @unchecked Sendable {
     var devices: [SimDevice] = []
+    var runtimes: [SimRuntimeVersion] = []
     /// Used by `allDevices()`. Defaults to `devices` (so existing tests
     /// don't have to set both); set explicitly when you need them to
     /// differ (e.g. simulating an unavailable runtime).
@@ -1251,6 +1321,7 @@ class FakeSimctl: SimctlClient, @unchecked Sendable {
     var installCalls: [(udid: String, appPath: String)] = []
     var launchCalls: [(udid: String, bundleID: String, args: [String])] = []
     var availableThrows: VibeChardError?
+    var runtimesThrows: VibeChardError?
     var allThrows: VibeChardError?
     var cloneThrows: VibeChardError?
     var createThrows: VibeChardError?
@@ -1269,6 +1340,11 @@ class FakeSimctl: SimctlClient, @unchecked Sendable {
     func availableDevices() throws -> [SimDevice] {
         if let err = availableThrows { throw err }
         return devices
+    }
+
+    func availableRuntimes() throws -> [SimRuntimeVersion] {
+        if let err = runtimesThrows { throw err }
+        return runtimes
     }
 
     func allDevices() throws -> [SimDevice] {

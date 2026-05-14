@@ -54,6 +54,66 @@ final class SimctlListParserTests: XCTestCase {
                        .init(platform: .watchOS, major: 11, minor: 2))
     }
 
+    func testParsesAvailableRuntimes() throws {
+        let json = """
+        {
+          "runtimes": [
+            {
+              "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+              "name": "iOS 26.5",
+              "isAvailable": true
+            },
+            {
+              "identifier": "com.apple.CoreSimulator.SimRuntime.watchOS-26-5",
+              "name": "watchOS 26.5",
+              "isAvailable": true
+            },
+            {
+              "identifier": "com.apple.CoreSimulator.SimRuntime.tvOS-18-0",
+              "name": "tvOS 18.0",
+              "isAvailable": false
+            }
+          ]
+        }
+        """
+
+        let runtimes = try SimctlRuntimesParser.parse(json)
+
+        XCTAssertTrue(
+            runtimes.contains(.init(platform: .iOS, major: 26, minor: 5))
+        )
+        XCTAssertTrue(
+            runtimes.contains(.init(platform: .watchOS, major: 26, minor: 5))
+        )
+        XCTAssertFalse(
+            runtimes.contains(.init(platform: .tvOS, major: 18, minor: 0))
+        )
+    }
+
+    func testParsesRuntimeAvailabilityStringAndNameFallback() throws {
+        let json = """
+        {
+          "runtimes": [
+            {
+              "name": "visionOS 2.5",
+              "availability": "(available)"
+            },
+            {
+              "identifier": "com.apple.CoreSimulator.SimRuntime.tvOS-18-0",
+              "name": "tvOS 18.0",
+              "availability": "(unavailable, runtime profile not found)"
+            }
+          ]
+        }
+        """
+
+        let runtimes = try SimctlRuntimesParser.parse(json)
+
+        XCTAssertEqual(runtimes, [
+            SimRuntimeVersion(platform: .visionOS, major: 2, minor: 5),
+        ])
+    }
+
     func testRuntimeVersionParsesAllSupportedPlatforms() {
         XCTAssertEqual(
             SimRuntimeVersion.parse(runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-4"),
