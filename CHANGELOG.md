@@ -8,6 +8,13 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.8.1 - 2026-05-14
+
+### Fixed
+- Fixed Homebrew release automation so the tap receives the repository's
+  full formula template before version and checksum updates, preserving
+  the installed Agent runbook file used by `vch runbook` (#108).
+
 ## 0.8.0 - 2026-05-14
 
 ### Added

@@ -2,16 +2,16 @@ name: Release
 
 # Triggered when a `v*` tag is pushed (e.g. `v0.1.0`, `v0.2.0-beta1`).
 # Builds + tests release-mode binaries as a sanity check, creates the
-# GitHub Release, then bumps `Formula/vch.rb` in `maples7/homebrew-tap`
-# via mislav/bump-homebrew-formula-action so `brew install
-# maples7/tap/vch` picks up the new version automatically.
+# GitHub Release, then syncs `Formula/vch.rb` into
+# `maples7/homebrew-tap` with the release URL/checksum so
+# `brew install maples7/tap/vch` picks up the new version automatically.
 #
 # Required secret (set on the VibeChard repo, not the tap):
 #   HOMEBREW_TAP_TOKEN  — a PAT with `repo` scope on the tap repo.
 #                         The default GITHUB_TOKEN can't push to other
 #                         repositories, so this PAT is mandatory.
-#                         If unset, the tap-bump step is skipped and
-#                         the rest of the release still completes.
+#                         If unset, the release fails before publishing
+#                         artifacts so Homebrew can't silently lag behind.
 
 on:
   push:
@@ -27,13 +27,18 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 30
     env:
-      # Hoist the secret to a job-level env var so per-step `if:`
-      # expressions can compare against it (the `secrets` context is
-      # not allowed inside `if:`).
+      # Hoist the secret to a job-level env var so shell steps can verify it.
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Verify Homebrew tap token
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is required; refusing to publish a release without updating maples7/homebrew-tap." >&2
+            exit 1
+          fi
 
       - name: Verify tag matches source version
         run: |
@@ -94,6 +99,47 @@ jobs:
             }
           done
 
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: maples7/homebrew-tap
+          ref: master
+          path: .homebrew-tap
+          token: ${{ env.TAP_TOKEN }}
+
+      - name: Bump Homebrew formula in tap
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
+          sha256="$(curl -fsSL "$download_url" | shasum -a 256 | awk '{print $1}')"
+
+          cp Formula/vch.rb .homebrew-tap/vch.rb
+          ruby - .homebrew-tap/vch.rb "$download_url" "$version" "$sha256" <<'RUBY'
+          path, url, version, sha256 = ARGV
+          text = File.read(path)
+          text = text.sub(/^  url ".*"$/, %(  url "#{url}"))
+          text = text.sub(/^  version ".*"$/, %(  version "#{version}"))
+          text = text.sub(/^  sha256 ".*"$/, %(  sha256 "#{sha256}"))
+          File.write(path, text)
+          RUBY
+
+          cd .homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- vch.rb; then
+            echo "Tap formula already up to date."
+            exit 0
+          fi
+
+          git add vch.rb
+          git commit -m "vch ${version}" \
+            -m "Auto-bumped from VibeChard ${tag}."
+          git push origin master
+
       - name: Create GitHub Release
         # v3 = first Node 24 major (April 2026); inputs unchanged from v2.
         uses: softprops/action-gh-release@v3
@@ -102,30 +148,3 @@ jobs:
           draft: false
           # Anything like `v0.1.0-beta1` is treated as a prerelease.
           prerelease: ${{ contains(github.ref_name, '-') }}
-
-      - name: Bump Homebrew formula in tap
-        if: env.TAP_TOKEN != ''
-        # v4 = first Node 24 major (March 2026); inputs unchanged from v3.
-        uses: mislav/bump-homebrew-formula-action@v4
-        env:
-          # The action picks up COMMITTER_TOKEN from env to push the
-          # formula edit to the tap repo on the user's behalf.
-          COMMITTER_TOKEN: ${{ env.TAP_TOKEN }}
-        with:
-          formula-name: vch
-          # The tap keeps the formula at the repo root, not under
-          # Formula/. Both layouts are valid for a Homebrew tap.
-          formula-path: vch.rb
-          homebrew-tap: maples7/homebrew-tap
-          # Tap's default branch is `master` (matches VibeChard).
-          base-branch: master
-          # Auto-generated source tarball URL — matches the
-          # placeholder schema in tap's `vch.rb` so the action's
-          # URL/version/sha256 rewrite Just Works. The action
-          # downloads this URL itself to compute the sha256.
-          download-url: https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz
-          commit-message: |
-            {{formulaName}} {{version}}
-
-            Auto-bumped from VibeChard ${{ github.ref_name }} via
-            mislav/bump-homebrew-formula-action.
