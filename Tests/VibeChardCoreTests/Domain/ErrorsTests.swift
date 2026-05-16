@@ -4,6 +4,25 @@ import XCTest
 
 final class ErrorsTests: XCTestCase {
 
+    // MARK: - land diagnostics (#124)
+
+    func testLandMainNotOnIntoMessageNamesTargetAndCurrentBranch() {
+        let err = VibeChardError.landMainNotOnInto(
+            currentBranch: "v3.1.0",
+            want: "main"
+        )
+        let msg = err.description
+
+        XCTAssertTrue(msg.contains("target branch is 'main'"),
+                      "expected target branch in: \(msg)")
+        XCTAssertTrue(msg.contains("main worktree is currently on 'v3.1.0'"),
+                      "expected current branch in: \(msg)")
+        XCTAssertTrue(msg.contains("git switch main"),
+                      "expected direct switch hint in: \(msg)")
+        XCTAssertFalse(msg.contains("pass --into"),
+                       "must not suggest --into after the target has already been resolved; got: \(msg)")
+    }
+
     // MARK: - worktreeBusy (#65)
 
     func testWorktreeBusyMessageRecommendsForceFlag() {

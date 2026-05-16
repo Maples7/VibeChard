@@ -8,6 +8,11 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- Clarified `vch land` wrong-branch diagnostics so resolved `--into`
+  failures show the target branch and no longer suggest passing
+  `--into` again (#124).
+
 ## 0.9.1 - 2026-05-15
 
 ### Changed
