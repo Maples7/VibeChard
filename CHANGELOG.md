@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.9.2 - 2026-05-16
+
 ### Fixed
 - Clarified `vch land` wrong-branch diagnostics so resolved `--into`
   failures show the target branch and no longer suggest passing
