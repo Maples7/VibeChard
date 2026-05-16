@@ -198,7 +198,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "no log file at \(path) — \(hint)"
         case let .landMainNotOnInto(currentBranch, want):
             let cur = currentBranch.map { "'\($0)'" } ?? "(detached HEAD)"
-            return "refusing to land: main worktree is on \(cur), not '\(want)' (use `git switch \(want)` first or pass --into)"
+            return "refusing to land: target branch is '\(want)', but the main worktree is currently on \(cur); run `git switch \(want)` first from the main worktree"
         case let .landMergeOverlap(paths):
             let listing = paths.map { "  \($0)" }.joined(separator: "\n")
             return "refusing to land: \(paths.count) file\(paths.count == 1 ? "" : "s") in main worktree overlap the task branch's diff (stash or commit them, or pass --allow-dirty):\n\(listing)"
