@@ -49,6 +49,7 @@ public extension VibeChardError {
              .runBundleIDNotFound,
              .runAppBundleNotFound,
              .cleanBlockedByHolders,
+             .cleanBlockedByTestSession,
              .syncBaseUnresolved,
              .syncDirtyWorktree,
              .testNoPriorRun,

@@ -395,7 +395,7 @@ shows.
 ### `vch clean`
 
 ```text
-vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--json]
+vch clean <name> [--swiftpm] [--logs] [--all] [--dry-run] [--kill-stuck-tests] [--json]
 ```
 
 Delete the task's `DerivedData` + `ModuleCache` (default).
@@ -405,6 +405,10 @@ Delete the task's `DerivedData` + `ModuleCache` (default).
 - `--all` for everything.
 - Refuses if any process still has a file open inside `.agent-build/`
   or `.vch/` (e.g. an Xcode that's actively indexing).
+- Also refuses when it detects a task-scoped stuck `vch test`,
+  `xcodebuild test`, or XCTestDevices app host process. Re-run with
+  `--kill-stuck-tests` to send SIGTERM to those exact task-scoped PIDs
+  before cleaning.
 - `--dry-run` lists what would be removed.
 
 ### `vch doctor`

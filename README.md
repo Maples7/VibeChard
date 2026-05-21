@@ -242,7 +242,7 @@ template trap, and pruning merged tasks.
 | `vch remove <name>` | Delete vch-created worktree, branch, and sim clone; adopted tasks are unregistered only (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
 | `vch prune` | List or remove tasks whose branch is fully merged into its base (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |
 | `vch repair` | Re-sync `.vch/state.json` with what `git worktree list` actually shows. |
-| `vch clean <name>` | Delete the task's DerivedData / ModuleCache (`--swiftpm`, `--logs`, `--all`, `--dry-run`). |
+| `vch clean <name>` | Delete the task's DerivedData / ModuleCache (`--swiftpm`, `--logs`, `--all`, `--dry-run`, `--kill-stuck-tests`). |
 | `vch doctor` | Detect orphan sim clones, stale state, corrupt `state.json` (`--clean`, `--bug-report`, `--json`). |
 | `vch shellenv` | Emit `vch_cd` / `vch_new` / `vch_clean` shell helpers (bash/zsh). |
 | `vch completions install` | Install the shell completion script (`--shell`, `--print`, `--force`). |

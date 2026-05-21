@@ -230,7 +230,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 | `vch remove <name>` | vch 가 만든 worktree, 브랜치, 시뮬레이터 클론을 삭제; 채택한 작업은 vch 상태만 해제 (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
 | `vch prune` | base 에 완전히 머지된 작업을 나열/삭제 (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |
 | `vch repair` | `git worktree list` 실제 상태와 `.vch/state.json` 재동기화. |
-| `vch clean <name>` | 작업의 DerivedData / ModuleCache 삭제 (`--swiftpm`, `--logs`, `--all`, `--dry-run`). |
+| `vch clean <name>` | 작업의 DerivedData / ModuleCache 삭제 (`--swiftpm`, `--logs`, `--all`, `--dry-run`, `--kill-stuck-tests`). |
 | `vch doctor` | 고아 시뮬레이터 클론, 깨진 바인딩, 손상된 `state.json` 검출 (`--clean`, `--bug-report`, `--json`). |
 | `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` 셸 헬퍼 출력 (bash/zsh). |
 | `vch completions install` | `zsh` / `bash` / `fish` 자동완성 설치 (`--shell`, `--print`, `--force`). |

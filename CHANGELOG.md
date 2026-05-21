@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- `vch clean <task>` now detects task-scoped stuck `vch test`,
+  `xcodebuild test`, and XCTestDevices host processes before deleting
+  build caches, and `--kill-stuck-tests` can send SIGTERM to those
+  exact PIDs before cleaning (#127).
+
 ## 0.9.2 - 2026-05-16
 
 ### Fixed
