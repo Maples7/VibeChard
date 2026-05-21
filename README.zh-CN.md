@@ -226,7 +226,7 @@ warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板
 | `vch remove <name>` | 删除 vch 创建的 worktree、分支和模拟器克隆；接管的任务只注销 vch 状态（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
 | `vch prune` | 列出或删除已完全合并进 base 的任务（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
 | `vch repair` | 用 `git worktree list` 的实际状态重新对齐 `.vch/state.json`。 |
-| `vch clean <name>` | 删除任务的 DerivedData / ModuleCache（`--swiftpm`、`--logs`、`--all`、`--dry-run`）。 |
+| `vch clean <name>` | 删除任务的 DerivedData / ModuleCache（`--swiftpm`、`--logs`、`--all`、`--dry-run`、`--kill-stuck-tests`）。 |
 | `vch doctor` | 检测孤儿模拟器克隆、失效绑定、损坏的 `state.json`（`--clean`、`--bug-report`、`--json`）。 |
 | `vch shellenv` | 输出 `vch_cd` / `vch_new` / `vch_clean` shell 助手函数（bash/zsh）。 |
 | `vch completions install` | 安装 shell 补全脚本（`--shell`、`--print`、`--force`）。 |

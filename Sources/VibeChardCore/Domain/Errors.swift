@@ -96,6 +96,11 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// (typically `xcodebuild` mid-flight). Re-run after the build
     /// finishes; `--dry-run` always succeeds. (#26)
     case cleanBlockedByHolders(task: String, holders: [WorktreeHolder])
+    /// `vch clean` found a task-scoped `vch test`, `xcodebuild test`,
+    /// or XCTestDevices app host still running. This catches the case
+    /// where the task simulator is already Shutdown but XCTest's host
+    /// app remains alive outside the worktree tree. (#127)
+    case cleanBlockedByTestSession(task: String, processes: [TestSessionProcess])
     /// `vch sync` could not figure out which ref to rebase onto:
     /// nothing was passed via `--onto` and `state.json` has no
     /// recorded `baseBranch` (typically because `vch new` ran on a
@@ -220,6 +225,12 @@ public enum VibeChardError: Error, CustomStringConvertible {
             let lines = holders.map { "  \($0.pid)\t\($0.command)\t(\($0.samplePath))" }
             let body = lines.joined(separator: "\n")
             return "refusing to clean '\(task)': \(holders.count) process\(holders.count == 1 ? "" : "es") still holding files inside .agent-build/ or .vch/ (xcodebuild mid-run?) — wait for it to finish or pass --dry-run:\n\(body)"
+        case let .cleanBlockedByTestSession(task, processes):
+            let lines = processes.map { process in
+                "  \(process.pid)\t\(process.kind.rawValue)\t\(process.command)"
+            }
+            let body = lines.joined(separator: "\n")
+            return "refusing to clean '\(task)': detected \(processes.count) stuck test-session process\(processes.count == 1 ? "" : "es") for this task. These can keep XCTestDevices host apps alive even after the task simulator is Shutdown. Re-run with --kill-stuck-tests to send SIGTERM before cleaning, or inspect manually with ps/sample:\n\(body)"
         case let .syncBaseUnresolved(taskName):
             return "refusing to sync: cannot determine base for task '\(taskName)' (no recorded baseBranch in state.json — vch new on detached HEAD?); pass --onto <ref> explicitly"
         case let .syncDirtyWorktree(taskName, worktreePath):

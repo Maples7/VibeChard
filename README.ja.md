@@ -230,7 +230,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 | `vch remove <name>` | vch が作成した worktree、ブランチ、シミュレータークローンを削除。採用したタスクは vch 状態のみ解除（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
 | `vch prune` | base に完全マージ済みのタスクを一覧／削除（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
 | `vch repair` | `git worktree list` の実状に合わせて `.vch/state.json` を再同期。 |
-| `vch clean <name>` | タスクの DerivedData / ModuleCache を削除（`--swiftpm`、`--logs`、`--all`、`--dry-run`）。 |
+| `vch clean <name>` | タスクの DerivedData / ModuleCache を削除（`--swiftpm`、`--logs`、`--all`、`--dry-run`、`--kill-stuck-tests`）。 |
 | `vch doctor` | 孤児シミュレータークローン、不正バインディング、壊れた `state.json` を検出（`--clean`、`--bug-report`、`--json`）。 |
 | `vch shellenv` | `vch_cd` / `vch_new` / `vch_clean` の shell 補助関数を出力（bash/zsh）。 |
 | `vch completions install` | `zsh` / `bash` / `fish` の補完スクリプトをインストール（`--shell`、`--print`、`--force`）。 |

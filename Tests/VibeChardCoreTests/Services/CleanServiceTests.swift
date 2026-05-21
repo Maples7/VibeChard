@@ -16,7 +16,11 @@ final class CleanServiceTests: XCTestCase {
         seedModuleCache: Bool = true,
         seedSwiftPM: Bool = true,
         seedTestLog: Bool = false,
-        scanner: WorktreeHolderScanner? = nil
+        scanner: WorktreeHolderScanner? = nil,
+        testProcessScanner: StubTestProcessScanner? = nil,
+        processTerminator: StubTerminator? = nil,
+        scheme: String? = nil,
+        simulatorUDID: String? = nil
     ) -> (CleanService, InMemoryFileSystem) {
         let fs = InMemoryFileSystem()
         let workspace = Workspace(mainWorktreePath: mainRepo)
@@ -24,13 +28,38 @@ final class CleanServiceTests: XCTestCase {
         if let raw {
             let task = try! TaskName(raw)
             fs.seedDirectory(workspace.worktreePath(for: task))
+            fs.seedDirectory(workspace.vchDir(for: task))
             if seedDerived { fs.seedDirectory(derived) }
             if seedModuleCache { fs.seedDirectory(moduleCache) }
             if seedSwiftPM { fs.seedDirectory(swiftpm) }
             if seedTestLog { fs.seedFile(testLog, data: Data("xcodebuild...".utf8)) }
+            if scheme != nil || simulatorUDID != nil {
+                let state = TaskState(
+                    name: raw,
+                    branch: "agent/\(raw)",
+                    createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    baseRef: "abc1234",
+                    scheme: scheme,
+                    simulator: simulatorUDID.map {
+                        TaskState.SimulatorRecord(
+                            cloneUDID: $0,
+                            sourceUDID: "SOURCE-\($0)",
+                            name: "iPhone 16-vch-\(raw)",
+                            templateName: "iPhone 16"
+                        )
+                    }
+                )
+                fs.seedFile(workspace.statePath(for: task), data: try! state.jsonData())
+            }
         }
         return (
-            CleanService(workspace: workspace, fs: fs, holderScanner: scanner),
+            CleanService(
+                workspace: workspace,
+                fs: fs,
+                holderScanner: scanner,
+                testProcessScanner: testProcessScanner,
+                processTerminator: processTerminator
+            ),
             fs
         )
     }
@@ -194,6 +223,85 @@ final class CleanServiceTests: XCTestCase {
         XCTAssertEqual(result.removed, [derived, moduleCache])
     }
 
+    func testDryRunSucceedsEvenWhenStuckTestsPresent() throws {
+        let scanner = StubTestProcessScanner(processes: [
+            TestSessionProcess(pid: 2468, kind: .xctestHost, command: "BeanLedger.app/BeanLedger"),
+        ])
+        let terminator = StubTerminator()
+        let (service, _) = makeService(
+            testProcessScanner: scanner,
+            processTerminator: terminator,
+            scheme: "BeanLedger",
+            simulatorUDID: "SIM-1"
+        )
+
+        let result = try service.clean(
+            task: try TaskName("alpha"),
+            options: .init(dryRun: true)
+        )
+
+        XCTAssertTrue(scanner.queries.isEmpty)
+        XCTAssertTrue(terminator.terminatedPIDs.isEmpty)
+        XCTAssertEqual(result.terminatedTestProcesses, [])
+        XCTAssertEqual(result.removed, [derived, moduleCache])
+    }
+
+    // MARK: - stuck XCTestDevices test sessions (#127)
+
+    func testCleanRefusesWhenStuckTestSessionProcessActive() {
+        let scanner = StubTestProcessScanner(processes: [
+            TestSessionProcess(
+                pid: 2468,
+                kind: .xctestHost,
+                command: "/Users/me/Library/Developer/XCTestDevices/ABC/BeanLedger.app/BeanLedger"
+            ),
+        ])
+        let (service, fs) = makeService(
+            testProcessScanner: scanner,
+            scheme: "BeanLedger",
+            simulatorUDID: "SIM-1"
+        )
+
+        XCTAssertThrowsError(try service.clean(
+            task: try TaskName("alpha"),
+            options: .init()
+        )) { error in
+            guard case let VibeChardError.cleanBlockedByTestSession(task, processes) = error else {
+                return XCTFail("expected cleanBlockedByTestSession, got \(error)")
+            }
+            XCTAssertEqual(task, "alpha")
+            XCTAssertEqual(processes.map(\.pid), [2468])
+        }
+        XCTAssertEqual(scanner.queries.first?.scheme, "BeanLedger")
+        XCTAssertEqual(scanner.queries.first?.simulatorUDIDs, ["SIM-1"])
+        XCTAssertTrue(fs.directoryExists(at: derived))
+    }
+
+    func testKillStuckTestsTerminatesBeforeCleaning() throws {
+        let processes = [
+            TestSessionProcess(pid: 111, kind: .xcodebuild, command: "xcodebuild test"),
+            TestSessionProcess(pid: 222, kind: .xctestHost, command: "BeanLedger.app/BeanLedger"),
+        ]
+        let scanner = StubTestProcessScanner(processes: processes)
+        let terminator = StubTerminator()
+        let (service, fs) = makeService(
+            testProcessScanner: scanner,
+            processTerminator: terminator,
+            scheme: "BeanLedger",
+            simulatorUDID: "SIM-1"
+        )
+
+        let result = try service.clean(
+            task: try TaskName("alpha"),
+            options: .init(killStuckTests: true)
+        )
+
+        XCTAssertEqual(terminator.terminatedPIDs, [111, 222])
+        XCTAssertEqual(result.terminatedTestProcesses, processes)
+        XCTAssertEqual(result.removed, [derived, moduleCache])
+        XCTAssertFalse(fs.directoryExists(at: derived))
+    }
+
     func testTargetsListIsStableAndExpected() {
         let (service, _) = makeService()
         let task = try! TaskName("alpha")
@@ -255,5 +363,27 @@ private final class StubScanner: WorktreeHolderScanner, @unchecked Sendable {
     init(holders: [WorktreeHolder]) { self.holders = holders }
     func findHolders(of worktreePath: String) throws -> [WorktreeHolder] {
         holders
+    }
+}
+
+private final class StubTestProcessScanner: TestSessionProcessScanner, @unchecked Sendable {
+    let processes: [TestSessionProcess]
+    var queries: [TestSessionProcessQuery] = []
+
+    init(processes: [TestSessionProcess]) {
+        self.processes = processes
+    }
+
+    func findProcesses(for query: TestSessionProcessQuery) throws -> [TestSessionProcess] {
+        queries.append(query)
+        return processes
+    }
+}
+
+private final class StubTerminator: ProcessTerminator, @unchecked Sendable {
+    var terminatedPIDs: [Int32] = []
+
+    func terminate(pid: Int32) throws {
+        terminatedPIDs.append(pid)
     }
 }

@@ -32,6 +32,10 @@ struct CleanCommand: ParsableCommand {
     var dryRun: Bool = false
 
     @Flag(name: .long,
+          help: "Send SIGTERM to task-scoped stuck `vch test`, `xcodebuild test`, and XCTestDevices host processes before cleaning.")
+    var killStuckTests: Bool = false
+
+    @Flag(name: .long,
           help: "Emit machine-readable JSON instead of a human-friendly summary.")
     var json: Bool = false
 
@@ -43,12 +47,15 @@ struct CleanCommand: ParsableCommand {
 
             let service = CleanService(
                 workspace: workspace,
-                holderScanner: DiskWorktreeHolderScanner()
+                holderScanner: DiskWorktreeHolderScanner(),
+                testProcessScanner: DiskTestSessionProcessScanner(),
+                processTerminator: DiskProcessTerminator()
             )
             let options = CleanService.Options(
                 includeSwiftPM: swiftpm || all,
                 includeLogs:    logs    || all,
-                dryRun:         dryRun
+                dryRun:         dryRun,
+                killStuckTests: killStuckTests
             )
             let result = try service.clean(task: task, options: options)
 
@@ -69,6 +76,9 @@ struct CleanCommand: ParsableCommand {
             // entries — but be safe.
             print("nothing to clean for '\(result.task.raw)'")
             return
+        }
+        for process in result.terminatedTestProcesses {
+            CLIBridge.eprintln("terminated stuck test process: \(process.pid) \(process.kind.rawValue)")
         }
         if removed.isEmpty {
             print("nothing to clean for '\(result.task.raw)' (already empty)")
@@ -93,12 +103,21 @@ struct CleanCommand: ParsableCommand {
             let dryRun: Bool
             let removed: [String]
             let skipped: [String]
+            let terminatedStuckTestProcesses: [ProcessJSON]
+        }
+        struct ProcessJSON: Encodable {
+            let pid: Int32
+            let kind: String
+            let command: String
         }
         let payload = Payload(
             task: result.task.raw,
             dryRun: result.dryRun,
             removed: result.removed,
-            skipped: result.skipped
+            skipped: result.skipped,
+            terminatedStuckTestProcesses: result.terminatedTestProcesses.map {
+                ProcessJSON(pid: $0.pid, kind: $0.kind.rawValue, command: $0.command)
+            }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

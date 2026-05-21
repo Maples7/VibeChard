@@ -19,37 +19,47 @@ public struct CleanService: Sendable {
     /// the very first time a worktree is created so we don't shell
     /// out unnecessarily).
     public let holderScanner: WorktreeHolderScanner?
+    public let testProcessScanner: TestSessionProcessScanner?
+    public let processTerminator: ProcessTerminator?
 
     public init(
         workspace: Workspace,
         fs: FileSystem = DiskFileSystem(),
-        holderScanner: WorktreeHolderScanner? = nil
+        holderScanner: WorktreeHolderScanner? = nil,
+        testProcessScanner: TestSessionProcessScanner? = nil,
+        processTerminator: ProcessTerminator? = nil
     ) {
         self.workspace = workspace
         self.fs = fs
         self.holderScanner = holderScanner
+        self.testProcessScanner = testProcessScanner
+        self.processTerminator = processTerminator
     }
 
     public struct Options: Sendable, Equatable {
         public var includeSwiftPM: Bool
         public var includeLogs: Bool
         public var dryRun: Bool
+        public var killStuckTests: Bool
 
         public init(
             includeSwiftPM: Bool = false,
             includeLogs: Bool = false,
-            dryRun: Bool = false
+            dryRun: Bool = false,
+            killStuckTests: Bool = false
         ) {
             self.includeSwiftPM = includeSwiftPM
             self.includeLogs = includeLogs
             self.dryRun = dryRun
+            self.killStuckTests = killStuckTests
         }
 
         /// Convenience: `--all` on the CLI maps here.
         public static let all = Options(
             includeSwiftPM: true,
             includeLogs: true,
-            dryRun: false
+            dryRun: false,
+            killStuckTests: false
         )
     }
 
@@ -58,17 +68,20 @@ public struct CleanService: Sendable {
         public let dryRun: Bool
         public let removed: [String]
         public let skipped: [String]
+        public let terminatedTestProcesses: [TestSessionProcess]
 
         public init(
             task: TaskName,
             dryRun: Bool,
             removed: [String],
-            skipped: [String]
+            skipped: [String],
+            terminatedTestProcesses: [TestSessionProcess] = []
         ) {
             self.task = task
             self.dryRun = dryRun
             self.removed = removed
             self.skipped = skipped
+            self.terminatedTestProcesses = terminatedTestProcesses
         }
     }
 
@@ -104,7 +117,22 @@ public struct CleanService: Sendable {
         // Mid-flight check: only block when actually deleting. A
         // `--dry-run` should always succeed so users can plan a
         // cleanup ahead of a build finishing.
+        var terminatedTestProcesses: [TestSessionProcess] = []
         if !options.dryRun {
+            let stuckTestProcesses = findStuckTestProcesses(task: task)
+            if !stuckTestProcesses.isEmpty {
+                guard options.killStuckTests, let processTerminator else {
+                    throw VibeChardError.cleanBlockedByTestSession(
+                        task: task.raw,
+                        processes: stuckTestProcesses
+                    )
+                }
+                for process in stuckTestProcesses {
+                    try processTerminator.terminate(pid: process.pid)
+                    terminatedTestProcesses.append(process)
+                }
+            }
+
             let blockingHolders = (try? holderScanner?.findHolders(of: wt)) ?? []
             // Filter to holders that touch caches we'd actually
             // delete. An editor at the worktree root or a shell
@@ -140,7 +168,32 @@ public struct CleanService: Sendable {
             task: task,
             dryRun: options.dryRun,
             removed: removed,
-            skipped: skipped
+            skipped: skipped,
+            terminatedTestProcesses: terminatedTestProcesses
         )
+    }
+
+    private func findStuckTestProcesses(task: TaskName) -> [TestSessionProcess] {
+        guard let testProcessScanner else { return [] }
+        let state = lastKnownState(for: task)
+        let query = TestSessionProcessQuery(
+            taskName: task.raw,
+            worktreePath: workspace.worktreePath(for: task),
+            derivedDataPath: workspace.derivedDataDir(for: task),
+            resultBundlePath: workspace.resultBundlePath(for: task),
+            scheme: state?.scheme,
+            simulatorUDIDs: state?.allSimulators.map(\.cloneUDID) ?? []
+        )
+        return (try? testProcessScanner.findProcesses(for: query)) ?? []
+    }
+
+    private func lastKnownState(for task: TaskName) -> TaskState? {
+        let path = workspace.statePath(for: task)
+        guard fs.fileExists(at: path),
+              let data = try? fs.readFile(at: path),
+              let state = try? TaskState.parse(data) else {
+            return nil
+        }
+        return state
     }
 }
