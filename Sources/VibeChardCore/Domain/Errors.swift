@@ -42,6 +42,11 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// invent `platform=iOS Simulator` because that is exactly how
     /// platform/UDID mismatches reach xcodebuild.
     case simulatorPlatformUnknown(udid: String, name: String)
+    /// `simctl bootstatus -b` returned successfully for the bound
+    /// clone, but a follow-up `simctl list devices` check did not see
+    /// that clone in the Booted state. Failing here keeps xcodebuild
+    /// from waiting indefinitely on a broken destination. (#135)
+    case simulatorBootVerificationFailed(name: String, udid: String, state: String)
     /// `xcrun simctl clone` refused because the source template is in
     /// the `Booted` state. The user (or some other tool — Simulator.app,
     /// Xcode UI tests, an explicit `simctl boot`) booted the template
@@ -203,6 +208,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "task '\(task)' has no \(platform) simulator binding — pass --device <name> to create or select one. Existing bindings:\n\(listing)"
         case let .simulatorPlatformUnknown(udid, name):
             return "could not determine simulator platform for '\(name)' (\(udid.prefix(8))…) — pass --device <name> (and optionally --runtime <version>) to recreate or select a binding, or run `vch sim info` to inspect stale state"
+        case let .simulatorBootVerificationFailed(name, udid, state):
+            return "simulator clone '\(name)' (\(udid.prefix(8))…) did not become Booted after `xcrun simctl bootstatus \(udid) -b`; simctl still reports state \(state). Refusing to start xcodebuild because it can wait indefinitely on this destination. Try `xcrun simctl bootstatus \(udid) -b` manually, or reset the clone with `vch sim erase <task>` / `vch clean <task> --kill-stuck-tests` if a prior test process is stuck."
         case let .simulatorTemplateBooted(name, udid):
             let prefix = String(udid.prefix(8))
             return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it)"

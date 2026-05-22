@@ -312,9 +312,31 @@ public struct SimulatorService: Sendable {
     }
 
     /// `xcrun simctl bootstatus -b` — boots the device if shutdown,
-    /// then waits for boot completion. Idempotent.
-    public func bootIfNeeded(udid: String) throws {
+    /// then waits for boot completion. Idempotent. A follow-up state
+    /// check catches unhealthy CoreSimulator cases where bootstatus
+    /// returns but the destination remains Shutdown / unusable.
+    public func bootIfNeeded(udid: String, name: String? = nil) throws {
         try simctl.bootstatusBoot(udid: udid)
+        try verifyBooted(udid: udid, name: name ?? udid)
+    }
+
+    private func verifyBooted(udid: String, name: String) throws {
+        let devices = try simctl.allDevices()
+        guard let device = devices.first(where: { $0.udid == udid }) else {
+            throw VibeChardError.simulatorBootVerificationFailed(
+                name: name,
+                udid: udid,
+                state: "missing from simctl list"
+            )
+        }
+        guard let state = device.state else { return }
+        guard state == "Booted" else {
+            throw VibeChardError.simulatorBootVerificationFailed(
+                name: name,
+                udid: udid,
+                state: state
+            )
+        }
     }
 
     /// `xcrun simctl shutdown <udid>`. Idempotent at the simctl layer

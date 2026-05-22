@@ -456,7 +456,7 @@ final class VchCLISmokeTests: XCTestCase {
 
         let devicesJSON = """
         {"devices":{"\(runtime)":[{"udid":"SIM-1","name":"iPhone 16-vch-alpha",\
-        "state":"Shutdown","isAvailable":true}]}}
+        "state":"Booted","isAvailable":true}]}}
         """
         let toolEnv = try installFakeToolchain(
             rootDir: fixture.rootDir,
