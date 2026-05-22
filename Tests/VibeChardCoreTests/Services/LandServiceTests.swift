@@ -304,6 +304,42 @@ final class LandServiceTests: XCTestCase {
         XCTAssertEqual(world.git.mergeCalls.count, 0)
     }
 
+    // MARK: - merge conflict recovery guidance (#140)
+
+    func testMergeConflictWrapsExternalFailureWithRecoveryGuidance() throws {
+        let world = try makeHappyPathWorld()
+        world.git.mergeError = .externalCommandFailed(
+            cmd: "git merge --no-ff -m '<msg>' agent/alpha",
+            exitCode: 1,
+            stderr: "CONFLICT (content): Merge conflict in Apps/AlloCurve/AlloCurveTests/AlloCurveTests.swift"
+        )
+        world.git.unmergedPathsByCwd[world.workspace.mainWorktreePath] = [
+            "Apps/AlloCurve/AlloCurveTests/AlloCurveTests.swift",
+        ]
+        let service = LandService(
+            workspace: world.workspace,
+            git: world.git,
+            fs: world.fs,
+            clock: SystemClock()
+        )
+
+        XCTAssertThrowsError(try service.land(world.task, options: .init())) { error in
+            guard case let VibeChardError.landMergeConflict(name, worktreePath, paths) = error else {
+                return XCTFail("expected landMergeConflict, got \(error)")
+            }
+            XCTAssertEqual(name, "alpha")
+            XCTAssertEqual(worktreePath, world.workspace.mainWorktreePath)
+            XCTAssertEqual(paths, ["Apps/AlloCurve/AlloCurveTests/AlloCurveTests.swift"])
+            let rendered = String(describing: error)
+            XCTAssertTrue(rendered.contains("Base worktree is now in an unresolved git merge state"))
+            XCTAssertTrue(rendered.contains("git commit --no-edit"))
+            XCTAssertTrue(rendered.contains("vch prune --rm"))
+            XCTAssertTrue(rendered.contains("git merge --abort"))
+        }
+        XCTAssertTrue(world.git.removeCalls.isEmpty,
+                      "a conflicted merge must never auto-remove the task worktree")
+    }
+
     // MARK: - simulator-clone cleanup (#61)
 
     /// Helper: same as `makeHappyPathWorld`, but the seeded

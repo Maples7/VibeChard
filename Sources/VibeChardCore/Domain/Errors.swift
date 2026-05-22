@@ -76,6 +76,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// `vch land` could not find the task's branch — it was deleted
     /// outside vch, or `state.json` is stale. (#7)
     case landBranchMissing(branch: String)
+    /// `git merge` entered an unresolved merge state while landing a
+    /// task. The base worktree is intentionally left in that state so
+    /// the user can resolve, validate, and commit the merge. (#140)
+    case landMergeConflict(taskName: String, worktreePath: String, paths: [String])
     /// `vch land` was invoked with more than one strategy flag among
     /// `--no-ff`, `--ff-only`, `--squash`. (#7)
     case landConflictingStrategies
@@ -218,6 +222,26 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "refusing to land: cannot infer --into for task '\(taskName)' (no recorded base branch and main worktree has detached HEAD); pass --into <branch>"
         case let .landBranchMissing(branch):
             return "refusing to land: branch '\(branch)' does not exist (was it deleted outside vch?)"
+        case let .landMergeConflict(taskName, worktreePath, paths):
+            let listing = paths.isEmpty
+                ? "  <unknown>"
+                : paths.map { "  \($0)" }.joined(separator: "\n")
+            return """
+            merge conflict while landing task '\(taskName)'.
+            Base worktree is now in an unresolved git merge state at \(worktreePath).
+            Resolve conflicts, run validation, then commit the merge:
+              cd \(worktreePath)
+              git add <resolved-files>
+              git commit --no-edit
+            Then clean the task worktree:
+              vch prune --rm [--force if an editor still holds the worktree]
+            Or abort the merge:
+              cd \(worktreePath)
+              git merge --abort
+
+            Conflicted files:
+            \(listing)
+            """
         case .landConflictingStrategies:
             return "--no-ff, --ff-only, --squash are mutually exclusive"
         case .newConflictingCdExec:
