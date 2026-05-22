@@ -105,17 +105,24 @@ because past sessions repeatedly rediscovered them the hard way.
    the current code. The 5-locale sync rule (#10 above) applies to
    any substantive update — but the rule above it is that README
    must not lie about what the binary does.
-5. **Branch + PR workflow, no direct pushes to `master`.** Every
-   change — code, docs, tests, CHANGELOG — ships through the standard
-   GitHub feature-branch flow. Create a topic branch (e.g.
-   `feat/<topic>`, `fix/<topic>`, `docs/<topic>`), push it, and open a
-   pull request for review and CI before merging. Direct commits
-   pushed to `master` are rejected by the remote; do not try to
-   work around the protection (no `--force`, no admin overrides, no
-   detour branches that fast-forward `master` locally). If you find
-   yourself on `master` with local commits, move them onto a new
-   branch (`git switch -c <branch>` then `git push -u origin <branch>`)
-   and open a PR.
+5. **Worktree + PR workflow, no direct pushes to `master`.** Every
+   change — code, docs, tests, CHANGELOG — ships through a pull request
+   from a short-lived topic branch, but issue work must be implemented
+   inside a dedicated Git worktree created from up-to-date
+   `origin/master`:
+
+   ```sh
+   git worktree add -b fix/<issue>-<topic> \
+     ../VibeChard-fix-<issue>-<topic> origin/master
+   ```
+
+   Do the edits, commits, validation, push, and PR creation from that
+   worktree so multiple issues can be handled in parallel locally.
+   Direct commits pushed to `master` are rejected by the remote; do not
+   try to work around the protection (no `--force`, no admin overrides,
+   no detour branches that fast-forward `master` locally). If you find
+   yourself on `master` with local commits, stop and move that work into
+   a dedicated worktree-backed topic branch before opening a PR.
 6. **One list, one place.** If a constant, set, or table already
    exists in the codebase, do not retype it elsewhere — `import` it.
    Specifically: the set of reserved subcommand tokens lives in
