@@ -80,4 +80,36 @@ final class TestSessionProcessDetectorTests: XCTestCase {
 
         XCTAssertEqual(processes, [])
     }
+
+    // Regression for #131: an interrupted `vch build` can leave a
+    // task-scoped `xcodebuild build` orphan holding `build.db`. It
+    // must be detected for `vch clean --kill-stuck-tests` to recover.
+    func testDetectsTaskScopedXcodebuildBuildLeftover() {
+        let entries: [ProcessListEntry] = [
+            .init(
+                pid: 42,
+                command: "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -scheme BeanLedger -derivedDataPath \(derived) -clonedSourcePackagesDirPath \(worktree)/.agent-build/SwiftPM -destination platform=iOS\\ Simulator,arch=arm64,id=SIM-1 build"
+            ),
+            // Unrelated xcodebuild build against a different worktree
+            // must not be flagged.
+            .init(
+                pid: 43,
+                command: "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -scheme Other -derivedDataPath /tmp/Other build"
+            ),
+        ]
+
+        let processes = TestSessionProcessDetector.detect(
+            entries: entries,
+            taskName: "v310-audit-fixes",
+            worktreePath: worktree,
+            derivedDataPath: derived,
+            resultBundlePath: resultBundle,
+            scheme: "BeanLedger",
+            simulatorUDIDs: ["SIM-1"],
+            selfPID: 99
+        )
+
+        XCTAssertEqual(processes.map(\.pid), [42])
+        XCTAssertEqual(processes.map(\.kind), [.xcodebuild])
+    }
 }

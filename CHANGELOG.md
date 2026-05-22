@@ -8,6 +8,14 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Changed
+- `vch clean --kill-stuck-tests` now also detects and terminates
+  task-scoped `xcodebuild build` leftovers, not just `xcodebuild test`
+  / `vch test` / XCTestDevices host processes. Recovers the
+  `build.db: database is locked` failure that follows an interrupted
+  `vch build` whose `xcodebuild build` child outlived its parent
+  terminal (#131).
+
 ## 0.10.0 - 2026-05-22
 
 ### Added

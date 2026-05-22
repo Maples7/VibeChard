@@ -102,7 +102,7 @@ public enum TestSessionProcessDetector {
                 directMatches.append(TestSessionProcess(pid: entry.pid, kind: .vchTest, command: command))
                 continue
             }
-            if isXcodebuildTestCommand(
+            if isXcodebuildTaskCommand(
                 command,
                 worktreePath: worktreePath,
                 derivedDataPath: derivedDataPath,
@@ -132,14 +132,18 @@ public enum TestSessionProcessDetector {
         return command.contains(" test \(taskName)")
     }
 
-    private static func isXcodebuildTestCommand(
+    private static func isXcodebuildTaskCommand(
         _ command: String,
         worktreePath: String,
         derivedDataPath: String,
         resultBundlePath: String
     ) -> Bool {
         guard command.contains("xcodebuild") else { return false }
-        guard command.contains(" test") || command.hasSuffix("test") else { return false }
+        // Match any task-scoped xcodebuild invocation — `test`, `build`,
+        // `clean`, `archive`, etc. The build.db lock applies to any
+        // xcodebuild action that touches the same DerivedData, so a
+        // stale `xcodebuild build` from an interrupted `vch build`
+        // must be detected too (#131).
         let needles = [worktreePath, derivedDataPath, resultBundlePath]
             .filter { !$0.isEmpty }
         return needles.contains { command.contains($0) }
