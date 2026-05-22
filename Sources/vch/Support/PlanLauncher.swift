@@ -39,15 +39,6 @@ enum PlanLauncher {
         // Inherit stdin/stdout/stderr from vch — `Process` does this
         // when we leave the *Pipe* properties untouched.
 
-        // Suppress vch's own SIGINT/SIGTERM handling so Ctrl+C goes to
-        // the child only.
-        let prevInt  = signal(SIGINT,  SIG_IGN)
-        let prevTerm = signal(SIGTERM, SIG_IGN)
-        defer {
-            signal(SIGINT,  prevInt)
-            signal(SIGTERM, prevTerm)
-        }
-
         let started = Date()
         do {
             try proc.run()
@@ -58,6 +49,9 @@ enum PlanLauncher {
                 stderr: "failed to launch: \(error.localizedDescription)"
             )
         }
+        let restoreSignalForwarding = installChildSignalForwarding(to: proc)
+        defer { restoreSignalForwarding() }
+
         proc.waitUntilExit()
         let duration = Date().timeIntervalSince(started)
 
@@ -148,14 +142,7 @@ enum PlanLauncher {
             }
         }
 
-        // Suppress vch's own SIGINT/SIGTERM so Ctrl+C reaches the child.
-        let prevInt  = signal(SIGINT,  SIG_IGN)
-        let prevTerm = signal(SIGTERM, SIG_IGN)
-        defer {
-            signal(SIGINT,  prevInt)
-            signal(SIGTERM, prevTerm)
-            try? logFH.close()
-        }
+        defer { try? logFH.close() }
 
         let started = Date()
         do {
@@ -167,6 +154,8 @@ enum PlanLauncher {
                 stderr: "failed to launch: \(error.localizedDescription)"
             )
         }
+        let restoreSignalForwarding = installChildSignalForwarding(to: proc)
+        defer { restoreSignalForwarding() }
 
         let group = DispatchGroup()
         let queue = DispatchQueue.global(qos: .userInitiated)
@@ -204,6 +193,56 @@ enum PlanLauncher {
         }
         return RunResult(exitCode: code, durationSeconds: duration)
     }
+
+#if canImport(Darwin)
+    /// Forward hangups/interrupts/termination received by the wrapper to the
+    /// already-running child. Install this only after `Process.run()`:
+    /// ignored signal dispositions are inherited across exec, and a
+    /// child `xcodebuild` that ignores SIGTERM is exactly the orphaned
+    /// process failure mode this launcher must avoid.
+    private static func installChildSignalForwarding(to process: Process) -> () -> Void {
+        let previousHup = signal(SIGHUP, SIG_IGN)
+        let previousInt = signal(SIGINT, SIG_IGN)
+        let previousTerm = signal(SIGTERM, SIG_IGN)
+        let queue = DispatchQueue(label: "dev.vibechard.planlauncher.signals")
+
+        let hupSource = DispatchSource.makeSignalSource(signal: SIGHUP, queue: queue)
+        hupSource.setEventHandler {
+            forward(SIGHUP, to: process)
+        }
+        let intSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: queue)
+        intSource.setEventHandler {
+            forward(SIGINT, to: process)
+        }
+        let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
+        termSource.setEventHandler {
+            forward(SIGTERM, to: process)
+        }
+        hupSource.resume()
+        intSource.resume()
+        termSource.resume()
+
+        return {
+            hupSource.cancel()
+            intSource.cancel()
+            termSource.cancel()
+            signal(SIGHUP, previousHup)
+            signal(SIGINT, previousInt)
+            signal(SIGTERM, previousTerm)
+        }
+    }
+
+    private static func forward(_ signalNumber: Int32, to process: Process) {
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        guard pid > 0 else { return }
+        _ = Darwin.kill(pid, signalNumber)
+    }
+#else
+    private static func installChildSignalForwarding(to process: Process) -> () -> Void {
+        {}
+    }
+#endif
 
     /// `execve`-replace the vch process with the plan's argv.
     ///
