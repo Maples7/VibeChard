@@ -53,6 +53,7 @@ public final class TestOutputSummarizer {
     public enum Status: String, Sendable {
         case succeeded
         case failed
+        case packageResolutionFailed
         case unknown
     }
 
@@ -72,6 +73,10 @@ public final class TestOutputSummarizer {
 
     /// All recorded failures, in source order.
     public private(set) var failures: [Failure] = []
+
+    /// First top-level `xcodebuild: error:` line observed, when the
+    /// run failed before XCTest emitted a normal test summary.
+    public private(set) var firstXcodebuildErrorLine: String?
 
     public var totalPassed: Int { suites.reduce(0) { $0 + $1.passed } }
     public var totalFailed: Int { suites.reduce(0) { $0 + $1.failed } }
@@ -93,6 +98,18 @@ public final class TestOutputSummarizer {
             status = .failed
             return
         }
+
+        if line.contains("xcodebuild: error: Could not resolve package dependencies") {
+            status = .packageResolutionFailed
+            captureFirstXcodebuildError(line)
+            return
+        }
+
+        if line.hasPrefix("xcodebuild: error:") {
+            captureFirstXcodebuildError(line)
+            return
+        }
+
         // Suite open: `Test Suite 'X' started at ...`
         if let suiteName = match(line: line, pattern: Self.suiteStartedRegex, captureIndex: 1) {
             suiteStack.append(suiteName)
@@ -244,6 +261,8 @@ public final class TestOutputSummarizer {
         case .failed:
             let line = "✗ \(totalFailed) failed, \(totalPassed) passed in \(durStr)   ** TEST FAILED **"
             head = ANSI.wrap(line, .fail, enabled: colorize)
+        case .packageResolutionFailed:
+            head = ANSI.wrap("✗ package dependency resolution failed — see full log", .fail, enabled: colorize)
         case .unknown:
             // No `** TEST ... **` marker observed (e.g. compile error
             // or xcodebuild aborted mid-run). Don't fake a status —
@@ -251,6 +270,10 @@ public final class TestOutputSummarizer {
             head = "? test status unknown — see full log"
         }
         out.append(head)
+        if case .packageResolutionFailed = status,
+           let line = firstXcodebuildErrorLine {
+            out.append("    \(line)")
+        }
         if let path = logPath, !path.isEmpty {
             out.append("   → log: \(path)")
         }
@@ -279,6 +302,12 @@ public final class TestOutputSummarizer {
     private var pendingSuiteClose: Bool = false
     private var leafCounts: [String: Counts] = [:]
     private var pendingFailures: [String: [PendingFailure]] = [:]
+
+    private func captureFirstXcodebuildError(_ line: String) {
+        if firstXcodebuildErrorLine == nil {
+            firstXcodebuildErrorLine = line
+        }
+    }
 
     // MARK: - Regex helpers (cached compiled NSRegularExpression instances)
 

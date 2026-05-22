@@ -190,6 +190,21 @@ final class TestOutputSummarizerTests: XCTestCase {
         XCTAssertTrue(s.failures.isEmpty)
     }
 
+    func testPackageResolutionFailureGetsSpecificStatusAndMessage() {
+        let s = TestOutputSummarizer()
+        feed(s, """
+        Resolve Package Graph
+        xcodebuild: error: Could not resolve package dependencies:
+          Failed to clone repository https://github.com/ggruen/CloudKitSyncMonitor.git:
+            fatal: unable to access 'https://github.com/ggruen/CloudKitSyncMonitor.git/': LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443
+        """)
+
+        XCTAssertEqual(s.status, .packageResolutionFailed)
+        XCTAssertEqual(s.firstXcodebuildErrorLine,
+                       "xcodebuild: error: Could not resolve package dependencies:")
+        XCTAssertTrue(s.failures.isEmpty)
+    }
+
     // MARK: - Render
 
     func testRenderSuccessLineHasMarker() {
@@ -258,6 +273,25 @@ final class TestOutputSummarizerTests: XCTestCase {
         XCTAssertTrue(rendered.contains("? test status unknown"))
         XCTAssertTrue(rendered.contains("→ log: /tmp/x/.vch/last-test.log"),
                       "unknown branch must surface the log path; got: \(rendered)")
+    }
+
+    func testRenderPackageResolutionFailureShowsSpecificSummaryAndFirstXcodebuildError() {
+        let s = TestOutputSummarizer()
+        feed(s, """
+        xcodebuild: error: Could not resolve package dependencies:
+          Failed to clone repository https://github.com/example/Package.git:
+        """)
+
+        let rendered = s.render(colorize: false,
+                                logPath: "/tmp/x/.vch/last-test.log",
+                                resultBundlePath: "/tmp/x/.agent-build/Result.xcresult")
+
+        XCTAssertTrue(rendered.contains("✗ package dependency resolution failed — see full log"))
+        XCTAssertTrue(rendered.contains("xcodebuild: error: Could not resolve package dependencies:"))
+        XCTAssertFalse(rendered.contains("? test status unknown"),
+                       "package resolution failures should not be classified as unknown; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("→ log: /tmp/x/.vch/last-test.log"))
+        XCTAssertTrue(rendered.contains("→ result: /tmp/x/.agent-build/Result.xcresult"))
     }
 
     func testRenderKnownStatusAppendsArtifactPathHints() {
