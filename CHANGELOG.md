@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.10.1 - 2026-05-22
+
 ### Changed
 - `vch clean --kill-stuck-tests` now also detects and terminates
   task-scoped `xcodebuild build` leftovers, not just `xcodebuild test`
