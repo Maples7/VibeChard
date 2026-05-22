@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.10.0 - 2026-05-22
+
 ### Added
 - `vch clean <task>` now detects task-scoped stuck `vch test`,
   `xcodebuild test`, and XCTestDevices host processes before deleting
