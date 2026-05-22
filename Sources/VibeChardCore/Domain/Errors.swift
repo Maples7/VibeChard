@@ -96,10 +96,12 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// (typically `xcodebuild` mid-flight). Re-run after the build
     /// finishes; `--dry-run` always succeeds. (#26)
     case cleanBlockedByHolders(task: String, holders: [WorktreeHolder])
-    /// `vch clean` found a task-scoped `vch test`, `xcodebuild test`,
-    /// or XCTestDevices app host still running. This catches the case
-    /// where the task simulator is already Shutdown but XCTest's host
-    /// app remains alive outside the worktree tree. (#127)
+    /// `vch clean` found a task-scoped `vch test`, `xcodebuild`
+    /// (build or test), or XCTestDevices app host still running.
+    /// Catches both XCTest host apps that outlive a Shutdown task
+    /// simulator (#127) and stale `xcodebuild build` children
+    /// orphaned after `vch build` was interrupted (#131); both keep
+    /// the task's `build.db` locked.
     case cleanBlockedByTestSession(task: String, processes: [TestSessionProcess])
     /// `vch sync` could not figure out which ref to rebase onto:
     /// nothing was passed via `--onto` and `state.json` has no
@@ -230,7 +232,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
                 "  \(process.pid)\t\(process.kind.rawValue)\t\(process.command)"
             }
             let body = lines.joined(separator: "\n")
-            return "refusing to clean '\(task)': detected \(processes.count) stuck test-session process\(processes.count == 1 ? "" : "es") for this task. These can keep XCTestDevices host apps alive even after the task simulator is Shutdown. Re-run with --kill-stuck-tests to send SIGTERM before cleaning, or inspect manually with ps/sample:\n\(body)"
+            return "refusing to clean '\(task)': detected \(processes.count) stuck task-scoped process\(processes.count == 1 ? "" : "es") (e.g. `xcodebuild build`/`test` or XCTestDevices host) holding this task's caches. These can keep `build.db` locked or keep XCTestDevices host apps alive even after the task simulator is Shutdown. Re-run with --kill-stuck-tests to send SIGTERM before cleaning, or inspect manually with ps/sample:\n\(body)"
         case let .syncBaseUnresolved(taskName):
             return "refusing to sync: cannot determine base for task '\(taskName)' (no recorded baseBranch in state.json — vch new on detached HEAD?); pass --onto <ref> explicitly"
         case let .syncDirtyWorktree(taskName, worktreePath):
