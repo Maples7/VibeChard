@@ -15,6 +15,10 @@ The English README is the source of truth; localized READMEs may lag.
 - `vch list --git-status` now shows `MERGED dirty` instead of `MERGED yes`
   when a task branch has no unmerged commits but its worktree still has
   uncommitted changes (#146).
+- `vch test` now detects silent test-execution hangs after `xcodebuild` starts
+  running tests, terminates the child after `--test-execution-idle-timeout`
+  seconds (default: 300), and prints the task, PID, simulator state, log path,
+  result bundle path, command, and recovery hints (#151).
 - `vch build`, `vch test`, and `vch run` now verify that a bound simulator
   clone is actually `Booted` after `simctl bootstatus -b`; if CoreSimulator
   still reports `Shutdown` or the clone disappears, vch fails before launching

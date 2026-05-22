@@ -61,6 +61,11 @@ public final class TestOutputSummarizer {
     /// `** TEST FAILED **`. Defaults to `.unknown` until then.
     public private(set) var status: Status = .unknown
 
+    /// True once xcodebuild has moved beyond build/signing work and
+    /// started executing tests. Useful for classifying idle hangs that
+    /// happen after compilation has already succeeded.
+    public private(set) var reachedTestExecution: Bool = false
+
     /// Wall-clock duration reported by xcodebuild for the *root*
     /// `'All tests'` suite. nil when xcodebuild bails out before that
     /// line (e.g. compile failure).
@@ -89,6 +94,10 @@ public final class TestOutputSummarizer {
     /// single thread; do not feed concurrently.
     public func feed(_ rawLine: String) {
         let line = rawLine
+        if line.contains("Testing started") {
+            reachedTestExecution = true
+            return
+        }
         // Final status — check first so we don't waste time on regex.
         if line.contains("** TEST SUCCEEDED **") {
             status = .succeeded
@@ -112,6 +121,7 @@ public final class TestOutputSummarizer {
 
         // Suite open: `Test Suite 'X' started at ...`
         if let suiteName = match(line: line, pattern: Self.suiteStartedRegex, captureIndex: 1) {
+            reachedTestExecution = true
             suiteStack.append(suiteName)
             return
         }
