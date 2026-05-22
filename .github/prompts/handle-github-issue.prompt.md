@@ -1,6 +1,6 @@
 ---
 name: "Handle GitHub Issue"
-description: "Validate and process one GitHub issue end-to-end: close invalid issues, or implement valid work in a dedicated git worktree, run /pre-commit-review, open a PR with Closes #N, wait for CI, merge, and clean up the local worktree."
+description: "Validate and process one GitHub issue end-to-end: close invalid issues, or implement valid work in a dedicated git worktree, run /pre-commit-review, open a PR with Closes #N, wait for CI, merge, clean up the local worktree, and summarize the completed change."
 argument-hint: "<issue-number-or-url>"
 agent: "Issue Steward"
 tools: [read, edit, search, execute, todo, agent]
@@ -21,6 +21,7 @@ Follow the `Issue Steward` agent workflow exactly:
 7. Push the worktree's branch and open a GitHub PR whose body contains `Closes #<issue-number>`.
 8. Wait for PR CI. If CI fails, inspect the failure, fix it, push again, and wait for green checks.
 9. Merge the PR after required checks pass, using the repository's preferred merge method and without bypassing branch protection.
-10. After merge, confirm the issue worktree is clean, remove the local issue worktree, and delete the local topic branch when Git allows it.
+10. After merge, treat local cleanup as part of the task, not an optional follow-up: confirm the issue worktree is clean, remove the local issue worktree, and delete the local topic branch when Git allows it. If cleanup cannot be completed, clearly state the exact leftover worktree or branch and why it remains.
+11. Finish with a concise final summary that explains what changed, which tests or checks ran, the PR/issue outcome, and the worktree cleanup result.
 
-Keep going until the issue is closed as invalid, the PR is merged and the local worktree is cleaned up, or a genuine blocker prevents completion.
+Keep going until the issue is closed as invalid, the PR is merged, the local worktree cleanup is complete, and the final change summary has been reported, or a genuine blocker prevents completion.
