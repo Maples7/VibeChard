@@ -214,7 +214,7 @@ warm 模擬器模板的快速路徑、重置每任務的模擬器狀態、模板
 | `vch <name>` | 進入 worktree shell，隔離環境與 PATH shim 已就緒。 |
 | `vch exec <name> -- <cmd...>` | 在任務 worktree 內跑任意指令，隔離已生效。 |
 | `vch build [<name>]` | 跑 `xcodebuild build`，自動注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`；在任務 worktree 內可省略 `<name>`（`--scheme`、`--project`、`--workspace`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--verbose`）。 |
-| `vch test [<name>]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；在任務 worktree 內可省略 `<name>`，懶克隆模擬器（`--device`、`--project`、`--workspace`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`）。 |
+| `vch test [<name>]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；在任務 worktree 內可省略 `<name>`，懶克隆模擬器（`--device`、`--project`、`--workspace`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`、`--test-execution-idle-timeout`）。 |
 | `vch run [<name>]` | 在任務的模擬器克隆上建置、安裝並啟動 App；在任務 worktree 內可省略 `<name>`（`--project`、`--workspace`、`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
 | `vch logs <name>` | 印出任務最近一次建置/測試的完整 xcodebuild 紀錄（`--test`/`--build`）。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 明確管理任務的模擬器克隆；透過重複執行 `vch sim clone --device <name>`，一個任務可以同時持有多個克隆（每個平台一個，例如 iOS + watchOS）（[#99](https://github.com/Maples7/VibeChard/issues/99)）。 |

@@ -206,6 +206,12 @@ vch test [<name>] [flags] [-- xcodebuild-extras]
   failing tests expanded with file:line and assertion message) plus
   the full log and result bundle paths; `--verbose` mirrors
   xcodebuild's full output to the terminal.
+- `--test-execution-idle-timeout <seconds>` defaults to 300. Once
+  xcodebuild prints `Testing started` or a test suite starts, this
+  many seconds with no further xcodebuild output is treated as a
+  stalled test execution: vch terminates the child, exits 124, and
+  prints the task, PID, simulator state, log path, result bundle path,
+  command, and recovery hints. Use `0` to disable the watchdog.
 - The full firehose is always tee'd to `<wt>/.vch/last-test.log`.
 - Counts come from the xcresult bundle so swift-testing
   (`@Suite` / `@Test` / `#expect`) targets are reported correctly.

@@ -205,6 +205,22 @@ final class TestOutputSummarizerTests: XCTestCase {
         XCTAssertTrue(s.failures.isEmpty)
     }
 
+    func testRecognizesTestExecutionPhase() {
+        let s = TestOutputSummarizer()
+        XCTAssertFalse(s.reachedTestExecution)
+
+        feed(s, "Testing started")
+        XCTAssertTrue(s.reachedTestExecution)
+    }
+
+    func testRecognizesTestExecutionPhaseFromSuiteStart() {
+        let s = TestOutputSummarizer()
+        XCTAssertFalse(s.reachedTestExecution)
+
+        feed(s, "Test Suite 'All tests' started at t")
+        XCTAssertTrue(s.reachedTestExecution)
+    }
+
     // MARK: - Render
 
     func testRenderSuccessLineHasMarker() {

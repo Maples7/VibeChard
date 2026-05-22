@@ -24,6 +24,13 @@ enum PlanLauncher {
     struct RunResult {
         let exitCode: Int32
         let durationSeconds: Double
+        let idleTimeout: IdleTimeout?
+    }
+
+    struct IdleTimeout {
+        let pid: Int32
+        let idleSeconds: Double
+        let elapsedSeconds: Double
     }
 
     static func run(_ plan: ExecPlan) throws -> RunResult {
@@ -61,7 +68,7 @@ enum PlanLauncher {
         case .uncaughtSignal: code = 128 + proc.terminationStatus
         @unknown default:     code = proc.terminationStatus
         }
-        return RunResult(exitCode: code, durationSeconds: duration)
+        return RunResult(exitCode: code, durationSeconds: duration, idleTimeout: nil)
     }
 
     /// Tee variant used by `vch test` (#9). Pipes the child's stdout
@@ -85,6 +92,8 @@ enum PlanLauncher {
         _ plan: ExecPlan,
         logURL: URL,
         mirror: Bool,
+        idleTimeout: TimeInterval? = nil,
+        shouldEnforceIdleTimeout: @escaping () -> Bool = { true },
         onLine: @escaping (String) -> Void
     ) throws -> RunResult {
         // Make sure the parent dir exists.
@@ -118,11 +127,25 @@ enum PlanLauncher {
         // line came from. NSLock guards against the (theoretical)
         // case where stdout and stderr drain on different threads.
         let lock = NSLock()
+        let activityLock = NSLock()
         var buffer = Data()
+        var lastActivityAt = Date()
+        func markActivity() {
+            activityLock.lock()
+            lastActivityAt = Date()
+            activityLock.unlock()
+        }
+        func secondsSinceLastActivity() -> Double {
+            activityLock.lock()
+            let idle = Date().timeIntervalSince(lastActivityAt)
+            activityLock.unlock()
+            return idle
+        }
         let drainOneStream: (FileHandle, FileHandle?) -> Void = { fh, mirrorFH in
             while true {
                 let chunk = fh.availableData
                 if chunk.isEmpty { return }
+                markActivity()
                 // Persist to log + optionally mirror, both unconditional.
                 try? logFH.write(contentsOf: chunk)
                 if let mirrorFH {
@@ -170,6 +193,32 @@ enum PlanLauncher {
             drainOneStream(errPipe.fileHandleForReading, mirror ? FileHandle.standardError : nil)
         }
 
+        var idleTimeoutResult: IdleTimeout?
+        if let idleTimeout, idleTimeout > 0 {
+            // A lightweight polling loop keeps this path independent of
+            // RunLoop state while the pipe-drain workers own stream reads.
+            let checkInterval = min(max(idleTimeout / 10, 0.05), 1.0)
+            while proc.isRunning {
+                let idleSeconds = secondsSinceLastActivity()
+                // The caller decides when an idle period is meaningful;
+                // for `vch test`, this stays false until test execution starts.
+                if shouldEnforceIdleTimeout(), idleSeconds >= idleTimeout {
+                    idleTimeoutResult = IdleTimeout(
+                        pid: proc.processIdentifier,
+                        idleSeconds: idleSeconds,
+                        elapsedSeconds: Date().timeIntervalSince(started)
+                    )
+                    proc.terminate()
+                    if !waitForExit(proc, timeout: 2.0) {
+#if canImport(Darwin)
+                        _ = Darwin.kill(proc.processIdentifier, SIGKILL)
+#endif
+                    }
+                    break
+                }
+                Thread.sleep(forTimeInterval: checkInterval)
+            }
+        }
         proc.waitUntilExit()
         group.wait()
 
@@ -186,12 +235,24 @@ enum PlanLauncher {
 
         let duration = Date().timeIntervalSince(started)
         let code: Int32
-        switch proc.terminationReason {
-        case .exit:           code = proc.terminationStatus
-        case .uncaughtSignal: code = 128 + proc.terminationStatus
-        @unknown default:     code = proc.terminationStatus
+        if idleTimeoutResult != nil {
+            code = 124
+        } else {
+            switch proc.terminationReason {
+            case .exit:           code = proc.terminationStatus
+            case .uncaughtSignal: code = 128 + proc.terminationStatus
+            @unknown default:     code = proc.terminationStatus
+            }
         }
-        return RunResult(exitCode: code, durationSeconds: duration)
+        return RunResult(exitCode: code, durationSeconds: duration, idleTimeout: idleTimeoutResult)
+    }
+
+    private static func waitForExit(_ process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return !process.isRunning
     }
 
 #if canImport(Darwin)

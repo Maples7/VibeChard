@@ -558,6 +558,47 @@ final class VchCLISmokeTests: XCTestCase {
         XCTAssertEqual(state.lastTest?.extraArgs, [])
     }
 
+    func testTestClassifiesIdleHangAfterTestingStarts() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let toolEnv = try installLongRunningXcodebuild(
+            rootDir: fixture.rootDir,
+            prelude: "Testing started"
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+        let terminatedPath = fixture.rootDir.appendingPathComponent("xcodebuild-terminated").path
+
+        let result = try runVch(
+            [
+                "test", "alpha",
+                "--scheme", "App",
+                "--no-sim",
+                "--test-execution-idle-timeout", "0.2",
+            ],
+            cwd: fixture.repoPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, 124, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: terminatedPath), "xcodebuild was not terminated")
+        XCTAssertTrue(result.stderr.contains("test execution did not complete"), result.stderr)
+        XCTAssertTrue(result.stderr.contains("task: alpha"), result.stderr)
+        XCTAssertTrue(result.stderr.contains("xcodebuild PID:"), result.stderr)
+        XCTAssertTrue(result.stderr.contains("simulator: none resolved by vch"), result.stderr)
+        XCTAssertTrue(result.stderr.contains("vch clean alpha --kill-stuck-tests"), result.stderr)
+        XCTAssertTrue(result.stderr.contains("last-test.log"), result.stderr)
+        XCTAssertTrue(result.stderr.contains("Result.xcresult"), result.stderr)
+        XCTAssertTrue(result.stdout.contains("? test status unknown"), result.stdout)
+    }
+
     func testTestTerminatesChildXcodebuildWhenWrapperGetsSIGTERM() throws {
         try assertTestTerminatesChildXcodebuildWhenWrapperGetsSignal(
             SIGTERM,
@@ -1128,12 +1169,22 @@ final class VchCLISmokeTests: XCTestCase {
         ]
     }
 
-    private func installLongRunningXcodebuild(rootDir: URL) throws -> [String: String] {
+    private func installLongRunningXcodebuild(rootDir: URL, prelude: String = "") throws -> [String: String] {
         let pathBin = rootDir.appendingPathComponent("fake-bin")
         try FileManager.default.createDirectory(
             at: pathBin,
             withIntermediateDirectories: true
         )
+        let preludeBlock: String
+        if prelude.isEmpty {
+            preludeBlock = ""
+        } else {
+            preludeBlock = """
+            cat <<'EOF'
+            \(prelude)
+            EOF
+            """
+        }
         try writeExecutable(
             pathBin.appendingPathComponent("xcodebuild"),
             body: """
@@ -1142,6 +1193,7 @@ final class VchCLISmokeTests: XCTestCase {
             trap 'touch "$VCH_SMOKE_XCODEBUILD_TERMINATED"; exit 129' HUP
             trap 'touch "$VCH_SMOKE_XCODEBUILD_TERMINATED"; exit 143' TERM
             trap 'touch "$VCH_SMOKE_XCODEBUILD_TERMINATED"; exit 130' INT
+            \(preludeBlock)
             touch "$VCH_SMOKE_XCODEBUILD_READY"
             while :; do
               sleep 1

@@ -25,6 +25,7 @@ private enum BuildOrTest {
         eraseClone: Bool = false,
         shutdownTemplate: Bool = false,
         verbose: Bool = false,
+        testExecutionIdleTimeout: Double? = nil,
         extraArgs: [String]
     ) throws {
         let cwd = FileManager.default.currentDirectoryPath
@@ -184,12 +185,36 @@ private enum BuildOrTest {
             logURL = URL(fileURLWithPath: workspace.lastTestLogPath(for: task))
             CLIBridge.eprintln("→ running tests\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
             let s = TestOutputSummarizer()
+            let summarizerLock = NSLock()
             result = try PlanLauncher.runTee(
                 plan,
                 logURL: logURL,
                 mirror: verbose,
-                onLine: { s.feed($0) }
+                idleTimeout: testExecutionIdleTimeout,
+                shouldEnforceIdleTimeout: {
+                    summarizerLock.lock()
+                    let reached = s.reachedTestExecution
+                    summarizerLock.unlock()
+                    return reached
+                },
+                onLine: {
+                    summarizerLock.lock()
+                    s.feed($0)
+                    summarizerLock.unlock()
+                }
             )
+            if let timeout = result.idleTimeout {
+                CLIBridge.eprintln(TestExecutionHangDiagnostic(
+                    taskName: task.raw,
+                    pid: timeout.pid,
+                    idleSeconds: timeout.idleSeconds,
+                    elapsedSeconds: timeout.elapsedSeconds,
+                    command: plan.argv,
+                    simulator: simulatorSnapshot(resolved: resolved, simulator: simulator),
+                    logPath: logURL.path,
+                    resultBundlePath: workspace.resultBundlePath(for: task)
+                ).render())
+            }
             // Render concise summary unconditionally — it's a useful
             // recap even in verbose mode (a 100-test firehose makes
             // the final ✓/✗ line easy to lose). Stdout (not stderr)
@@ -273,6 +298,22 @@ private enum BuildOrTest {
         guard let rt else { return "" }
         return ", runtime: \(rt.dottedLabel)"
     }
+
+    private static func simulatorSnapshot(
+        resolved: SimulatorService.Resolved?,
+        simulator: SimulatorService
+    ) -> TestExecutionHangDiagnostic.Simulator? {
+        guard let resolved else { return nil }
+        let state = (try? simulator.simctl.allDevices()
+            .first { $0.udid == resolved.udid }?
+            .state) ?? "unknown"
+        return TestExecutionHangDiagnostic.Simulator(
+            name: resolved.name,
+            udid: resolved.udid,
+            state: state,
+            runtime: resolved.runtime?.dottedLabel
+        )
+    }
 }
 
 // MARK: - vch build
@@ -336,6 +377,7 @@ struct BuildCommand: ParsableCommand {
                 eraseClone: eraseClone,
                 shutdownTemplate: shutdownTemplate,
                 verbose: verbose,
+                testExecutionIdleTimeout: nil,
                 extraArgs: extraArgs
             )
         }
@@ -407,6 +449,9 @@ struct TestCommand: ParsableCommand {
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-test.log (see `vch logs <name>`).")
     var verbose: Bool = false
 
+    @Option(name: .long, help: "Fail with diagnostics after this many seconds with no xcodebuild output once test execution has started. Use 0 to disable. Default: 300.")
+    var testExecutionIdleTimeout: Double = 300
+
     @Flag(name: .long, help: "Replay the last `vch test <name>` invocation verbatim, reusing the recorded extra args.")
     var rerun: Bool = false
 
@@ -427,6 +472,9 @@ struct TestCommand: ParsableCommand {
 
     func run() throws {
         try CLIBridge.run {
+            guard testExecutionIdleTimeout >= 0 else {
+                throw ValidationError("--test-execution-idle-timeout must be greater than or equal to 0")
+            }
             // #46: --rerun / --rerun-failed are mutually exclusive
             // with each other and with positional extra args.
             //
@@ -513,6 +561,7 @@ struct TestCommand: ParsableCommand {
                 eraseClone: eraseClone,
                 shutdownTemplate: shutdownTemplate,
                 verbose: verbose,
+                testExecutionIdleTimeout: testExecutionIdleTimeout > 0 ? testExecutionIdleTimeout : nil,
                 extraArgs: effectiveExtraArgs
             )
         }
