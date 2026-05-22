@@ -12,6 +12,7 @@
 // to the test bundle, fork it under controlled args.
 
 import Foundation
+import Darwin
 import XCTest
 @testable import VibeChardCore
 
@@ -557,6 +558,75 @@ final class VchCLISmokeTests: XCTestCase {
         XCTAssertEqual(state.lastTest?.extraArgs, [])
     }
 
+    func testTestTerminatesChildXcodebuildWhenWrapperGetsSIGTERM() throws {
+        try assertTestTerminatesChildXcodebuildWhenWrapperGetsSignal(
+            SIGTERM,
+            expectedStatus: 143
+        )
+    }
+
+    func testTestTerminatesChildXcodebuildWhenWrapperGetsSIGHUP() throws {
+        try assertTestTerminatesChildXcodebuildWhenWrapperGetsSignal(
+            SIGHUP,
+            expectedStatus: 129
+        )
+    }
+
+    private func assertTestTerminatesChildXcodebuildWhenWrapperGetsSignal(
+        _ signalNumber: Int32,
+        expectedStatus: Int32
+    ) throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let toolEnv = try installLongRunningXcodebuild(rootDir: fixture.rootDir)
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+        let readyPath = fixture.rootDir.appendingPathComponent("xcodebuild-ready").path
+        let terminatedPath = fixture.rootDir.appendingPathComponent("xcodebuild-terminated").path
+        let pidPath = fixture.rootDir.appendingPathComponent("xcodebuild.pid").path
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: try Self.vchPath())
+        proc.arguments = ["test", "alpha", "--scheme", "App", "--no-sim"]
+        proc.currentDirectoryURL = URL(fileURLWithPath: fixture.repoPath)
+        proc.environment = env
+        let out = Pipe(), err = Pipe()
+        proc.standardOutput = out
+        proc.standardError = err
+
+        try proc.run()
+        defer {
+            if proc.isRunning {
+                proc.terminate()
+                waitUntilProcessExits(proc, timeout: 2)
+            }
+            if let childPID = readPID(at: pidPath), isProcessRunning(childPID) {
+                _ = Darwin.kill(childPID, SIGTERM)
+                Thread.sleep(forTimeInterval: 0.2)
+                if isProcessRunning(childPID) {
+                    _ = Darwin.kill(childPID, SIGKILL)
+                }
+            }
+        }
+
+        XCTAssertTrue(waitForFile(at: readyPath, timeout: 5), "xcodebuild did not start")
+        _ = Darwin.kill(proc.processIdentifier, signalNumber)
+        XCTAssertTrue(waitUntilProcessExits(proc, timeout: 5), "vch did not exit after signal \(signalNumber)")
+        XCTAssertTrue(waitForFile(at: terminatedPath, timeout: 2), "xcodebuild did not receive signal \(signalNumber)")
+
+        let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTAssertEqual(proc.terminationReason, .exit, "stdout: \(stdout)\nstderr: \(stderr)")
+        XCTAssertEqual(proc.terminationStatus, expectedStatus, "stdout: \(stdout)\nstderr: \(stderr)")
+    }
+
     // MARK: - doctor JSON integration
 
     func testDoctorJSONReportsWorktreePruneAndStaleBindingHint() throws {
@@ -1023,6 +1093,34 @@ final class VchCLISmokeTests: XCTestCase {
         ]
     }
 
+    private func installLongRunningXcodebuild(rootDir: URL) throws -> [String: String] {
+        let pathBin = rootDir.appendingPathComponent("fake-bin")
+        try FileManager.default.createDirectory(
+            at: pathBin,
+            withIntermediateDirectories: true
+        )
+        try writeExecutable(
+            pathBin.appendingPathComponent("xcodebuild"),
+            body: """
+            #!/bin/sh
+            echo $$ > "$VCH_SMOKE_XCODEBUILD_PID"
+            trap 'touch "$VCH_SMOKE_XCODEBUILD_TERMINATED"; exit 129' HUP
+            trap 'touch "$VCH_SMOKE_XCODEBUILD_TERMINATED"; exit 143' TERM
+            trap 'touch "$VCH_SMOKE_XCODEBUILD_TERMINATED"; exit 130' INT
+            touch "$VCH_SMOKE_XCODEBUILD_READY"
+            while :; do
+              sleep 1
+            done
+            """
+        )
+        return [
+            "PATH": "\(pathBin.path):/usr/bin:/bin",
+            "VCH_SMOKE_XCODEBUILD_PID": rootDir.appendingPathComponent("xcodebuild.pid").path,
+            "VCH_SMOKE_XCODEBUILD_READY": rootDir.appendingPathComponent("xcodebuild-ready").path,
+            "VCH_SMOKE_XCODEBUILD_TERMINATED": rootDir.appendingPathComponent("xcodebuild-terminated").path,
+        ]
+    }
+
     private func writeExecutable(_ url: URL, body: String) throws {
         try body.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(
@@ -1042,6 +1140,38 @@ final class VchCLISmokeTests: XCTestCase {
             "GIT_COMMITTER_NAME": "vch test",
             "GIT_COMMITTER_EMAIL": "vch@test.local",
         ]
+    }
+
+    private func waitForFile(at path: String, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if FileManager.default.fileExists(atPath: path) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    @discardableResult
+    private func waitUntilProcessExits(_ process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return !process.isRunning
+    }
+
+    private func readPID(at path: String) -> Int32? {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        return Int32(text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func isProcessRunning(_ pid: Int32) -> Bool {
+        if Darwin.kill(pid, 0) == 0 { return true }
+        return errno == EPERM
     }
 
     private func makeAdoptCurrentFixture(

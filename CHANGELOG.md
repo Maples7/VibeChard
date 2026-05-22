@@ -22,6 +22,11 @@ The English README is the source of truth; localized READMEs may lag.
   destination hint when the xcodebuild log indicates no usable
   destination was selected (#134).
 
+### Fixed
+- `vch build` / `vch test` now forward SIGHUP/SIGINT/SIGTERM to the active
+  `xcodebuild` child instead of letting interrupted wrapper terminals
+  leave task-scoped build or test processes behind (#135).
+
 ## 0.10.1 - 2026-05-22
 
 ### Changed
