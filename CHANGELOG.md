@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.11.0 - 2026-05-22
+
 ### Added
 - `vch build`, `vch test`, and `vch run` can now omit `<name>` when
   invoked from inside a vch-managed task worktree, inferring the task
