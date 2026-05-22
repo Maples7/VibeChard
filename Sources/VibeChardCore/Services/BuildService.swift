@@ -288,7 +288,7 @@ public struct BuildService: Sendable {
     /// destination to the booted device. Idempotent.
     public func bootSimulator(_ resolved: SimulatorService.Resolved) throws {
         guard let simulator else { return }
-        try simulator.bootIfNeeded(udid: resolved.udid)
+        try simulator.bootIfNeeded(udid: resolved.udid, name: resolved.name)
     }
 
     // MARK: - record outcome

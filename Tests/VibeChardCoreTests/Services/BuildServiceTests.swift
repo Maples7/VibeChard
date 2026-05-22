@@ -394,9 +394,51 @@ final class BuildServiceTests: XCTestCase {
         fs.seedFile(workspace.statePath(for: task),
                     data: try emptyState("alpha").jsonData())
         let simctl = FakeSimctl()
+        simctl.devices = [SimDevice(
+            udid: "U-1",
+            name: "iPhone 16-vch-alpha",
+            runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+            runtimeVersion: .init(major: 26, minor: 5),
+            isAvailable: true,
+            state: "Booted"
+        )]
         let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
         let service = BuildService(workspace: workspace, fs: fs, simulator: sim)
-        try service.bootSimulator(.init(udid: "U-1", name: "x", createdNow: false))
+        try service.bootSimulator(.init(udid: "U-1", name: "iPhone 16-vch-alpha", createdNow: false))
+        XCTAssertEqual(simctl.bootCalls, ["U-1"])
+    }
+
+    func testBootSimulatorFailsWhenCloneRemainsShutdownAfterBootstatus() throws {
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        let task = try TaskName("alpha")
+        fs.seedDirectory(workspace.worktreePath(for: task))
+        fs.seedDirectory(workspace.vchDir(for: task))
+        fs.seedFile(workspace.statePath(for: task),
+                    data: try emptyState("alpha").jsonData())
+        let simctl = FakeSimctl()
+        simctl.devices = [SimDevice(
+            udid: "U-1",
+            name: "iPhone 16-vch-alpha",
+            runtime: "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+            runtimeVersion: .init(major: 26, minor: 5),
+            isAvailable: true,
+            state: "Shutdown"
+        )]
+        let sim = SimulatorService(workspace: workspace, simctl: simctl, fs: fs)
+        let service = BuildService(workspace: workspace, fs: fs, simulator: sim)
+
+        XCTAssertThrowsError(try service.bootSimulator(.init(
+            udid: "U-1",
+            name: "iPhone 16-vch-alpha",
+            createdNow: false
+        ))) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("iPhone 16-vch-alpha"), message)
+            XCTAssertTrue(message.contains("Shutdown"), message)
+            XCTAssertTrue(message.contains("xcrun simctl bootstatus U-1 -b"), message)
+        }
         XCTAssertEqual(simctl.bootCalls, ["U-1"])
     }
 
