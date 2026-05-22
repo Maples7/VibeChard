@@ -377,7 +377,7 @@ final class VchCLISmokeTests: XCTestCase {
         XCTAssertTrue(result.stderr.contains("hint:"))
         XCTAssertTrue(result.stderr.contains("xcodebuild"))
         XCTAssertTrue(
-            result.stderr.contains("vch build <name>"),
+            result.stderr.contains("vch build [<name>]"),
             "expected hint to name the user's actual subcommand; got: \(result.stderr)"
         )
     }
@@ -486,6 +486,75 @@ final class VchCLISmokeTests: XCTestCase {
             result.stdout.contains("hint: xcodebuild reported SBMainWorkspace Busy"),
             "recovery hint must go to stderr, not stdout; stdout: \(result.stdout)"
         )
+    }
+
+    func testBuildInsideManagedTaskWorktreeCanOmitTaskName() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let toolEnv = try installFakeToolchain(
+            rootDir: fixture.rootDir,
+            devicesJSON: #"{"devices":{}}"#,
+            xcodebuildStderr: "",
+            xcodebuildExitCode: 0
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+
+        let result = try runVch(
+            ["build", "--scheme", "App", "--no-sim"],
+            cwd: fixture.taskPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, 0, "stderr: \(result.stderr)")
+        let state = try TaskState.parse(Data(
+            contentsOf: URL(fileURLWithPath: "\(fixture.taskPath)/.vch/state.json")
+        ))
+        XCTAssertEqual(state.name, "alpha")
+        XCTAssertEqual(state.scheme, "App")
+        XCTAssertEqual(state.lastBuild?.success, true)
+    }
+
+    func testTestInsideManagedTaskWorktreeCanOmitTaskName() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let toolEnv = try installFakeToolchain(
+            rootDir: fixture.rootDir,
+            devicesJSON: #"{"devices":{}}"#,
+            xcodebuildStderr: "",
+            xcodebuildExitCode: 0
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+
+        let result = try runVch(
+            ["test", "--scheme", "App", "--no-sim"],
+            cwd: fixture.taskPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, 0, "stderr: \(result.stderr)")
+        let state = try TaskState.parse(Data(
+            contentsOf: URL(fileURLWithPath: "\(fixture.taskPath)/.vch/state.json")
+        ))
+        XCTAssertEqual(state.name, "alpha")
+        XCTAssertEqual(state.scheme, "App")
+        XCTAssertEqual(state.lastTest?.success, true)
+        XCTAssertEqual(state.lastTest?.extraArgs, [])
     }
 
     // MARK: - doctor JSON integration

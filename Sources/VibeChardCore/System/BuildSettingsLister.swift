@@ -5,10 +5,12 @@ import Foundation
 /// to resolve `PRODUCT_BUNDLE_IDENTIFIER` and the on-disk path of the
 /// just-built `.app` bundle.
 public protocol BuildSettingsLister: Sendable {
-    /// Run `xcodebuild -showBuildSettings -json -scheme S [-configuration C]
-    /// [-destination D]` in `cwd`. Returns raw JSON stdout.
+    /// Run `xcodebuild [-project P | -workspace W] -showBuildSettings
+    /// -json -scheme S [-configuration C] [-destination D]` in `cwd`.
+    /// Returns raw JSON stdout.
     func showBuildSettings(
         cwd: String,
+        xcodebuildContainer: XcodebuildContainer?,
         scheme: String,
         configuration: String?,
         destination: String?,
@@ -24,15 +26,17 @@ public struct DiskBuildSettingsLister: BuildSettingsLister {
 
     public func showBuildSettings(
         cwd: String,
+        xcodebuildContainer: XcodebuildContainer?,
         scheme: String,
         configuration: String?,
         destination: String?,
         derivedDataPath: String?
     ) throws -> Data {
-        var argv: [String] = [
-            "xcodebuild", "-showBuildSettings", "-json",
-            "-scheme", scheme,
-        ]
+        var argv: [String] = ["xcodebuild"]
+        if let xcodebuildContainer {
+            argv += xcodebuildContainer.xcodebuildArguments
+        }
+        argv += ["-showBuildSettings", "-json", "-scheme", scheme]
         if let configuration {
             argv += ["-configuration", configuration]
         }

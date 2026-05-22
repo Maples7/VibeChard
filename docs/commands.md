@@ -146,15 +146,21 @@ build/test loops.
 ### `vch build`
 
 ```text
-vch build <name> [flags] [-- xcodebuild-extras]
+vch build [<name>] [flags] [-- xcodebuild-extras]
 ```
 
 `xcodebuild build` against the task's worktree, with
 `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected.
 
+- `<name>` may be omitted when the current directory is inside a
+  vch-managed task worktree; vch infers it from `.vch/state.json`.
 - `--scheme` is optional when the project has exactly one shared
   scheme (auto-detected via `xcodebuild -list -json`); once recorded,
   vch reuses it on subsequent calls.
+- `--project <path>` / `--workspace <path>` select an explicit
+  xcodebuild container (relative to the task worktree unless absolute).
+  They are mutually exclusive and are useful for nested Xcode projects
+  in repositories that also have a root `Package.swift`.
 - `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`,
   `'visionOS 2.5'`) pins the simulator runtime.
 - If no base device exists and `--runtime` is omitted, vch suggests
@@ -173,14 +179,15 @@ vch build <name> [flags] [-- xcodebuild-extras]
 ### `vch test`
 
 ```text
-vch test <name> [flags] [-- xcodebuild-extras]
+vch test [<name>] [flags] [-- xcodebuild-extras]
 ```
 
 `xcodebuild test` against the task's worktree, with
 `-resultBundlePath` injected; lazy-clones a simulator on first
 `--device` and reuses it after.
 
-- Same scheme auto-pick + `--runtime` rules as `vch build`.
+- Same task-name inference, scheme auto-pick, `--project` /
+  `--workspace`, and `--runtime` rules as `vch build`.
 - `--only-testing <id>` / `--skip-testing <id>` are first-class
   ([#86](https://github.com/Maples7/VibeChard/issues/86)): repeatable
   flags that translate to `xcodebuild -only-testing:<id>` /
@@ -208,13 +215,14 @@ vch test <name> [flags] [-- xcodebuild-extras]
 ### `vch run`
 
 ```text
-vch run <name> [flags] [-- launch-args]
+vch run [<name>] [flags] [-- launch-args]
 ```
 
 Build, install, and launch the task's app on its bound simulator
 clone.
 
-- Same scheme auto-pick + `--runtime` rules as `vch build`.
+- Same task-name inference, scheme auto-pick, `--project` /
+  `--workspace`, and `--runtime` rules as `vch build`.
 - `--erase-clone` resets the per-task clone before installing (off
   by default).
 - `--shutdown-template` shuts a Booted warm template down and retries

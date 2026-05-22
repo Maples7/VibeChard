@@ -19,7 +19,8 @@ public extension VibeChardError {
     /// Map an error to its conventional exit code.
     var exitCode: Int32 {
         switch self {
-        case .invalidTaskName, .missingArgument, .landConflictingStrategies, .newConflictingCdExec,
+           case .invalidTaskName, .missingArgument, .xcodebuildContainerConflict,
+               .landConflictingStrategies, .newConflictingCdExec,
              .testConflictingRerunFlags, .testRerunWithExtraArgs, .invalidRuntime:
             return ExitCode.usage
         case .worktreeAlreadyExists,

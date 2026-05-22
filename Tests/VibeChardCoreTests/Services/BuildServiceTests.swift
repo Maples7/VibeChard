@@ -53,6 +53,24 @@ final class BuildServiceTests: XCTestCase {
         XCTAssertEqual(plan.installedShimSymlinks, [])
     }
 
+    func testPrepareBuildPassesProjectContextToXcodebuild() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareBuild(
+            task: try TaskName("alpha"),
+            options: .init(
+                scheme: "App",
+                xcodebuildContainer: .project("Apps/App/App.xcodeproj")
+            ),
+            baseEnv: [:]
+        )
+
+        XCTAssertEqual(Array(plan.argv.prefix(5)), [
+            "xcodebuild",
+            "-project", "Apps/App/App.xcodeproj",
+            "-scheme", "App",
+        ])
+    }
+
     func testPrepareBuildSetsToolEnvButNotShimEnv() throws {
         let (service, _) = makeService(seedingTask: "alpha")
         let plan = try service.prepareBuild(
@@ -412,8 +430,43 @@ final class BuildServiceTests: XCTestCase {
             .watchOS
         )
         XCTAssertEqual(lister.lastCwd, workspace.worktreePath(for: task))
+                XCTAssertNil(lister.lastXcodebuildContainer)
         XCTAssertNil(lister.lastDestination)
     }
+
+        func testInferSimulatorPlatformPassesProjectContextToBuildSettingsProbe() throws {
+                let fs = InMemoryFileSystem()
+                let workspace = Workspace(mainWorktreePath: mainRepo)
+                fs.seedDirectory(mainRepo)
+                let task = try TaskName("alpha")
+                fs.seedDirectory(workspace.worktreePath(for: task))
+                let lister = FakeBuildSettingsLister(stub: Data(#"""
+                [
+                    {
+                        "target": "App",
+                        "buildSettings": {
+                            "PLATFORM_NAME": "iphonesimulator"
+                        }
+                    }
+                ]
+                """#.utf8))
+                let service = BuildService(
+                        workspace: workspace,
+                        fs: fs,
+                        settingsLister: lister
+                )
+
+                XCTAssertEqual(
+                        service.inferSimulatorPlatform(
+                                task: task,
+                                scheme: "App",
+                                configuration: nil,
+                                xcodebuildContainer: .project("Apps/App/App.xcodeproj")
+                        ),
+                        .iOS
+                )
+                XCTAssertEqual(lister.lastXcodebuildContainer, .project("Apps/App/App.xcodeproj"))
+        }
 
     func testDestinationPlatformHintSkipsBuildSettingsWhenExplicitLazyCloneDeviceCanResolvePlatform() throws {
         let fs = InMemoryFileSystem()

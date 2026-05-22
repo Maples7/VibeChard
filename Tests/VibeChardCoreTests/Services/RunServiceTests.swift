@@ -74,6 +74,7 @@ final class RunServiceTests: XCTestCase {
             simulatorPlatform: .iOS
         )
         XCTAssertEqual(lister.lastCwd, workspace.worktreePath(for: task))
+        XCTAssertNil(lister.lastXcodebuildContainer)
         XCTAssertEqual(lister.lastScheme, "App")
         XCTAssertEqual(lister.lastConfiguration, "Debug")
         XCTAssertEqual(
@@ -153,6 +154,29 @@ final class RunServiceTests: XCTestCase {
             lister.lastDestination,
             "platform=watchOS Simulator,id=WATCH-UDID-1"
         )
+    }
+
+    func test_resolveTarget_passesXcodebuildContainerToLister() throws {
+        let workspace = makeWorkspace()
+        let fs = InMemoryFileSystem()
+        try fs.createDirectory(at: "/products/Debug-iphonesimulator/App.app")
+        let lister = makeFakeSettings(goodSettingsJSON)
+        let svc = RunService(
+            workspace: workspace,
+            simctl: FakeSimctl(),
+            settingsLister: lister,
+            fs: fs
+        )
+
+        _ = try svc.resolveTarget(
+            task: try TaskName("alpha"),
+            scheme: "App",
+            xcodebuildContainer: .workspace("App.xcworkspace"),
+            configuration: "Debug",
+            simulatorUDID: "UDID-1"
+        )
+
+        XCTAssertEqual(lister.lastXcodebuildContainer, .workspace("App.xcworkspace"))
     }
 
     func test_resolveTarget_throws_runAppBundleNotFound_whenAppMissingOnDisk() throws {
@@ -325,6 +349,7 @@ final class FakeBuildSettingsLister: BuildSettingsLister, @unchecked Sendable {
     var throwError: VibeChardError?
 
     var lastCwd: String?
+    var lastXcodebuildContainer: XcodebuildContainer?
     var lastScheme: String?
     var lastConfiguration: String?
     var lastDestination: String?
@@ -334,12 +359,14 @@ final class FakeBuildSettingsLister: BuildSettingsLister, @unchecked Sendable {
 
     func showBuildSettings(
         cwd: String,
+        xcodebuildContainer: XcodebuildContainer?,
         scheme: String,
         configuration: String?,
         destination: String?,
         derivedDataPath: String?
     ) throws -> Data {
         lastCwd = cwd
+        lastXcodebuildContainer = xcodebuildContainer
         lastScheme = scheme
         lastConfiguration = configuration
         lastDestination = destination

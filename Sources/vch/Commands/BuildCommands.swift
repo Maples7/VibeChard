@@ -14,8 +14,10 @@ private enum BuildOrTest {
     /// surface child's exit code.
     static func execute(
         action: Action,
-        taskName: String,
+        taskName: String?,
         scheme: String?,
+        project: String?,
+        workspacePath: String?,
         configuration: String?,
         device: String?,
         runtime: String?,
@@ -25,9 +27,17 @@ private enum BuildOrTest {
         verbose: Bool = false,
         extraArgs: [String]
     ) throws {
-        let task = try TaskName(taskName)
         let cwd = FileManager.default.currentDirectoryPath
-        let workspace = try WorkspaceLocator.locate(cwd: cwd)
+        let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
+        let workspace = location.workspace
+        let task = try TaskArgumentResolver.resolve(
+            explicit: taskName,
+            current: location.taskName
+        )
+        let xcodebuildContainer = try XcodebuildContainer.resolve(
+            project: project,
+            workspace: workspacePath
+        )
         let baseEnv = ProcessInfo.processInfo.environment
 
         let simulator = SimulatorService(
@@ -50,7 +60,11 @@ private enum BuildOrTest {
             workspace: workspace,
             lister: DiskXcodebuildLister()
         )
-        let resolvedScheme = try schemeResolver.resolve(task: task, explicit: scheme)
+        let resolvedScheme = try schemeResolver.resolve(
+            task: task,
+            explicit: scheme,
+            xcodebuildContainer: xcodebuildContainer
+        )
         if let r = resolvedScheme, scheme == nil {
             switch r.source {
             case .explicit: break // unreachable: scheme == nil here
@@ -63,6 +77,7 @@ private enum BuildOrTest {
 
         var opts = BuildService.Options(
             scheme: resolvedScheme?.scheme ?? scheme,
+            xcodebuildContainer: xcodebuildContainer,
             configuration: configuration,
             device: device,
             runtime: runtime,
@@ -75,6 +90,7 @@ private enum BuildOrTest {
             configuration: configuration,
             requestedDevice: device,
             requestedRuntime: runtime,
+            xcodebuildContainer: xcodebuildContainer,
             noSim: noSim
         )
 
@@ -207,7 +223,7 @@ private enum BuildOrTest {
             }
         }
 
-        if result.exitCode != 0, resolved != nil,
+        if result.exitCode != 0,
            let logText = try? String(contentsOf: logURL, encoding: .utf8) {
             let hintCommand: XcodebuildFailureHint.Command
             switch action {
@@ -219,6 +235,11 @@ private enum BuildOrTest {
                 command: hintCommand,
                 taskName: task.raw,
                 device: device
+            ) ?? XcodebuildFailureHint.simulatorDestinationHint(
+                logText: logText,
+                command: hintCommand,
+                taskName: task.raw,
+                scheme: opts.scheme
             ) {
                 CLIBridge.eprintln(hint)
             }
@@ -262,12 +283,18 @@ struct BuildCommand: ParsableCommand {
         abstract: "Run `xcodebuild build` inside a task's worktree with isolation flags injected."
     )
 
-    @Argument(help: "Task name to build.",
+    @Argument(help: "Task name to build. Optional inside a vch-managed task worktree.",
               completion: .custom(TaskNameCompletion.candidates))
-    var name: String
+    var name: String?
 
     @Option(name: .long, help: "Scheme to build. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
     var scheme: String?
+
+    @Option(name: .long, help: "Xcode project path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --workspace.")
+    var project: String?
+
+    @Option(name: .long, help: "Xcode workspace path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --project.")
+    var workspace: String?
 
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
     var configuration: String?
@@ -300,6 +327,8 @@ struct BuildCommand: ParsableCommand {
                 action: .build,
                 taskName: name,
                 scheme: scheme,
+                project: project,
+                workspacePath: workspace,
                 configuration: configuration,
                 device: device,
                 runtime: runtime,
@@ -344,12 +373,18 @@ struct TestCommand: ParsableCommand {
             """
     )
 
-    @Argument(help: "Task name to test.",
+    @Argument(help: "Task name to test. Optional inside a vch-managed task worktree.",
               completion: .custom(TaskNameCompletion.candidates))
-    var name: String
+    var name: String?
 
     @Option(name: .long, help: "Scheme to test. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
     var scheme: String?
+
+    @Option(name: .long, help: "Xcode project path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --workspace.")
+    var project: String?
+
+    @Option(name: .long, help: "Xcode workspace path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --project.")
+    var workspace: String?
 
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
     var configuration: String?
@@ -416,9 +451,13 @@ struct TestCommand: ParsableCommand {
             // the xcresult bundle to derive the effective args.
             let effectiveExtraArgs: [String]
             if rerun || rerunFailed {
-                let task = try TaskName(name)
                 let cwd = FileManager.default.currentDirectoryPath
-                let workspace = try WorkspaceLocator.locate(cwd: cwd)
+                let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
+                let workspace = location.workspace
+                let task = try TaskArgumentResolver.resolve(
+                    explicit: name,
+                    current: location.taskName
+                )
                 let statePath = workspace.statePath(for: task)
                 guard FileManager.default.fileExists(atPath: statePath),
                       let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
@@ -465,6 +504,8 @@ struct TestCommand: ParsableCommand {
                 action: .test,
                 taskName: name,
                 scheme: scheme,
+                project: project,
+                workspacePath: workspace,
                 configuration: configuration,
                 device: device,
                 runtime: runtime,

@@ -36,11 +36,45 @@ public enum XcodebuildFailureHint {
         """
     }
 
+    /// Return an actionable hint when xcodebuild's log indicates that
+    /// the selected scheme could not resolve a simulator destination.
+    public static func simulatorDestinationHint(
+        logText: String,
+        command: Command,
+        taskName: String,
+        scheme: String?
+    ) -> String? {
+        guard isSimulatorDestinationFailure(logText) else { return nil }
+
+        let schemeFlag: String
+        if let scheme, !scheme.isEmpty {
+            schemeFlag = " --scheme \(shellQuote(scheme))"
+        } else {
+            schemeFlag = " --scheme <scheme>"
+        }
+
+        return """
+        hint: xcodebuild could not select a simulator destination for this run.
+            create or reuse a task clone: vch \(command.rawValue) \(shellQuote(taskName))\(schemeFlag) --device <template-name> [--runtime <version>]
+            inspect available templates: xcrun simctl list devices available
+        """
+    }
+
     private static func isSimulatorPreflightBusy(_ logText: String) -> Bool {
         guard logText.contains("SBMainWorkspace") else { return false }
         let lower = logText.lowercased()
         return lower.contains("application failed preflight checks")
             || lower.contains("reason: busy")
+    }
+
+    private static func isSimulatorDestinationFailure(_ logText: String) -> Bool {
+        let lower = logText.lowercased()
+        return lower.contains("unable to find a destination")
+            || lower.contains("found no destinations")
+            || lower.contains("no destinations were found")
+            || lower.contains("a destination must be specified")
+            || lower.contains("requires a destination")
+            || lower.contains("destination specifier")
     }
 
     private static func shellQuote(_ value: String) -> String {

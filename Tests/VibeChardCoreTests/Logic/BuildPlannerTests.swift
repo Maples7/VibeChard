@@ -5,6 +5,7 @@ final class BuildPlannerTests: XCTestCase {
 
     private func baseInputs(
         action: String = "build",
+        container: XcodebuildContainer? = nil,
         scheme: String? = "App",
         configuration: String? = nil,
         resultBundle: String? = nil,
@@ -15,6 +16,7 @@ final class BuildPlannerTests: XCTestCase {
     ) -> BuildPlanner.Inputs {
         BuildPlanner.Inputs(
             action: action,
+            xcodebuildContainer: container,
             scheme: scheme,
             configuration: configuration,
             derivedDataPath: "/wt/.agent-build/DerivedData",
@@ -129,5 +131,25 @@ final class BuildPlannerTests: XCTestCase {
     func testNoDestinationFlagWhenNeitherUDIDNorDeviceProvided() {
         let argv = BuildPlanner.args(baseInputs())
         XCTAssertFalse(argv.contains("-destination"))
+    }
+
+    func testProjectContainerPrecedesScheme() {
+        let argv = BuildPlanner.args(baseInputs(
+            container: .project("Apps/App/App.xcodeproj")
+        ))
+        XCTAssertEqual(Array(argv.prefix(4)), [
+            "-project", "Apps/App/App.xcodeproj",
+            "-scheme", "App",
+        ])
+    }
+
+    func testWorkspaceContainerPrecedesScheme() {
+        let argv = BuildPlanner.args(baseInputs(
+            container: .workspace("App.xcworkspace")
+        ))
+        XCTAssertEqual(Array(argv.prefix(4)), [
+            "-workspace", "App.xcworkspace",
+            "-scheme", "App",
+        ])
     }
 }

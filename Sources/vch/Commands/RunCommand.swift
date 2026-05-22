@@ -2,8 +2,8 @@ import ArgumentParser
 import Foundation
 import VibeChardCore
 
-/// `vch run <name>` — build the task's app, then `simctl install` +
-/// `simctl launch` it on the bound simulator clone. Closes #18.
+/// `vch run [<name>]` — build the task's app, then `simctl install`
+/// + `simctl launch` it on the bound simulator clone. Closes #18.
 ///
 /// This is essentially `vch build` followed by two simctl calls, so we
 /// reuse `BuildOrTest`-style scheme/simulator resolution and the same
@@ -30,12 +30,18 @@ struct RunCommand: ParsableCommand {
         abstract: "Build, install, and launch a task's app on its bound simulator clone."
     )
 
-    @Argument(help: "Task name to run.",
+    @Argument(help: "Task name to run. Optional inside a vch-managed task worktree.",
               completion: .custom(TaskNameCompletion.candidates))
-    var name: String
+    var name: String?
 
     @Option(name: .long, help: "Scheme to build/run. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
     var scheme: String?
+
+    @Option(name: .long, help: "Xcode project path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --workspace.")
+    var project: String?
+
+    @Option(name: .long, help: "Xcode workspace path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --project.")
+    var workspace: String?
 
     @Option(name: .long, help: "Build configuration (e.g. Debug, Release).")
     var configuration: String?
@@ -61,6 +67,8 @@ struct RunCommand: ParsableCommand {
             try Self.execute(
                 taskName: name,
                 scheme: scheme,
+                project: project,
+                workspacePath: workspace,
                 configuration: configuration,
                 device: device,
                 runtime: runtime,
@@ -72,8 +80,10 @@ struct RunCommand: ParsableCommand {
     }
 
     static func execute(
-        taskName: String,
+        taskName: String?,
         scheme: String?,
+        project: String?,
+        workspacePath: String?,
         configuration: String?,
         device: String?,
         runtime: String?,
@@ -81,9 +91,17 @@ struct RunCommand: ParsableCommand {
         shutdownTemplate: Bool = false,
         launchArgs: [String]
     ) throws {
-        let task = try TaskName(taskName)
         let cwd = FileManager.default.currentDirectoryPath
-        let workspace = try WorkspaceLocator.locate(cwd: cwd)
+        let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
+        let workspace = location.workspace
+        let task = try TaskArgumentResolver.resolve(
+            explicit: taskName,
+            current: location.taskName
+        )
+        let xcodebuildContainer = try XcodebuildContainer.resolve(
+            project: project,
+            workspace: workspacePath
+        )
         let baseEnv = ProcessInfo.processInfo.environment
 
         let simctl = DiskSimctlClient()
@@ -102,7 +120,9 @@ struct RunCommand: ParsableCommand {
             lister: DiskXcodebuildLister()
         )
         let resolvedScheme = try schemeResolver.resolve(
-            task: task, explicit: scheme
+            task: task,
+            explicit: scheme,
+            xcodebuildContainer: xcodebuildContainer
         )
         if let r = resolvedScheme, scheme == nil {
             switch r.source {
@@ -121,6 +141,7 @@ struct RunCommand: ParsableCommand {
 
         var opts = BuildService.Options(
             scheme: effectiveScheme,
+            xcodebuildContainer: xcodebuildContainer,
             configuration: configuration,
             device: device,
             runtime: runtime,
@@ -133,6 +154,7 @@ struct RunCommand: ParsableCommand {
             configuration: configuration,
             requestedDevice: device,
             requestedRuntime: runtime,
+            xcodebuildContainer: xcodebuildContainer,
             noSim: false
         )
 
@@ -229,6 +251,7 @@ struct RunCommand: ParsableCommand {
         let target = try runService.resolveTarget(
             task: task,
             scheme: scheme,
+            xcodebuildContainer: xcodebuildContainer,
             configuration: configuration,
             simulatorUDID: resolved.udid,
             simulatorPlatform: resolvedPlatform

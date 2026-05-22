@@ -26,6 +26,7 @@ public enum BuildPlanner {
     /// Anything else the user wants flows through `extraArgs`.
     public struct Inputs: Equatable, Sendable {
         public let action: String         // "build" or "test" (or "clean", future)
+        public let xcodebuildContainer: XcodebuildContainer?
         public let scheme: String?
         public let configuration: String?
         public let derivedDataPath: String
@@ -41,6 +42,7 @@ public enum BuildPlanner {
 
         public init(
             action: String,
+            xcodebuildContainer: XcodebuildContainer? = nil,
             scheme: String?,
             configuration: String?,
             derivedDataPath: String,
@@ -52,6 +54,7 @@ public enum BuildPlanner {
             extraArgs: [String]
         ) {
             self.action = action
+            self.xcodebuildContainer = xcodebuildContainer
             self.scheme = scheme
             self.configuration = configuration
             self.derivedDataPath = derivedDataPath
@@ -73,6 +76,9 @@ public enum BuildPlanner {
     public static func args(_ input: Inputs) -> [String] {
         var argv: [String] = []
 
+        if let container = input.xcodebuildContainer {
+            argv += container.xcodebuildArguments
+        }
         if let scheme = input.scheme {
             argv += ["-scheme", scheme]
         }

@@ -8,6 +8,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
     // Usage / validation (exit 2)
     case invalidTaskName(String, reason: String)
     case missingArgument(String)
+    case xcodebuildContainerConflict
 
     // Business state (exit 1)
     case worktreeAlreadyExists(path: String)
@@ -164,6 +165,8 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "invalid task name '\(name)': \(reason)"
         case let .missingArgument(name):
             return "missing argument: \(name)"
+        case .xcodebuildContainerConflict:
+            return "--project and --workspace are mutually exclusive"
         case let .worktreeAlreadyExists(path):
             return "worktree already exists at \(path)"
         case let .taskNotFound(name):
