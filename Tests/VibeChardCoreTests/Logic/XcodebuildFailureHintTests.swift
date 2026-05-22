@@ -52,4 +52,37 @@ final class XcodebuildFailureHintTests: XCTestCase {
         XCTAssertNotNil(hint)
         XCTAssertTrue(hint!.contains("vch sim erase 'alpha' --device 'QA'\\''s iPhone'"))
     }
+
+    func testSimulatorDestinationHintFires() {
+        let log = """
+        xcodebuild: error: Unable to find a destination matching the provided destination specifier:
+                { platform:iOS Simulator, name:iPhone 16 }
+        """
+
+        let hint = XcodebuildFailureHint.simulatorDestinationHint(
+            logText: log,
+            command: .build,
+            taskName: "clean-bundle-identifiers",
+            scheme: "AlloCurve"
+        )
+
+        XCTAssertNotNil(hint)
+        XCTAssertTrue(hint!.contains("could not select a simulator destination"))
+        XCTAssertTrue(hint!.contains("vch build 'clean-bundle-identifiers' --scheme 'AlloCurve' --device <template-name>"))
+        XCTAssertTrue(hint!.contains("xcrun simctl list devices available"))
+    }
+
+    func testSimulatorDestinationHintIgnoresCompileErrors() {
+        let log = """
+        SwiftCompile normal arm64 /tmp/App/View.swift
+        /tmp/App/View.swift:12:8: error: cannot find 'foo' in scope
+        """
+
+        XCTAssertNil(XcodebuildFailureHint.simulatorDestinationHint(
+            logText: log,
+            command: .test,
+            taskName: "alpha",
+            scheme: "App"
+        ))
+    }
 }

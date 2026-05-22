@@ -217,16 +217,19 @@ public enum XcodebuildPassthroughHint {
         guard token.hasPrefix("-"), token.count > 1 else { return nil }
 
         let canonical = canonicalize(token)
+        let taskUsage = ["build", "test", "run"].contains(command)
+            ? "[<name>]"
+            : "<name>"
         switch downstream {
         case .xcodebuild:
             return """
             hint: '\(token)' is not a vch flag. To forward an argument to xcodebuild, pass it after `--`:
-                vch \(command) <name> [vch flags] -- \(canonical) <value>
+                vch \(command) \(taskUsage) [vch flags] -- \(canonical) <value>
             """
         case .appLaunchArgs:
             return """
             hint: '\(token)' is not a vch flag. To forward an argument to the launched app, pass it after `--`:
-                vch \(command) <name> [vch flags] -- \(canonical) <value>
+                vch \(command) \(taskUsage) [vch flags] -- \(canonical) <value>
             """
         }
     }

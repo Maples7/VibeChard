@@ -60,6 +60,7 @@ public struct RunService: Sendable {
     public func resolveTarget(
         task: TaskName,
         scheme: String,
+        xcodebuildContainer: XcodebuildContainer? = nil,
         configuration: String?,
         simulatorUDID: String,
         simulatorPlatform: SimRuntimeVersion.Platform = .iOS
@@ -71,6 +72,7 @@ public struct RunService: Sendable {
         do {
             json = try settingsLister.showBuildSettings(
                 cwd: cwd,
+                xcodebuildContainer: xcodebuildContainer,
                 scheme: scheme,
                 configuration: configuration,
                 destination: destination,

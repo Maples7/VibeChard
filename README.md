@@ -137,6 +137,8 @@ vch add-paywall
 # 3. Or run xcodebuild directly without entering the shell:
 vch build add-paywall --scheme MyApp
 vch test  add-paywall --scheme MyApp --device "iPhone 16"
+# From inside the task worktree, the task name may be omitted:
+#   vch test --scheme MyApp --device "iPhone 16"
 
 # 4. Driving an agent inside the worktree:
 vch new fix-toast --exec "claude"     # spawns claude inside the isolated worktree
@@ -176,8 +178,8 @@ landed before the next starts. A typical loop:
 vch new task-a
 cd "$(vch path task-a)"
 # ...edit...
-vch build task-a --scheme MyApp
-vch test  task-a --scheme MyApp --device "iPhone 16"
+vch build --scheme MyApp
+vch test  --scheme MyApp --device "iPhone 16"
 git commit -am "perf: task A"
 vch open task-a                       # review in your IDE
 
@@ -231,9 +233,9 @@ template trap, and pruning merged tasks.
 | `vch open [<name>]` | Open the worktree in an IDE (`--with xcode`/`code`/`cursor`/…). |
 | `vch <name>` | Drop into a shell inside the worktree with isolation active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
-| `vch build <name>` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected (`--scheme`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--verbose`). |
-| `vch test <name>` | `xcodebuild test` with `-resultBundlePath` injected; lazy sim clone (`--device`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`). |
-| `vch run <name>` | Build, install, launch on the task's sim clone (`--erase-clone`, `--shutdown-template`, `-- launch-args`). |
+| `vch build [<name>]` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected; `<name>` is optional inside a task worktree (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--verbose`). |
+| `vch test [<name>]` | `xcodebuild test` with `-resultBundlePath` injected; `<name>` is optional inside a task worktree; lazy sim clone (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`). |
+| `vch run [<name>]` | Build, install, launch on the task's sim clone; `<name>` is optional inside a task worktree (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `-- launch-args`). |
 | `vch logs <name>` | Print the most recent build/test xcodebuild log (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone(s) explicitly; a task can own one clone per platform (e.g. iOS + watchOS) via repeated `vch sim clone --device <name>` ([#99](https://github.com/Maples7/VibeChard/issues/99)). |
 | `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (iOS/watchOS/tvOS/visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47)/[#58](https://github.com/Maples7/VibeChard/issues/58)). |

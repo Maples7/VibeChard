@@ -45,6 +45,7 @@ public struct BuildService: Sendable {
 
     public struct Options: Sendable {
         public var scheme: String?
+        public var xcodebuildContainer: XcodebuildContainer?
         public var configuration: String?
         public var device: String?
         public var runtime: String?
@@ -57,6 +58,7 @@ public struct BuildService: Sendable {
 
         public init(
             scheme: String? = nil,
+            xcodebuildContainer: XcodebuildContainer? = nil,
             configuration: String? = nil,
             device: String? = nil,
             runtime: String? = nil,
@@ -65,6 +67,7 @@ public struct BuildService: Sendable {
             extraArgs: [String] = []
         ) {
             self.scheme = scheme
+            self.xcodebuildContainer = xcodebuildContainer
             self.configuration = configuration
             self.device = device
             self.runtime = runtime
@@ -155,6 +158,7 @@ public struct BuildService: Sendable {
         //   3. else no -destination                       (host build)
         let argv = ["xcodebuild"] + BuildPlanner.args(.init(
             action: action,
+            xcodebuildContainer: options.xcodebuildContainer,
             scheme: options.scheme,
             configuration: options.configuration,
             derivedDataPath: workspace.derivedDataDir(for: task),
@@ -227,13 +231,15 @@ public struct BuildService: Sendable {
     public func inferSimulatorPlatform(
         task: TaskName,
         scheme: String?,
-        configuration: String?
+        configuration: String?,
+        xcodebuildContainer: XcodebuildContainer? = nil
     ) -> SimRuntimeVersion.Platform? {
         guard let scheme, !scheme.isEmpty, let settingsLister else {
             return nil
         }
         guard let data = try? settingsLister.showBuildSettings(
             cwd: workspace.worktreePath(for: task),
+            xcodebuildContainer: xcodebuildContainer,
             scheme: scheme,
             configuration: configuration,
             destination: nil,
@@ -258,6 +264,7 @@ public struct BuildService: Sendable {
         configuration: String?,
         requestedDevice: String?,
         requestedRuntime: String?,
+        xcodebuildContainer: XcodebuildContainer? = nil,
         noSim: Bool
     ) -> SimRuntimeVersion.Platform? {
         if let runtime = requestedRuntime,
@@ -272,7 +279,8 @@ public struct BuildService: Sendable {
         return inferSimulatorPlatform(
             task: task,
             scheme: scheme,
-            configuration: configuration
+            configuration: configuration,
+            xcodebuildContainer: xcodebuildContainer
         )
     }
 

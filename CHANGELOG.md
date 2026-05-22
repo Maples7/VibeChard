@@ -8,6 +8,20 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- `vch build`, `vch test`, and `vch run` can now omit `<name>` when
+  invoked from inside a vch-managed task worktree, inferring the task
+  from `.vch/state.json` (#134).
+- Added `--project` / `--workspace` to `vch build`, `vch test`, and
+  `vch run` so nested Xcode projects can be selected explicitly
+  instead of falling back to the current directory's default
+  `xcodebuild` context (#134).
+
+### Changed
+- `vch build` / `vch test` now print an actionable simulator
+  destination hint when the xcodebuild log indicates no usable
+  destination was selected (#134).
+
 ## 0.10.1 - 2026-05-22
 
 ### Changed

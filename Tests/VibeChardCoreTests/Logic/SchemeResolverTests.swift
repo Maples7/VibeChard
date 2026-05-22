@@ -83,6 +83,24 @@ final class SchemeResolverTests: XCTestCase {
         XCTAssertEqual(r, .init(scheme: "OnlyOne", source: .autoDetected))
     }
 
+    func testAutoDetectionPassesProjectContextToLister() throws {
+        let lister = FakeLister(schemes: ["OnlyOne"])
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: lister
+        )
+
+        let r = try resolver.resolve(
+            task: task,
+            explicit: nil,
+            xcodebuildContainer: .project("Apps/App/App.xcodeproj")
+        )
+
+        XCTAssertEqual(r, .init(scheme: "OnlyOne", source: .autoDetected))
+        XCTAssertEqual(lister.lastXcodebuildContainer, .project("Apps/App/App.xcodeproj"))
+    }
+
     func testReturnsNilWhenAmbiguous() throws {
         let (resolver, task, _) = setup(
             taskName: "alpha",
@@ -136,11 +154,18 @@ final class SchemeResolverTests: XCTestCase {
 private final class FakeLister: XcodebuildLister, @unchecked Sendable {
     let schemes: [String]
     let throwOnList: Bool
+    var lastCwd: String?
+    var lastXcodebuildContainer: XcodebuildContainer?
     init(schemes: [String] = [], throwOnList: Bool = false) {
         self.schemes = schemes
         self.throwOnList = throwOnList
     }
-    func listJSON(cwd: String) throws -> Data {
+    func listJSON(
+        cwd: String,
+        xcodebuildContainer: XcodebuildContainer?
+    ) throws -> Data {
+        lastCwd = cwd
+        lastXcodebuildContainer = xcodebuildContainer
         if throwOnList {
             throw VibeChardError.externalCommandFailed(
                 cmd: "xcodebuild -list -json",

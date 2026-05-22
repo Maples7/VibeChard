@@ -24,10 +24,11 @@ import Foundation
 /// All shell-outs go through `XcodebuildLister` so the resolver is
 /// fully unit-testable with an in-memory fake.
 public protocol XcodebuildLister: Sendable {
-    /// Run `xcodebuild -list -json` in `cwd`. Returns raw JSON stdout.
+    /// Run `xcodebuild -list -json` in `cwd`, optionally scoped to a
+    /// specific `-project` or `-workspace`. Returns raw JSON stdout.
     /// On non-zero exit / parse error, the caller treats it as "auto
     /// detection unavailable" and falls through, NOT as a hard error.
-    func listJSON(cwd: String) throws -> Data
+    func listJSON(cwd: String, xcodebuildContainer: XcodebuildContainer?) throws -> Data
 }
 
 public struct DiskXcodebuildLister: XcodebuildLister {
@@ -36,14 +37,21 @@ public struct DiskXcodebuildLister: XcodebuildLister {
         self.runner = runner
     }
 
-    public func listJSON(cwd: String) throws -> Data {
+    public func listJSON(
+        cwd: String,
+        xcodebuildContainer: XcodebuildContainer?
+    ) throws -> Data {
+        var argv = ["xcodebuild", "-list", "-json"]
+        if let xcodebuildContainer {
+            argv += xcodebuildContainer.xcodebuildArguments
+        }
         // Use `/usr/bin/xcrun xcodebuild` rather than relying on PATH —
         // the worktree's `<wt>/.vch/bin/` shim would otherwise re-enter
         // here and mess with our isolation flags. (xcrun resolves via
         // the active developer dir, exactly what we want.)
         let result = try runner.run(
             "/usr/bin/xcrun",
-            args: ["xcodebuild", "-list", "-json"],
+            args: argv,
             cwd: cwd,
             env: nil
         )
@@ -117,7 +125,11 @@ public struct SchemeResolver: Sendable {
     /// Resolve scheme using the three-tier strategy. Returns nil when
     /// no strategy produced one — caller should let xcodebuild fall
     /// back to its built-in default (today's behavior).
-    public func resolve(task: TaskName, explicit: String?) throws -> Resolved? {
+    public func resolve(
+        task: TaskName,
+        explicit: String?,
+        xcodebuildContainer: XcodebuildContainer? = nil
+    ) throws -> Resolved? {
         if let explicit, !explicit.isEmpty {
             return Resolved(scheme: explicit, source: .explicit)
         }
@@ -135,7 +147,10 @@ public struct SchemeResolver: Sendable {
         // auto-detection is unavailable.
         guard let lister else { return nil }
         let wt = workspace.worktreePath(for: task)
-        guard let raw = try? lister.listJSON(cwd: wt) else { return nil }
+        guard let raw = try? lister.listJSON(
+            cwd: wt,
+            xcodebuildContainer: xcodebuildContainer
+        ) else { return nil }
         let schemes = SchemePickerJSON.parseSchemes(raw)
         if schemes.count == 1 {
             return Resolved(scheme: schemes[0], source: .autoDetected)
