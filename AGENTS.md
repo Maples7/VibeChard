@@ -117,7 +117,10 @@ because past sessions repeatedly rediscovered them the hard way.
    ```
 
    Do the edits, commits, validation, push, and PR creation from that
-   worktree so multiple issues can be handled in parallel locally.
+   worktree so multiple issues can be handled in parallel locally. After
+   the PR merges, confirm the issue worktree has no uncommitted changes,
+   remove that local worktree, and delete the local topic branch when Git
+   allows it.
    Direct commits pushed to `master` are rejected by the remote; do not
    try to work around the protection (no `--force`, no admin overrides,
    no detour branches that fast-forward `master` locally). If you find

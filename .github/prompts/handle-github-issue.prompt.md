@@ -1,6 +1,6 @@
 ---
 name: "Handle GitHub Issue"
-description: "Validate and process one GitHub issue end-to-end: close invalid issues, or implement valid work in a dedicated git worktree, run /pre-commit-review, open a PR with Closes #N, wait for CI, and merge."
+description: "Validate and process one GitHub issue end-to-end: close invalid issues, or implement valid work in a dedicated git worktree, run /pre-commit-review, open a PR with Closes #N, wait for CI, merge, and clean up the local worktree."
 argument-hint: "<issue-number-or-url>"
 agent: "Issue Steward"
 tools: [read, edit, search, execute, todo, agent]
@@ -21,5 +21,6 @@ Follow the `Issue Steward` agent workflow exactly:
 7. Push the worktree's branch and open a GitHub PR whose body contains `Closes #<issue-number>`.
 8. Wait for PR CI. If CI fails, inspect the failure, fix it, push again, and wait for green checks.
 9. Merge the PR after required checks pass, using the repository's preferred merge method and without bypassing branch protection.
+10. After merge, confirm the issue worktree is clean, remove the local issue worktree, and delete the local topic branch when Git allows it.
 
-Keep going until the issue is closed as invalid, the PR is merged, or a genuine blocker prevents completion.
+Keep going until the issue is closed as invalid, the PR is merged and the local worktree is cleaned up, or a genuine blocker prevents completion.
