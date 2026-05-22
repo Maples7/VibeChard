@@ -231,16 +231,33 @@ public struct LandService: Sendable {
                     simRemoveError: nil
                 )
             }
-            // Run the merge. Bubble up `externalCommandFailed` —
-            // the user wants to see git's exact stderr (likely a
-            // conflict marker) and we won't auto-rm a half-merged
-            // state.
-            try git.merge(
-                repoCwd: workspace.mainWorktreePath,
-                branch: taskBranch,
-                mode: gitMode(for: resolved.strategy),
-                message: resolved.message
-            )
+            // Run the merge. If git leaves the base worktree in an
+            // unresolved merge state, wrap the generic git failure in a
+            // land-specific recovery diagnostic. Other git failures
+            // (`--ff-only` refusal, dirty index, unknown ref) still bubble
+            // up with their original stderr.
+            do {
+                try git.merge(
+                    repoCwd: workspace.mainWorktreePath,
+                    branch: taskBranch,
+                    mode: gitMode(for: resolved.strategy),
+                    message: resolved.message
+                )
+            } catch let error as VibeChardError {
+                if case .externalCommandFailed = error {
+                    let conflictedPaths = (try? git.unmergedPaths(
+                        worktreeCwd: workspace.mainWorktreePath
+                    )) ?? []
+                    if !conflictedPaths.isEmpty {
+                        throw VibeChardError.landMergeConflict(
+                            taskName: task.raw,
+                            worktreePath: workspace.mainWorktreePath,
+                            paths: conflictedPaths
+                        )
+                    }
+                }
+                throw error
+            }
 
             // Auto rm. Failure here is non-fatal — the merge already
             // landed, and the user can run `vch rm <name>` manually

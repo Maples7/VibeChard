@@ -105,6 +105,12 @@ public protocol GitClient: Sendable {
     /// worktree and the task branch's diff. (#7)
     func statusPaths(worktreeCwd: String) throws -> [String]
 
+    /// Repo-relative paths currently in an unresolved merge state.
+    /// Used by `vch land` after a failed merge to distinguish a real
+    /// merge conflict from other git failures such as `--ff-only`
+    /// refusal. (#140)
+    func unmergedPaths(worktreeCwd: String) throws -> [String]
+
     /// Run a merge in `repoCwd` with the requested mode. Throws
     /// `externalCommandFailed` on git failure (conflict, refused FF,
     /// dirty index, etc.). For `.squash`, runs `git merge --squash`
@@ -379,6 +385,18 @@ public struct DiskGitClient: GitClient {
         )
         try requireSuccess(result, label: "git status --porcelain -z")
         return PorcelainParser.parseStatusPorcelainZ(result.stdout)
+    }
+
+    public func unmergedPaths(worktreeCwd: String) throws -> [String] {
+        let result = try runner.run(
+            gitPath,
+            args: ["diff", "--name-only", "--diff-filter=U", "-z"],
+            cwd: worktreeCwd
+        )
+        try requireSuccess(result, label: "git diff --name-only --diff-filter=U -z")
+        return result.stdout
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
     }
 
     public func merge(repoCwd: String, branch: String, mode: GitMergeMode, message: String) throws {

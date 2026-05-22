@@ -26,6 +26,9 @@ The English README is the source of truth; localized READMEs may lag.
 - `vch build` / `vch test` now forward SIGHUP/SIGINT/SIGTERM to the active
   `xcodebuild` child instead of letting interrupted wrapper terminals
   leave task-scoped build or test processes behind (#135).
+- `vch land` now reports merge conflicts with the base worktree path,
+  conflicted files, and explicit resolve / abort / cleanup commands instead
+  of only surfacing the raw `git merge` failure (#140).
 
 ## 0.10.1 - 2026-05-22
 

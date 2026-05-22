@@ -295,6 +295,38 @@ final class LandServiceIntegrationTests: XCTestCase {
         }
     }
 
+    func testMergeConflictReportsConflictedFilesAndLeavesWorktreeForRecovery() throws {
+        let workspace = try makeRepo()
+        let (task, taskPath) = try newTaskWithBranch("rho", workspace: workspace)
+        try commitFile(workspace: workspace, worktreePath: taskPath,
+                       name: "README.md", contents: "task change\n",
+                       message: "feat: task edit")
+        try commitFile(workspace: workspace, worktreePath: workspace.mainWorktreePath,
+                       name: "README.md", contents: "main change\n",
+                       message: "chore: main edit")
+
+        let (_, landService) = makeServices(workspace: workspace)
+        XCTAssertThrowsError(try landService.land(task, options: .init())) { error in
+            guard case let VibeChardError.landMergeConflict(name, path, paths) = error else {
+                return XCTFail("expected landMergeConflict, got \(error)")
+            }
+            XCTAssertEqual(name, "rho")
+            XCTAssertEqual(path, workspace.mainWorktreePath)
+            XCTAssertEqual(paths, ["README.md"])
+            XCTAssertTrue(String(describing: error).contains("git commit --no-edit"))
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: taskPath),
+                      "conflict recovery needs the task worktree to remain available")
+        let runner = DiskProcessRunner()
+        let status = try runner.run("/usr/bin/git",
+                                    args: ["status", "--porcelain"],
+                                    cwd: workspace.mainWorktreePath,
+                                    env: gitEnv)
+        XCTAssertTrue(status.stdout.contains("UU README.md"),
+                      "base worktree should remain in the unresolved merge state")
+    }
+
     func testRefusesWhenTaskBranchMissing() throws {
         let workspace = try makeRepo()
         let (task, taskPath) = try newTaskWithBranch("kappa", workspace: workspace)

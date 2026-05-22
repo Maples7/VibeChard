@@ -251,6 +251,8 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
     var lastSubjectByBranch: [String: String] = [:]
     /// Paths returned by `statusPaths` keyed by worktree cwd.
     var statusPathsByCwd: [String: [String]] = [:]
+    /// Paths returned by `unmergedPaths` keyed by worktree cwd.
+    var unmergedPathsByCwd: [String: [String]] = [:]
     /// Recorded `merge` calls.
     var mergeCalls: [(repoCwd: String, branch: String, mode: GitMergeMode, message: String)] = []
     /// If non-nil, `merge` will throw this error.
@@ -277,6 +279,10 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
 
     func statusPaths(worktreeCwd: String) throws -> [String] {
         statusPathsByCwd[worktreeCwd] ?? []
+    }
+
+    func unmergedPaths(worktreeCwd: String) throws -> [String] {
+        unmergedPathsByCwd[worktreeCwd] ?? []
     }
 
     func merge(repoCwd: String, branch: String, mode: GitMergeMode, message: String) throws {
