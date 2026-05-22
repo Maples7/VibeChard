@@ -416,10 +416,13 @@ Delete the task's `DerivedData` + `ModuleCache` (default).
 - Also refuses when it detects a task-scoped stuck `vch test`,
   `xcodebuild` (build or test), or XCTestDevices app host process.
   Re-run with `--kill-stuck-tests` to send SIGTERM to those exact
-  task-scoped PIDs before cleaning. This is the recovery path when an
-  interrupted `vch build` leaves an orphan `xcodebuild build` holding
-  `build.db` and the next `vch build` / `vch test` fails with
-  `database is locked` (#131).
+  task-scoped PIDs before cleaning. The same flag can also terminate
+  task-scoped `xcodebuild` / `SWBBuildService` holders found under
+  `.agent-build/` or `.vch/`. After SIGTERM, vch re-scans before
+  deleting and still refuses cleanup if any managed holder remains.
+  This is the recovery path when an interrupted `vch build` leaves an
+  orphan `xcodebuild build` holding `build.db` and the next `vch build`
+  / `vch test` fails with `database is locked` (#131, #142).
 - `--dry-run` lists what would be removed.
 
 ### `vch doctor`

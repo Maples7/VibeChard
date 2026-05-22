@@ -302,6 +302,110 @@ final class CleanServiceTests: XCTestCase {
         XCTAssertFalse(fs.directoryExists(at: derived))
     }
 
+    func testKillStuckTestsTerminatesBuildHoldersBeforeCleaning() throws {
+        let holders = [
+            WorktreeHolder(
+                pid: 333,
+                command: "xcodebuild",
+                samplePath: "\(derived)/Build/Intermediates.noindex"
+            ),
+            WorktreeHolder(
+                pid: 444,
+                command: "SWBBuildService",
+                samplePath: "\(derived)/CompilationCache.noindex/generic/v1.1/v8.index"
+            ),
+        ]
+        let scanner = StubScanner(results: [holders, []])
+        let terminator = StubTerminator()
+        let (service, fs) = makeService(
+            scanner: scanner,
+            processTerminator: terminator
+        )
+
+        let result = try service.clean(
+            task: try TaskName("alpha"),
+            options: .init(killStuckTests: true)
+        )
+
+        XCTAssertEqual(terminator.terminatedPIDs, [333, 444])
+        XCTAssertEqual(scanner.queries, [alphaWT, alphaWT])
+        XCTAssertEqual(result.terminatedStuckHolders, holders)
+        XCTAssertEqual(result.removed, [derived, moduleCache])
+        XCTAssertFalse(fs.directoryExists(at: derived))
+        XCTAssertFalse(fs.directoryExists(at: moduleCache))
+    }
+
+    func testKillStuckTestsRefusesWhenBuildHoldersRemainAfterTermination() {
+        let holder = WorktreeHolder(
+            pid: 333,
+            command: "xcodebuild",
+            samplePath: "\(derived)/Build/Intermediates.noindex"
+        )
+        let scanner = StubScanner(results: [[holder], [holder]])
+        let terminator = StubTerminator()
+        let (service, fs) = makeService(
+            scanner: scanner,
+            processTerminator: terminator
+        )
+
+        XCTAssertThrowsError(try service.clean(
+            task: try TaskName("alpha"),
+            options: .init(killStuckTests: true)
+        )) { error in
+            guard case let VibeChardError.cleanBlockedByHolders(task, holders) = error else {
+                return XCTFail("expected cleanBlockedByHolders, got \(error)")
+            }
+            XCTAssertEqual(task, "alpha")
+            XCTAssertEqual(holders, [holder])
+        }
+        XCTAssertEqual(terminator.terminatedPIDs, [333])
+        XCTAssertEqual(scanner.queries, [alphaWT, alphaWT])
+        XCTAssertTrue(fs.directoryExists(at: derived))
+        XCTAssertTrue(fs.directoryExists(at: moduleCache))
+    }
+
+    func testKillStuckTestsTerminatesBuildHoldersInAdoptedWorktree() throws {
+        let adoptedPath = "/Users/me/codex-session"
+        let task = try TaskName("alpha")
+        let workspace = Workspace(mainWorktreePath: mainRepo)
+            .withWorktreePath(adoptedPath, for: task)
+        let adoptedDerived = "\(adoptedPath)/.agent-build/DerivedData"
+        let adoptedModuleCache = "\(adoptedPath)/.agent-build/ModuleCache"
+        let canonicalDerived = "\(mainRepo)-alpha/.agent-build/DerivedData"
+        let holder = WorktreeHolder(
+            pid: 555,
+            command: "SWBBuildService",
+            samplePath: "\(adoptedDerived)/CompilationCache.noindex/generic/v1.1/v8.index"
+        )
+        let scanner = StubScanner(results: [[holder], []])
+        let terminator = StubTerminator()
+        let fs = InMemoryFileSystem()
+        fs.seedDirectory(mainRepo)
+        fs.seedDirectory(adoptedPath)
+        fs.seedDirectory(adoptedDerived)
+        fs.seedDirectory(adoptedModuleCache)
+        fs.seedDirectory(canonicalDerived)
+        let service = CleanService(
+            workspace: workspace,
+            fs: fs,
+            holderScanner: scanner,
+            processTerminator: terminator
+        )
+
+        let result = try service.clean(
+            task: task,
+            options: .init(killStuckTests: true)
+        )
+
+        XCTAssertEqual(terminator.terminatedPIDs, [555])
+        XCTAssertEqual(scanner.queries, [adoptedPath, adoptedPath])
+        XCTAssertEqual(result.terminatedStuckHolders, [holder])
+        XCTAssertEqual(result.removed, [adoptedDerived, adoptedModuleCache])
+        XCTAssertFalse(fs.directoryExists(at: adoptedDerived))
+        XCTAssertFalse(fs.directoryExists(at: adoptedModuleCache))
+        XCTAssertTrue(fs.directoryExists(at: canonicalDerived))
+    }
+
     func testTargetsListIsStableAndExpected() {
         let (service, _) = makeService()
         let task = try! TaskName("alpha")
@@ -359,10 +463,14 @@ final class CleanServiceTests: XCTestCase {
 }
 
 private final class StubScanner: WorktreeHolderScanner, @unchecked Sendable {
-    let holders: [WorktreeHolder]
-    init(holders: [WorktreeHolder]) { self.holders = holders }
+    var results: [[WorktreeHolder]]
+    var queries: [String] = []
+    init(holders: [WorktreeHolder]) { self.results = [holders] }
+    init(results: [[WorktreeHolder]]) { self.results = results }
     func findHolders(of worktreePath: String) throws -> [WorktreeHolder] {
-        holders
+        queries.append(worktreePath)
+        guard !results.isEmpty else { return [] }
+        return results.removeFirst()
     }
 }
 

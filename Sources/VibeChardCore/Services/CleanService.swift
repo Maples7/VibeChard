@@ -69,19 +69,22 @@ public struct CleanService: Sendable {
         public let removed: [String]
         public let skipped: [String]
         public let terminatedTestProcesses: [TestSessionProcess]
+        public let terminatedStuckHolders: [WorktreeHolder]
 
         public init(
             task: TaskName,
             dryRun: Bool,
             removed: [String],
             skipped: [String],
-            terminatedTestProcesses: [TestSessionProcess] = []
+            terminatedTestProcesses: [TestSessionProcess] = [],
+            terminatedStuckHolders: [WorktreeHolder] = []
         ) {
             self.task = task
             self.dryRun = dryRun
             self.removed = removed
             self.skipped = skipped
             self.terminatedTestProcesses = terminatedTestProcesses
+            self.terminatedStuckHolders = terminatedStuckHolders
         }
     }
 
@@ -118,6 +121,7 @@ public struct CleanService: Sendable {
         // `--dry-run` should always succeed so users can plan a
         // cleanup ahead of a build finishing.
         var terminatedTestProcesses: [TestSessionProcess] = []
+        var terminatedStuckHolders: [WorktreeHolder] = []
         if !options.dryRun {
             let stuckTestProcesses = findStuckTestProcesses(task: task)
             if !stuckTestProcesses.isEmpty {
@@ -133,19 +137,34 @@ public struct CleanService: Sendable {
                 }
             }
 
-            let blockingHolders = (try? holderScanner?.findHolders(of: wt)) ?? []
-            // Filter to holders that touch caches we'd actually
-            // delete. An editor at the worktree root or a shell
-            // cd'd in shouldn't gate cleanup of `.agent-build/`.
-            let managedSubstrings = Workspace.managedDirPrefixes.map { "/\($0)" }
-            let blocking = blockingHolders.filter { holder in
-                managedSubstrings.contains { holder.samplePath.contains($0) }
-            }
+            let blocking = blockingManagedHolders(in: wt)
             if !blocking.isEmpty {
-                throw VibeChardError.cleanBlockedByHolders(
-                    task: task.raw,
-                    holders: blocking
-                )
+                guard options.killStuckTests, let processTerminator else {
+                    throw VibeChardError.cleanBlockedByHolders(
+                        task: task.raw,
+                        holders: blocking
+                    )
+                }
+
+                let killable = blocking.filter(isKillableStuckHolder)
+                guard !killable.isEmpty else {
+                    throw VibeChardError.cleanBlockedByHolders(
+                        task: task.raw,
+                        holders: blocking
+                    )
+                }
+                for holder in killable {
+                    try processTerminator.terminate(pid: holder.pid)
+                    terminatedStuckHolders.append(holder)
+                }
+
+                let remaining = blockingManagedHolders(in: wt)
+                if !remaining.isEmpty {
+                    throw VibeChardError.cleanBlockedByHolders(
+                        task: task.raw,
+                        holders: remaining
+                    )
+                }
             }
         }
 
@@ -169,8 +188,25 @@ public struct CleanService: Sendable {
             dryRun: options.dryRun,
             removed: removed,
             skipped: skipped,
-            terminatedTestProcesses: terminatedTestProcesses
+            terminatedTestProcesses: terminatedTestProcesses,
+            terminatedStuckHolders: terminatedStuckHolders
         )
+    }
+
+    private func blockingManagedHolders(in worktreePath: String) -> [WorktreeHolder] {
+        let holders = (try? holderScanner?.findHolders(of: worktreePath)) ?? []
+        // Filter to holders that touch caches we'd actually delete.
+        // An editor at the worktree root or a shell cd'd in shouldn't
+        // gate cleanup of `.agent-build/`.
+        let managedSubstrings = Workspace.managedDirPrefixes.map { "/\($0)" }
+        return holders.filter { holder in
+            managedSubstrings.contains { holder.samplePath.contains($0) }
+        }
+    }
+
+    private func isKillableStuckHolder(_ holder: WorktreeHolder) -> Bool {
+        let command = holder.command.lowercased()
+        return ["xcodebuild", "swbbuildservice", "xctest", "xctrunner"].contains { command.contains($0) }
     }
 
     private func findStuckTestProcesses(task: TaskName) -> [TestSessionProcess] {

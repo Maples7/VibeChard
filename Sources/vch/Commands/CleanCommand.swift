@@ -78,7 +78,13 @@ struct CleanCommand: ParsableCommand {
             return
         }
         for process in result.terminatedTestProcesses {
-            CLIBridge.eprintln("terminated stuck test process: \(process.pid) \(process.kind.rawValue)")
+            CLIBridge.eprintln("terminated stuck task process: \(process.pid) \(process.kind.rawValue)")
+        }
+        for holder in result.terminatedStuckHolders {
+            CLIBridge.eprintln("terminated stuck holder: \(holder.pid) \(holder.command) (\(holder.samplePath))")
+        }
+        if !result.terminatedStuckHolders.isEmpty {
+            CLIBridge.eprintln("stuck holders no longer detected after SIGTERM")
         }
         if removed.isEmpty {
             print("nothing to clean for '\(result.task.raw)' (already empty)")
@@ -104,11 +110,17 @@ struct CleanCommand: ParsableCommand {
             let removed: [String]
             let skipped: [String]
             let terminatedStuckTestProcesses: [ProcessJSON]
+            let terminatedStuckHolders: [HolderJSON]
         }
         struct ProcessJSON: Encodable {
             let pid: Int32
             let kind: String
             let command: String
+        }
+        struct HolderJSON: Encodable {
+            let pid: Int32
+            let command: String
+            let samplePath: String
         }
         let payload = Payload(
             task: result.task.raw,
@@ -117,6 +129,9 @@ struct CleanCommand: ParsableCommand {
             skipped: result.skipped,
             terminatedStuckTestProcesses: result.terminatedTestProcesses.map {
                 ProcessJSON(pid: $0.pid, kind: $0.kind.rawValue, command: $0.command)
+            },
+            terminatedStuckHolders: result.terminatedStuckHolders.map {
+                HolderJSON(pid: $0.pid, command: $0.command, samplePath: $0.samplePath)
             }
         )
         let encoder = JSONEncoder()
