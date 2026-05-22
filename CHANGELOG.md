@@ -9,6 +9,9 @@ The English README is the source of truth; localized READMEs may lag.
 ## Unreleased
 
 ### Fixed
+- `vch test` now classifies SwiftPM package dependency resolution failures as
+  package resolution failures and surfaces the first `xcodebuild: error:` line
+  instead of reporting an ambiguous `test status unknown` (#150).
 - `vch list --git-status` now shows `MERGED dirty` instead of `MERGED yes`
   when a task branch has no unmerged commits but its worktree still has
   uncommitted changes (#146).
