@@ -8,6 +8,11 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch list --git-status` now shows `MERGED dirty` instead of `MERGED yes`
+  when a task branch has no unmerged commits but its worktree still has
+  uncommitted changes (#146).
+
 ## 0.11.0 - 2026-05-22
 
 ### Added

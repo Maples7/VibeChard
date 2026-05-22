@@ -955,6 +955,41 @@ final class VchCLISmokeTests: XCTestCase {
         )
     }
 
+    func testListGitStatusMarksMergedDirtyWorktreeAsDirty() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "dirty-merged",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        try "uncommitted\n".write(
+            toFile: "\(fixture.taskPath)/uncommitted.txt",
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = try runVch(
+            ["list", "--git-status"],
+            cwd: fixture.repoPath,
+            env: fixture.gitEnv
+        )
+
+        XCTAssertEqual(result.exitCode, 0, "stderr: \(result.stderr)")
+        let row = try XCTUnwrap(
+            result.stdout.split(separator: "\n").first { $0.contains("dirty-merged") },
+            "expected dirty task row in list output: \(result.stdout)"
+        )
+        let columns = row.split(separator: " ", omittingEmptySubsequences: true)
+            .map(String.init)
+        XCTAssertGreaterThanOrEqual(columns.count, 8, "could not parse list row: \(row)")
+        XCTAssertEqual(columns[6], "yes", "DIRTY column should report the worktree change")
+        XCTAssertEqual(columns[7], "dirty", "MERGED column must not say yes for dirty worktrees")
+    }
+
     // MARK: - smoke-test git helpers
 
     private func makeManagedTaskFixture(

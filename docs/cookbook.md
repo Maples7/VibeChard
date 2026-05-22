@@ -317,5 +317,7 @@ the two commands behave the same way.
 
 If you'd rather see the merged-state passively next to the rest of
 your task list, just add `--git-status` to your usual `vch list` —
-the new `MERGED` column reads `yes` / `no` / `-` (unknown). The
-same value lands in `git.mergedIntoBase` under `vch list --json`.
+the `MERGED` column reads `yes` (merged and clean), `dirty` (merged
+commits, uncommitted worktree changes), `no`, or `-` (unknown). The
+branch-merge value lands in `git.mergedIntoBase` under
+`vch list --json`.
