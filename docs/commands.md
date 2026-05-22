@@ -85,7 +85,9 @@ List all tasks in the current workspace.
 - `-v` / `--verbose` adds `BASE` + `PATH` columns.
 - `--git-status` adds `AHEAD/BEHIND` + `DIRTY` + `MERGED` +
   `LAST COMMIT` columns (one extra `git rev-list` + `git status` per
-  worktree).
+  worktree). `MERGED` is `yes` only when the branch is merged and the
+  worktree is clean; a merged branch with uncommitted changes reports
+  `dirty`.
 
 ### `vch state`
 

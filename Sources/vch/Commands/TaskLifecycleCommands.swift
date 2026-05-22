@@ -198,7 +198,7 @@ struct ListCommand: ParsableCommand {
 
     @Flag(
         name: [.long, .customLong("git")],
-        help: "Add columns: AHEAD/BEHIND, DIRTY, LAST COMMIT (one git rev-list + status per worktree). Stays off the default path so existing scripts don't slow down."
+        help: "Add columns: AHEAD/BEHIND, DIRTY, MERGED, LAST COMMIT (one git rev-list + status per worktree). Stays off the default path so existing scripts don't slow down."
     )
     var gitStatus: Bool = false
 
@@ -333,9 +333,10 @@ struct ListCommand: ParsableCommand {
                 // (it's the normal state for an active task, not a
                 // failure). Unknown stays muted.
                 switch raw {
-                case "yes": return ANSI.wrap(padded, .ok, enabled: colorize)
-                case "no":  return padded
-                default:    return ANSI.wrap(padded, .placeholder, enabled: colorize)
+                case "yes":   return ANSI.wrap(padded, .ok, enabled: colorize)
+                case "dirty": return ANSI.wrap(padded, .fail, enabled: colorize)
+                case "no":    return padded
+                default:      return ANSI.wrap(padded, .placeholder, enabled: colorize)
                 }
             case "LAST COMMIT":
                 return raw == "-"
@@ -388,11 +389,13 @@ struct ListCommand: ParsableCommand {
         return git.isDirty ? "yes" : "no"
     }
 
-    /// Three-state label: `yes` (fully merged into base), `no`
+    /// Four-state label: `yes` (fully merged into base and clean),
+    /// `dirty` (merged commits, uncommitted worktree changes), `no`
     /// (commits not yet on base), `-` (unknown — no recorded base or
-    /// git failed). (#67)
+    /// git failed). (#67, #146)
     private func mergedLabel(_ git: GitStatus?) -> String {
         guard let git, let merged = git.mergedIntoBase else { return "-" }
+        if merged, git.isDirty { return "dirty" }
         return merged ? "yes" : "no"
     }
 
