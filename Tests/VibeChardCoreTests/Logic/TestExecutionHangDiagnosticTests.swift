@@ -28,7 +28,7 @@ final class TestExecutionHangDiagnosticTests: XCTestCase {
         XCTAssertTrue(rendered.contains("command: xcodebuild -scheme 'My App' test"), rendered)
         XCTAssertTrue(rendered.contains("log: /tmp/alpha/.vch/last-test.log"), rendered)
         XCTAssertTrue(rendered.contains("result: /tmp/alpha/.agent-build/Result.xcresult"), rendered)
-        XCTAssertTrue(rendered.contains("rg 'alpha\\.beta|42|xcodebuild|xctest'"), rendered)
+        XCTAssertTrue(rendered.contains("rg 'alpha\\.beta|42|xcodebuild|xctest|simctl diagnose'"), rendered)
         XCTAssertTrue(rendered.contains("vch clean alpha.beta --kill-stuck-tests"), rendered)
     }
 
@@ -85,6 +85,9 @@ final class TestExecutionHangDiagnosticTests: XCTestCase {
         let rendered = diagnostic.render()
         let escapedTaskName = NSRegularExpression.escapedPattern(for: taskName)
 
-        XCTAssertTrue(rendered.contains("rg '\(escapedTaskName)|7|xcodebuild|xctest'"), rendered)
+        XCTAssertTrue(
+            rendered.contains("rg '\(escapedTaskName)|7|xcodebuild|xctest|simctl diagnose'"),
+            rendered
+        )
     }
 }

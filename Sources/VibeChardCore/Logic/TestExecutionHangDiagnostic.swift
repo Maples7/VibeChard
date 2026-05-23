@@ -60,7 +60,7 @@ public struct TestExecutionHangDiagnostic: Equatable, Sendable {
         lines.append("   log: \(logPath)")
         lines.append("   result: \(resultBundlePath)")
         lines.append("   recovery:")
-        let processPattern = [taskName, String(pid), "xcodebuild", "xctest"]
+        let processPattern = [taskName, String(pid), "xcodebuild", "xctest", "simctl diagnose"]
             .map(regexEscape)
             .joined(separator: "|")
         lines.append("     ps -axo pid,etime,stat,command | rg \(shellQuote(processPattern))")

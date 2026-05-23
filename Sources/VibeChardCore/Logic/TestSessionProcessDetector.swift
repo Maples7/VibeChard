@@ -5,6 +5,7 @@ public enum TestSessionProcessKind: String, Codable, Equatable, Sendable {
     case vchTest = "vch-test"
     case xcodebuild
     case xctestHost = "xctest-host"
+    case simctlDiagnose = "simctl-diagnose"
 }
 
 public struct ProcessListEntry: Equatable, Sendable {
@@ -111,6 +112,15 @@ public enum TestSessionProcessDetector {
                 directMatches.append(TestSessionProcess(pid: entry.pid, kind: .xcodebuild, command: command))
                 continue
             }
+            if isSimctlDiagnoseTaskCommand(
+                command,
+                worktreePath: worktreePath,
+                resultBundlePath: resultBundlePath,
+                simulatorUDIDs: simulatorUDIDs
+            ) {
+                directMatches.append(TestSessionProcess(pid: entry.pid, kind: .simctlDiagnose, command: command))
+                continue
+            }
             if isXCTestDevicesHostCommand(
                 command,
                 scheme: scheme,
@@ -121,8 +131,8 @@ public enum TestSessionProcessDetector {
         }
 
         // XCTestDevices hosts are only safe to report when the same
-        // scan also found a task-scoped vch/xcodebuild test process;
-        // otherwise an unrelated XCTestDevices run for the same app
+        // scan also found a task-scoped direct process; otherwise an
+        // unrelated XCTestDevices run for the same app
         // could block or be killed by this task's clean command.
         return directMatches.isEmpty ? [] : directMatches + hostCandidates
     }
@@ -147,6 +157,21 @@ public enum TestSessionProcessDetector {
         let needles = [worktreePath, derivedDataPath, resultBundlePath]
             .filter { !$0.isEmpty }
         return needles.contains { command.contains($0) }
+    }
+
+    private static func isSimctlDiagnoseTaskCommand(
+        _ command: String,
+        worktreePath: String,
+        resultBundlePath: String,
+        simulatorUDIDs: [String]
+    ) -> Bool {
+        guard command.contains("simctl diagnose") else { return false }
+        let pathNeedles = [worktreePath, resultBundlePath]
+            .filter { !$0.isEmpty }
+        if pathNeedles.contains(where: { command.contains($0) }) {
+            return true
+        }
+        return simulatorUDIDs.contains { command.contains($0) }
     }
 
     private static func isXCTestDevicesHostCommand(
