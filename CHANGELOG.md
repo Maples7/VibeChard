@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 0.11.1 - 2026-05-23
+
 ### Fixed
 - `vch clean --kill-stuck-tests` and the `vch test` idle-timeout recovery
   hint now include task-scoped `simctl diagnose` children left behind by
