@@ -107,11 +107,11 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// finishes; `--dry-run` always succeeds. (#26)
     case cleanBlockedByHolders(task: String, holders: [WorktreeHolder])
     /// `vch clean` found a task-scoped `vch test`, `xcodebuild`
-    /// (build or test), or XCTestDevices app host still running.
-    /// Catches both XCTest host apps that outlive a Shutdown task
-    /// simulator (#127) and stale `xcodebuild build` children
-    /// orphaned after `vch build` was interrupted (#131); both keep
-    /// the task's `build.db` locked.
+    /// (build or test), `simctl diagnose`, or XCTestDevices app host
+    /// still running. Catches XCTest host apps that outlive a Shutdown
+    /// task simulator (#127), stale `xcodebuild build` children
+    /// orphaned after `vch build` was interrupted (#131), and test
+    /// diagnostic collection that outlives completed tests (#154).
     case cleanBlockedByTestSession(task: String, processes: [TestSessionProcess])
     /// `vch sync` could not figure out which ref to rebase onto:
     /// nothing was passed via `--onto` and `state.json` has no
@@ -266,7 +266,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
                 "  \(process.pid)\t\(process.kind.rawValue)\t\(process.command)"
             }
             let body = lines.joined(separator: "\n")
-            return "refusing to clean '\(task)': detected \(processes.count) stuck task-scoped process\(processes.count == 1 ? "" : "es") (e.g. `xcodebuild build`/`test` or XCTestDevices host) holding this task's caches. These can keep `build.db` locked or keep XCTestDevices host apps alive even after the task simulator is Shutdown. Re-run with --kill-stuck-tests to send SIGTERM before cleaning, or inspect manually with ps/sample:\n\(body)"
+            return "refusing to clean '\(task)': detected \(processes.count) stuck task-scoped process\(processes.count == 1 ? "" : "es") (e.g. `xcodebuild build`/`test`, `simctl diagnose`, or XCTestDevices host) holding this task's caches. These can keep `build.db` locked, keep diagnostic collection alive after tests finish, or keep XCTestDevices host apps alive even after the task simulator is Shutdown. Re-run with --kill-stuck-tests to send SIGTERM before cleaning, or inspect manually with ps/sample:\n\(body)"
         case let .syncBaseUnresolved(taskName):
             return "refusing to sync: cannot determine base for task '\(taskName)' (no recorded baseBranch in state.json — vch new on detached HEAD?); pass --onto <ref> explicitly"
         case let .syncDirtyWorktree(taskName, worktreePath):

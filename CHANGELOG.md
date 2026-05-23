@@ -9,6 +9,10 @@ The English README is the source of truth; localized READMEs may lag.
 ## Unreleased
 
 ### Fixed
+- `vch clean --kill-stuck-tests` and the `vch test` idle-timeout recovery
+  hint now include task-scoped `simctl diagnose` children left behind by
+  CoreSimulator diagnostic collection after the xcresult has already recorded
+  a terminal test result (#154).
 - `vch test` now classifies SwiftPM package dependency resolution failures as
   package resolution failures and surfaces the first `xcodebuild: error:` line
   instead of reporting an ambiguous `test status unknown` (#150).

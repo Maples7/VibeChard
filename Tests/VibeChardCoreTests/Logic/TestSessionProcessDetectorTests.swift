@@ -24,6 +24,7 @@ final class TestSessionProcessDetectorTests: XCTestCase {
             .init(pid: 10, command: "vch test v310-audit-fixes --scheme BeanLedger --device iPhone 16"),
             .init(pid: 11, command: "/usr/bin/env xcodebuild -scheme BeanLedger -derivedDataPath \(derived) -resultBundlePath \(resultBundle) test"),
             .init(pid: 12, command: "/Users/me/Library/Developer/XCTestDevices/SIM-1/data/Containers/Bundle/Application/123/BeanLedger.app/BeanLedger"),
+            .init(pid: 15, command: "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl diagnose -l -b --timeout=600 --output=\(resultBundle)/Staging/1_Test/Diagnostics/simctl_diagnostics --no-archive --udid=SIM-1"),
             .init(pid: 13, command: "/usr/bin/env xcodebuild -scheme Other -derivedDataPath /tmp/Other -resultBundlePath /tmp/Other.xcresult test"),
             .init(pid: 14, command: "/Users/me/Library/Developer/XCTestDevices/SIM-2/data/Containers/Bundle/Application/123/BeanLedger.app/BeanLedger"),
         ]
@@ -39,8 +40,29 @@ final class TestSessionProcessDetectorTests: XCTestCase {
             selfPID: 99
         )
 
-        XCTAssertEqual(processes.map(\.pid), [10, 11, 12])
-        XCTAssertEqual(processes.map(\.kind), [.vchTest, .xcodebuild, .xctestHost])
+        XCTAssertEqual(processes.map(\.pid), [10, 11, 15, 12])
+        XCTAssertEqual(processes.map(\.kind), [.vchTest, .xcodebuild, .simctlDiagnose, .xctestHost])
+    }
+
+    func testDetectsTaskScopedSimctlDiagnoseAfterXcodebuildIsGone() {
+        let entries: [ProcessListEntry] = [
+            .init(pid: 15, command: "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl diagnose -l -b --timeout=600 --output=\(resultBundle)/Staging/1_Test/Diagnostics/simctl_diagnostics --no-archive --udid=SIM-1"),
+            .init(pid: 16, command: "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/Resources/bin/simctl diagnose -l -b --timeout=600 --output=/tmp/Other.xcresult/Staging/1_Test/Diagnostics/simctl_diagnostics --no-archive --udid=SIM-2"),
+        ]
+
+        let processes = TestSessionProcessDetector.detect(
+            entries: entries,
+            taskName: "v310-audit-fixes",
+            worktreePath: worktree,
+            derivedDataPath: derived,
+            resultBundlePath: resultBundle,
+            scheme: "BeanLedger",
+            simulatorUDIDs: ["SIM-1"],
+            selfPID: 99
+        )
+
+        XCTAssertEqual(processes.map(\.pid), [15])
+        XCTAssertEqual(processes.map(\.kind), [.simctlDiagnose])
     }
 
     func testDoesNotReportHostWithoutScheme() {

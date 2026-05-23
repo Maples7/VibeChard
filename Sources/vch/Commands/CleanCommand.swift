@@ -32,7 +32,7 @@ struct CleanCommand: ParsableCommand {
     var dryRun: Bool = false
 
     @Flag(name: .long,
-          help: "Send SIGTERM to task-scoped stuck `vch test`, `xcodebuild` (build or test), and XCTestDevices host processes before cleaning. Covers `build.db is locked` recovery after an interrupted `vch build`.")
+          help: "Send SIGTERM to task-scoped stuck `vch test`, `xcodebuild` (build or test), `simctl diagnose`, and XCTestDevices host processes before cleaning. Covers `build.db is locked` recovery after an interrupted `vch build`.")
     var killStuckTests: Bool = false
 
     @Flag(name: .long,
