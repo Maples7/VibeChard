@@ -8,6 +8,13 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch test` no longer prints a misleading `✗ 0 failed, 0 passed … ** TEST
+  FAILED **` summary when the build phase fails before any test runs. A
+  compile/link failure now renders `✗ build failed — tests not run   ** BUILD
+  FAILED **`, so a human scanning the tail can tell a broken build apart from a
+  failed test assertion without opening the log (#157).
+
 ## 0.11.1 - 2026-05-23
 
 ### Fixed

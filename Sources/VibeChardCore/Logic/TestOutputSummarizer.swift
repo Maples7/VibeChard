@@ -268,6 +268,17 @@ public final class TestOutputSummarizer {
         case .succeeded:
             let line = "✓ \(total) passed in \(durStr)   ** TEST SUCCEEDED **"
             head = ANSI.wrap(line, .ok, enabled: colorize)
+        case .failed where !reachedTestExecution:
+            // #157: `xcodebuild test` failed during the build phase
+            // (a compile / link error) before any test ran. Printing
+            // `0 failed, 0 passed` here reads as "the suite ran and
+            // found nothing", sending people hunting for a test filter
+            // or empty-suite problem that doesn't exist. Name the
+            // build phase as the culprit and say tests were skipped;
+            // the compile diagnostics live in the tee'd log the
+            // `→ log:` line below points at.
+            let line = "✗ build failed — tests not run   ** BUILD FAILED **"
+            head = ANSI.wrap(line, .fail, enabled: colorize)
         case .failed:
             let line = "✗ \(totalFailed) failed, \(totalPassed) passed in \(durStr)   ** TEST FAILED **"
             head = ANSI.wrap(line, .fail, enabled: colorize)
