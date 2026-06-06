@@ -15,6 +15,13 @@ The English README is the source of truth; localized READMEs may lag.
   FAILED **`, so a human scanning the tail can tell a broken build apart from a
   failed test assertion without opening the log (#157).
 
+### Tests
+- Added a cross-task isolation guarantee suite that asserts parallel tasks
+  never share a `DerivedData` / `ModuleCache` / SwiftPM clone / `xcresult`
+  path and that no injected path escapes its worktree into a global Apple
+  toolchain location (AGENTS.md rule #9), covering both the default sibling
+  layout and adopted linked worktrees.
+
 ## 0.11.1 - 2026-05-23
 
 ### Fixed
