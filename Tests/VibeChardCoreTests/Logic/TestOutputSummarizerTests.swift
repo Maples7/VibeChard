@@ -334,4 +334,77 @@ final class TestOutputSummarizerTests: XCTestCase {
         XCTAssertTrue(rendered.contains("→ result: /tmp/x/.agent-build/Result.xcresult"),
                       "test summaries should surface the result bundle path; got: \(rendered)")
     }
+
+    func testBuildPhaseFailureRendersBuildFailedNotZeroCounts() {
+        // #157: when `xcodebuild test` fails during the build phase
+        // (a compile error) no test ever runs, yet xcodebuild still
+        // ends the test action with `** TEST FAILED **`. The summary
+        // must name the build failure and say tests were skipped, not
+        // print `0 failed, 0 passed` which reads as an empty / filtered
+        // test run and sends people hunting for a non-existent test
+        // problem.
+        let s = TestOutputSummarizer()
+        feed(s, """
+        CompileSwift normal arm64 /repo/Sources/PeriodRecapBuilder.swift
+        /repo/Sources/PeriodRecapBuilder.swift:96:30: error: cannot call value of non-function type 'PeriodRecapBuilder.Totals'
+        Testing failed:
+        \tcannot call value of non-function type 'PeriodRecapBuilder.Totals'
+        ** TEST FAILED **
+        """)
+
+        // Precondition: we recognized the failure but never reached
+        // test execution, and the plain compile diagnostic is not
+        // mistaken for a test-case failure.
+        XCTAssertEqual(s.status, .failed)
+        XCTAssertFalse(s.reachedTestExecution,
+                       "no Test Suite started, so tests never ran")
+        XCTAssertEqual(s.totalPassed + s.totalFailed, 0)
+        XCTAssertTrue(s.failures.isEmpty,
+                      "a bare compile error is not a test-case failure")
+
+        let rendered = s.render(colorize: false,
+                                logPath: "/tmp/x/.vch/last-test.log")
+        XCTAssertFalse(rendered.contains("0 failed, 0 passed"),
+                       "must not imply an empty test run; got: \(rendered)")
+        XCTAssertFalse(rendered.contains("** TEST FAILED **"),
+                       "build failures should not be labeled a test failure; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("build failed"),
+                      "must name the build phase as the failure; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("tests not run"),
+                      "must say tests were skipped; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("** BUILD FAILED **"),
+                      "must use the build-failure marker; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("→ log: /tmp/x/.vch/last-test.log"),
+                      "must surface the log path so the user can read the compile error; got: \(rendered)")
+    }
+
+    func testTestPhaseFailureStillRendersTestCounts() {
+        // Guard the other side of #157: a genuine *test* failure (the
+        // build succeeded, a suite ran, an assertion failed) must keep
+        // the per-count `N failed, M passed ... ** TEST FAILED **`
+        // summary and must not be relabeled as a build failure.
+        let s = TestOutputSummarizer()
+        feed(s, """
+        Test Suite 'All tests' started at t
+        Test Suite 'B.xctest' started at t
+        Test Suite 'F' started at t
+        Test Case '-[B.F testNope]' started.
+        /a/F.swift:13: error: -[B.F testNope] : XCTAssertEqual failed: ("a") is not equal to ("b")
+        Test Case '-[B.F testNope]' failed (0.001 seconds).
+        Test Suite 'F' failed at t.
+        \t Executed 1 test, with 1 failure (0 unexpected) in 0.001 (0.001) seconds
+        Test Suite 'B.xctest' failed at t.
+        \t Executed 1 test, with 1 failure (0 unexpected) in 0.001 (0.001) seconds
+        Test Suite 'All tests' failed at t.
+        \t Executed 1 test, with 1 failure (0 unexpected) in 0.001 (0.001) seconds
+        ** TEST FAILED **
+        """)
+        XCTAssertTrue(s.reachedTestExecution)
+        let rendered = s.render(colorize: false)
+        XCTAssertTrue(rendered.contains("✗ 1 failed, 0 passed"),
+                      "real test failures keep their per-count summary; got: \(rendered)")
+        XCTAssertTrue(rendered.contains("** TEST FAILED **"))
+        XCTAssertFalse(rendered.contains("** BUILD FAILED **"),
+                       "a passed build with a failing test is not a build failure; got: \(rendered)")
+    }
 }
