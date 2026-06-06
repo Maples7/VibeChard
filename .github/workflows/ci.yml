@@ -38,3 +38,49 @@ jobs:
           # exec it. We pass -version (cheap, no project required); a
           # successful exec replaces the shim with xcodebuild itself.
           VCH_SHIM_DEBUG=1 ./.build/release/vch-xcodebuild-shim -version
+
+  # Additive verification of the documented macOS 13 support floor
+  # (README: "macOS 13+"). Kept as a SEPARATE job so the required
+  # "Build & Test" (macos-14) status-check context above is never
+  # renamed — a matrix would change that context name and could wedge
+  # branch protection. macos-13 GitHub runners may ship an Xcode older
+  # than the 15.3 our `swift-tools-version:5.10` manifest needs, so we
+  # select the newest Xcode present on the runner before building. If
+  # that toolchain still can't satisfy 5.10 the job fails loudly, which
+  # is itself the signal to revisit the floor claim rather than to
+  # quietly ship an unverified one.
+  build-test-macos13:
+    name: Build & Test (macOS 13)
+    runs-on: macos-13
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select newest Xcode on the runner
+        run: |
+          latest="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$latest" ]; then
+            echo "Selecting $latest"
+            sudo xcode-select -s "$latest/Contents/Developer"
+          else
+            echo "No /Applications/Xcode_*.app found; using current selection"
+          fi
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve packages
+        run: swift package resolve
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test --parallel
+
+      - name: Smoke vch version
+        run: ./.build/release/vch version
+
