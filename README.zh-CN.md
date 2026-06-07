@@ -36,8 +36,8 @@ vch remove add-paywall
   <img src="docs/images/vch-list.zh-CN.png" alt="vch list 输出：3 个 agent 任务并行，2 个 ok 1 个 fail，以及 vch state 详情" width="720">
 </p>
 
-> **状态：alpha。** CLI 接口已基本稳定但尚未冻结；
-> `.vch/state.json` 的 schema 之后还可能加字段。需要稳定的话请固定 tag。
+> **状态：稳定（1.0）。** CLI 接口与磁盘上的 `.vch/state.json` schema（v1）
+> 已冻结；变更遵循[语义化版本](https://semver.org/)——破坏性变更要等到 2.0。
 
 ## 为什么单独做一个 CLI？
 
@@ -97,7 +97,8 @@ formula 会安装：
 
 ### 从源码构建
 
-环境要求：macOS 13+、Xcode 15.3+（Swift 5.10+）。
+构建环境：macOS 13+，搭配 Xcode 15.3+（Swift 5.10+）。构建产物 `vch`
+二进制运行于 macOS 13+。
 
 ```sh
 git clone https://github.com/maples7/VibeChard.git
@@ -105,6 +106,15 @@ cd VibeChard
 swift build -c release
 ln -s "$PWD/.build/release/vch" /usr/local/bin/vch    # 或者你存放 CLI 的任意位置
 ```
+
+### Apple 平台支持
+
+隔离机制——worktree、PATH shim、`DerivedData` / `ModuleCache` / SwiftPM /
+`xcresult` 重定向——与平台无关，对任何 `xcodebuild` 调用都生效。模拟器克隆
+与预热模板已针对 **iOS、watchOS、tvOS、visionOS** 参数化。日常验证集中在
+**iOS**，它是 `vch run`（安装 + 启动）最常走的路径；另外三个平台走的是相同
+代码路径，但真机 dogfooding 较少。macOS（真机目标）项目的构建与测试同样
+正常——只是不使用模拟器克隆。
 
 ## 快速上手
 

@@ -37,9 +37,9 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ja.png" alt="vch list の出力: 3 つのエージェントタスクを並列実行、ok 2 つ ・ fail 1 つ、そして vch state の詳細" width="720">
 </p>
 
-> **ステータス: alpha。** CLI のインターフェースはほぼ落ち着いていますが
-> まだ凍結されていません。`.vch/state.json` のスキーマには今後フィールドが
-> 追加される可能性があります。安定が必要ならタグを固定してください。
+> **ステータス: 安定版（1.0）。** CLI のインターフェースとディスク上の
+> `.vch/state.json` スキーマ（v1）は凍結されています。変更は[セマンティック
+> バージョニング](https://semver.org/)に従い、破壊的変更は 2.0 まで行いません。
 
 ## なぜ専用の CLI が必要なのか
 
@@ -97,7 +97,8 @@ formula は以下をインストールします：
 
 ### ソースからビルド
 
-要件: macOS 13+、Xcode 15.3+（Swift 5.10+）。
+ビルドホスト: macOS 13+ と Xcode 15.3+（Swift 5.10+）。生成される `vch`
+バイナリは macOS 13+ を対象とします。
 
 ```sh
 git clone https://github.com/maples7/VibeChard.git
@@ -105,6 +106,17 @@ cd VibeChard
 swift build -c release
 ln -s "$PWD/.build/release/vch" /usr/local/bin/vch    # CLI を置いている場所に合わせて
 ```
+
+### Apple プラットフォームのサポート
+
+隔離の仕組み——worktree、PATH shim、`DerivedData` / `ModuleCache` / SwiftPM /
+`xcresult` のリダイレクト——はプラットフォーム非依存で、あらゆる `xcodebuild`
+呼び出しに適用されます。シミュレータのクローンとウォームテンプレートは
+**iOS・watchOS・tvOS・visionOS** 向けにパラメータ化されています。日々の検証は
+**iOS** に集中しており、`vch run`（インストール + 起動）で最もよく通るパス
+です。他の 3 つは同じコードパスでサポートされますが、実機での dogfooding は
+少なめです。macOS（実機ターゲット）プロジェクトのビルドとテストも問題なく
+動作します——シミュレータのクローンを使わないだけです。
 
 ## クイックスタート
 
