@@ -24,10 +24,22 @@ private enum BuildOrTest {
         noSim: Bool,
         eraseClone: Bool = false,
         shutdownTemplate: Bool = false,
+        existingSim: String? = nil,
         verbose: Bool = false,
         testExecutionIdleTimeout: Double? = nil,
         extraArgs: [String]
     ) throws {
+        // #162: reject incompatible flag combinations up front so the
+        // user is told immediately, regardless of cwd / workspace state.
+        try ExistingSimulatorResolver.validateOptions(
+            existingSim: existingSim,
+            device: device,
+            runtime: runtime,
+            eraseClone: eraseClone,
+            shutdownTemplate: shutdownTemplate,
+            noSim: noSim
+        )
+
         let cwd = FileManager.default.currentDirectoryPath
         let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
         let workspace = location.workspace
@@ -85,57 +97,85 @@ private enum BuildOrTest {
             noSim: noSim,
             extraArgs: extraArgs
         )
-        opts.destinationPlatform = service.destinationPlatformHint(
-            task: task,
-            scheme: opts.scheme,
-            configuration: configuration,
-            requestedDevice: device,
-            requestedRuntime: runtime,
-            xcodebuildContainer: xcodebuildContainer,
-            noSim: noSim
-        )
 
-        // M5: lazy-clone simulator if needed, then boot. We do this
-        // BEFORE building the ExecPlan so the resolved UDID gets baked
-        // into argv as `id=<UDID>`.
-        let resolved = try service.resolveSimulator(
-            task: task,
-            requestedDevice: device,
-            requestedRuntime: runtime,
-            requestedPlatform: opts.destinationPlatform,
-            noSim: noSim,
-            shutdownTemplate: shutdownTemplate
-        )
+        // Resolve the simulator destination. Two paths converge on
+        // `(buildSimUDID, resolvedPlatform, displayRuntime)`:
+        //   • #162 `--existing-sim` (build only): build the simulator
+        //     variant against a pre-existing shared simulator, by UDID
+        //     or name. No `simctl clone`, no per-task binding, no boot,
+        //     no erase — vch does not own this device.
+        //   • default M5 lazy-clone: clone (or reuse) a per-task
+        //     simulator, then boot it. We do this BEFORE building the
+        //     ExecPlan so the resolved UDID gets baked into argv as
+        //     `id=<UDID>`.
+        let resolved: SimulatorService.Resolved?
         let resolvedPlatform: SimRuntimeVersion.Platform?
-        if let resolved {
-            guard let platform = resolved.platform else {
+        let buildSimUDID: String?
+        let displayRuntime: SimRuntimeVersion?
+
+        if let existingSim {
+            let match = try simulator.resolveExistingSimulator(selector: existingSim)
+            guard let platform = match.runtime?.platform else {
                 throw VibeChardError.simulatorPlatformUnknown(
-                    udid: resolved.udid,
-                    name: resolved.name
+                    udid: match.udid,
+                    name: match.name
                 )
             }
+            resolved = nil
             resolvedPlatform = platform
+            buildSimUDID = match.udid
+            displayRuntime = match.runtime
+            CLIBridge.eprintln("→ targeting existing simulator '\(match.name)' (\(match.udid.prefix(8))…\(formatRuntime(match.runtime))) — shared, not a per-task clone")
         } else {
-            resolvedPlatform = nil
-        }
-        if let resolved {
-            if resolved.createdNow {
-                CLIBridge.eprintln("→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))")
+            opts.destinationPlatform = service.destinationPlatformHint(
+                task: task,
+                scheme: opts.scheme,
+                configuration: configuration,
+                requestedDevice: device,
+                requestedRuntime: runtime,
+                xcodebuildContainer: xcodebuildContainer,
+                noSim: noSim
+            )
+
+            let clone = try service.resolveSimulator(
+                task: task,
+                requestedDevice: device,
+                requestedRuntime: runtime,
+                requestedPlatform: opts.destinationPlatform,
+                noSim: noSim,
+                shutdownTemplate: shutdownTemplate
+            )
+            if let clone {
+                guard let platform = clone.platform else {
+                    throw VibeChardError.simulatorPlatformUnknown(
+                        udid: clone.udid,
+                        name: clone.name
+                    )
+                }
+                resolvedPlatform = platform
+                if clone.createdNow {
+                    CLIBridge.eprintln("→ cloned simulator '\(clone.name)' (\(clone.udid.prefix(8))…\(formatRuntime(clone.runtime)))")
+                }
+                // #68: opt-in `--erase-clone` wipes accumulated state
+                // (UserDefaults, app containers, keychain) before this
+                // run. Useful when the template was used interactively
+                // and a test depends on first-launch defaults. Costs
+                // ~10–20s. Erase requires the clone to be shut down
+                // first; `SimulatorService.eraseClone` chains
+                // shutdown→erase, so this also collapses any prior
+                // boot state.
+                if eraseClone {
+                    CLIBridge.eprintln("→ erasing simulator '\(clone.name)' (--erase-clone)")
+                    try simulator.eraseClone(udid: clone.udid)
+                }
+                CLIBridge.eprintln("→ booting simulator '\(clone.name)'\(formatRuntime(clone.runtime)) …")
+                try service.bootSimulator(clone)
+            } else {
+                resolvedPlatform = nil
             }
-            // #68: opt-in `--erase-clone` wipes accumulated state
-            // (UserDefaults, app containers, keychain) before this
-            // run. Useful when the template was used interactively
-            // and a test depends on first-launch defaults. Costs
-            // ~10–20s. Erase requires the clone to be shut down
-            // first; `SimulatorService.eraseClone` chains
-            // shutdown→erase, so this also collapses any prior
-            // boot state.
-            if eraseClone {
-                CLIBridge.eprintln("→ erasing simulator '\(resolved.name)' (--erase-clone)")
-                try simulator.eraseClone(udid: resolved.udid)
-            }
-            CLIBridge.eprintln("→ booting simulator '\(resolved.name)'\(formatRuntime(resolved.runtime)) …")
-            try service.bootSimulator(resolved)
+            resolved = clone
+            buildSimUDID = clone?.udid
+            displayRuntime = clone?.runtime
         }
 
         let plan: ExecPlan
@@ -143,14 +183,14 @@ private enum BuildOrTest {
         case .build:
             plan = try service.prepareBuild(
                 task: task, options: opts,
-                resolvedSimulatorUDID: resolved?.udid,
+                resolvedSimulatorUDID: buildSimUDID,
                 resolvedSimulatorPlatform: resolvedPlatform,
                 baseEnv: baseEnv
             )
         case .test:
             plan = try service.prepareTest(
                 task: task, options: opts,
-                resolvedSimulatorUDID: resolved?.udid,
+                resolvedSimulatorUDID: buildSimUDID,
                 resolvedSimulatorPlatform: resolvedPlatform,
                 baseEnv: baseEnv
             )
@@ -165,7 +205,7 @@ private enum BuildOrTest {
             // log is always tee'd to <wt>/.vch/last-build.log so
             // `vch logs <name> --build` can recover it.
             logURL = URL(fileURLWithPath: workspace.lastBuildLogPath(for: task))
-            CLIBridge.eprintln("→ building\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
+            CLIBridge.eprintln("→ building\(formatRuntime(displayRuntime)) — log: \(logURL.path)")
             let s = BuildOutputSummarizer()
             result = try PlanLauncher.runTee(
                 plan,
@@ -183,7 +223,7 @@ private enum BuildOrTest {
             // the end (#9). The full log is always preserved at
             // <wt>/.vch/last-test.log regardless of --verbose.
             logURL = URL(fileURLWithPath: workspace.lastTestLogPath(for: task))
-            CLIBridge.eprintln("→ running tests\(formatRuntime(resolved?.runtime)) — log: \(logURL.path)")
+            CLIBridge.eprintln("→ running tests\(formatRuntime(displayRuntime)) — log: \(logURL.path)")
             let s = TestOutputSummarizer()
             let summarizerLock = NSLock()
             result = try PlanLauncher.runTee(
@@ -355,6 +395,9 @@ struct BuildCommand: ParsableCommand {
     @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default: vch never auto-touches shared resources without an opt-in.")
     var shutdownTemplate: Bool = false
 
+    @Option(name: .long, help: "Build the simulator variant against an EXISTING shared simulator (by UDID or exact name) instead of a per-task clone. Skips `simctl clone` and records no per-task binding. Targets that simulator's platform via `id=<udid>`. Mutually exclusive with --device.")
+    var existingSim: String?
+
     @Flag(name: .long, help: "Mirror xcodebuild's full output to the terminal in real time. Without this flag, vch prints only a concise summary at the end; the full log is always tee'd to <wt>/.vch/last-build.log (see `vch logs <name> --build`).")
     var verbose: Bool = false
 
@@ -376,6 +419,7 @@ struct BuildCommand: ParsableCommand {
                 noSim: noSim,
                 eraseClone: eraseClone,
                 shutdownTemplate: shutdownTemplate,
+                existingSim: existingSim,
                 verbose: verbose,
                 testExecutionIdleTimeout: nil,
                 extraArgs: extraArgs

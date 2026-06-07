@@ -175,6 +175,14 @@ vch build [<name>] [flags] [-- xcodebuild-extras]
   `simctl clone` refuses because the template is Booted (off by
   default; see
   [When `simctl clone` says the template is "Booted"](cookbook.md#when-simctl-clone-says-the-template-is-booted)).
+- `--existing-sim <udid|name>` builds the **simulator** variant against
+  a pre-existing shared simulator (selected by UDID — exact,
+  case-insensitive — or exact device name) instead of a per-task clone:
+  vch skips `simctl clone`, writes no per-task binding, and targets that
+  device's platform via `-destination id=<udid>`. Mutually exclusive
+  with `--device`; `--no-sim` / `--runtime` / `--erase-clone` /
+  `--shutdown-template` are rejected. See
+  [Installing onto an existing shared simulator](cookbook.md#installing-onto-an-existing-shared-simulator).
 - By default prints only a concise summary (`✓ build succeeded in 12.4s   (3 warnings)`) plus the full log path; `--verbose` mirrors xcodebuild's full output.
 - The full firehose is always tee'd to `<wt>/.vch/last-build.log`.
 
@@ -236,6 +244,14 @@ clone.
 - `--shutdown-template` shuts a Booted warm template down and retries
   the clone (off by default; see
   [When `simctl clone` says the template is "Booted"](cookbook.md#when-simctl-clone-says-the-template-is-booted)).
+- `--existing-sim <udid|name>` installs + launches on a pre-existing
+  shared simulator (selected by UDID — exact, case-insensitive — or
+  exact device name) instead of a per-task clone. vch skips
+  `simctl clone`, records no per-task binding (so `vch land` / `vch rm`
+  never reap it), boots the device, and never erases it. Mutually
+  exclusive with `--device`; `--runtime` / `--erase-clone` /
+  `--shutdown-template` are rejected. See
+  [Installing onto an existing shared simulator](cookbook.md#installing-onto-an-existing-shared-simulator).
 - `PRODUCT_BUNDLE_IDENTIFIER` is auto-resolved via
   `xcodebuild -showBuildSettings -json`.
 - Everything after `--` is forwarded verbatim to `simctl launch` —

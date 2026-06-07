@@ -164,6 +164,23 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// the accepted forms (`iOS 26.4` / `iOS-26-4` / verbose
     /// CoreSimulator ID). (#47)
     case invalidRuntime(String)
+    /// `--existing-sim <udid|name>` matched no simulator in
+    /// `xcrun simctl list devices` by UDID or by exact name. (#162)
+    case existingSimulatorNotFound(selector: String)
+    /// `--existing-sim <name>` matched two or more simulators that
+    /// share that name (e.g. the same device on two runtimes). The
+    /// user must re-run with the exact UDID instead. (#162)
+    case existingSimulatorAmbiguous(selector: String, candidates: [String])
+    /// `--existing-sim` was combined with `--device`. The two are
+    /// different ways to pick a target simulator: `--device` clones a
+    /// fresh per-task simulator off a template, `--existing-sim`
+    /// installs onto a pre-existing shared one. (#162)
+    case existingSimulatorConflictsWithDevice
+    /// `--existing-sim` was combined with an option that only applies
+    /// to vch's per-task clone / warm template (`--runtime`,
+    /// `--erase-clone`, `--shutdown-template`). The shared simulator is
+    /// a resource vch does not own, so none of them apply. (#162)
+    case existingSimulatorIncompatibleOption(option: String)
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -306,6 +323,15 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "warm template '\(name)' already exists (\(udid.prefix(8))…) — run `vch sim warm-template remove` first if you want to recreate it"
         case let .invalidRuntime(label):
             return "could not parse runtime '\(label)' — accepted forms are '<platform> X.Y' (e.g. 'iOS 26.4', 'watchOS 11.5', 'visionOS 2.5'), '<platform>-X-Y' (e.g. 'iOS-26-4'), or the full SimRuntime identifier (e.g. 'com.apple.CoreSimulator.SimRuntime.iOS-26-4')"
+        case let .existingSimulatorNotFound(selector):
+            return "no simulator matches '\(selector)' by UDID or name (try `xcrun simctl list devices`)"
+        case let .existingSimulatorAmbiguous(selector, candidates):
+            let listing = candidates.map { "  - \($0)" }.joined(separator: "\n")
+            return "\(candidates.count) simulators are named '\(selector)' — pass the exact UDID to --existing-sim instead:\n\(listing)"
+        case .existingSimulatorConflictsWithDevice:
+            return "--existing-sim and --device are mutually exclusive: --device clones a per-task simulator off a template, --existing-sim installs onto a pre-existing shared one"
+        case let .existingSimulatorIncompatibleOption(option):
+            return "\(option) cannot be combined with --existing-sim: it applies only to vch's per-task clone, not a pre-existing shared simulator vch does not own"
         }
     }
 

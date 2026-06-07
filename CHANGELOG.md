@@ -8,6 +8,22 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Added
+- `vch run --existing-sim <udid|name>` and `vch build --existing-sim
+  <udid|name>` target a pre-existing **shared** simulator instead of a
+  per-task clone — the explicit opt-in for "install/build onto the
+  simulator I keep open and watch"
+  ([#162](https://github.com/Maples7/VibeChard/issues/162)). The device
+  is selected by UDID (exact, case-insensitive) or exact name; vch skips
+  `simctl clone`, records **no** per-task binding in `state.json` (so
+  `vch land` / `vch rm` never reap it), and never erases it.
+  `vch run --existing-sim` additionally boots the device and installs +
+  launches the app on it, while still reusing the task's isolated
+  DerivedData / SwiftPM caches. `--existing-sim` is mutually exclusive
+  with `--device`, and rejects `--runtime` / `--erase-clone` /
+  `--shutdown-template` (plus `--no-sim` on `vch build`) — those only
+  apply to vch's per-task clone.
+
 ## 1.0.0 - 2026-06-07
 
 First stable release. The documented CLI surface, the `VCH_*`
