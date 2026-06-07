@@ -75,7 +75,7 @@ Examples: `feat/copy-untracked`, `fix/exec-tty-hang`,
 - Body wrapped at 72 chars, multiple `-m` flags is fine.
 
 `BREAKING CHANGE:` in the footer triggers a major bump per SemVer
-(but until `1.0.0`, breaking changes go in a minor — see [Versioning](#versioning)).
+(see [Versioning](#versioning)).
 
 ## Pull requests
 
@@ -119,13 +119,34 @@ add Foundation imports there — see
 
 ## Versioning
 
-[Semantic Versioning 2.0](https://semver.org/) once we hit `1.0.0`.
+[Semantic Versioning 2.0](https://semver.org/). As of `1.0.0` the
+public surface is **stable**, and that's a promise we keep:
 
-Pre-1.0 (where we are today): **patch bump** for fixes /
-docs / internal refactors that don't change CLI surface; **minor
-bump** for new flags, new subcommands, or behavior changes that
-existing users could feel — even if we'd technically call them
-breaking. The minor itself is the warning that "0.x is not stable".
+- **patch** (`1.0.x`) — bug fixes, docs, internal refactors that don't
+  change the CLI surface or on-disk format.
+- **minor** (`1.x.0`) — backward-compatible additions: new
+  subcommands, new flags, new optional `state.json` fields, additive
+  output. Existing invocations keep working.
+- **major** (`x.0.0`) — a breaking change to the documented CLI
+  surface, exit-code contract, or `state.json` schema. A
+  `BREAKING CHANGE:` footer on any commit triggers this.
+
+What "stable" covers:
+
+- **The documented command + flag surface.** Every command and flag in
+  the README command table and `docs/commands.md` is part of the
+  contract. Removing or repurposing one is a major bump.
+- **`.vch/state.json` schema v1.** The on-disk format is frozen at
+  `TaskState.currentSchemaVersion = 1`. New fields may be added in a
+  minor *only* if older `vch` binaries keep reading the file
+  (additive, optional). Any change that an older binary can't read —
+  renaming, removing, or repurposing a field, or bumping
+  `currentSchemaVersion` — is a major bump and ships with a migration.
+- **The `VCH_*` environment contract** injected into task shells.
+
+What is explicitly *not* covered (may change in a minor): exact
+human-readable wording of summaries / hints, log formatting, and the
+internal layout under `.agent-build/`.
 
 ## Releases
 

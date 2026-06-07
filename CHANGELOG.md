@@ -8,6 +8,30 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.0.0 - 2026-06-07
+
+First stable release. The documented CLI surface, the `VCH_*`
+environment contract, and the on-disk `.vch/state.json` schema (v1) are
+now frozen and covered by [Semantic Versioning](https://semver.org/):
+backward-compatible changes ship in minors, breaking changes wait for a
+2.0. No code behavior changes versus 0.11.1 — this release is the
+stability commitment itself.
+
+### Changed
+- Status moved from **alpha** to **stable**. `README` now states the
+  SemVer + schema-v1 guarantee, and `CONTRIBUTING` spells out exactly
+  what the stable surface covers (commands, flags, `VCH_*` env, and the
+  `state.json` v1 format) and what may still change in a minor
+  (human-readable wording, log formatting, `.agent-build/` internals).
+
+### Docs
+- `README` (and the four localized READMEs) clarify that macOS 13+ /
+  Xcode 15.3+ is the **build host** requirement while the produced
+  `vch` binary targets macOS 13+, and add an Apple-platform-support
+  note: the isolation machinery is platform-agnostic and simulator
+  cloning is parameterized for iOS/watchOS/tvOS/visionOS, with
+  day-to-day `vch run` validation concentrated on iOS.
+
 ### Fixed
 - `vch test` no longer prints a misleading `✗ 0 failed, 0 passed … ** TEST
   FAILED **` summary when the build phase fails before any test runs. A

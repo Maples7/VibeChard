@@ -38,9 +38,9 @@ vch remove add-paywall
   <img src="docs/images/vch-list.ko.png" alt="vch list 출력: 3개의 에이전트 task 병렬 실행, ok 2개 · fail 1개, 그리고 vch state 세부 정보" width="720">
 </p>
 
-> **상태: alpha.** CLI 표면은 거의 안정화되었지만 아직 동결되지
-> 않았습니다. `.vch/state.json` 스키마에는 이후 필드가 추가될 수 있습니다.
-> 안정성이 필요하면 태그를 고정하세요.
+> **상태: 안정 (1.0).** CLI 표면과 디스크의 `.vch/state.json` 스키마(v1)는
+> 동결되었습니다. 변경은 [시맨틱 버저닝](https://semver.org/)을 따르며,
+> 호환성을 깨는 변경은 2.0 까지 기다립니다.
 
 ## 왜 별도의 CLI 가 필요한가
 
@@ -100,7 +100,8 @@ formula 가 설치하는 항목:
 
 ### 소스로부터 빌드
 
-요구 사항: macOS 13+, Xcode 15.3+ (Swift 5.10+).
+빌드 호스트: macOS 13+ 와 Xcode 15.3+ (Swift 5.10+). 생성되는 `vch`
+바이너리는 macOS 13+ 를 대상으로 합니다.
 
 ```sh
 git clone https://github.com/maples7/VibeChard.git
@@ -108,6 +109,17 @@ cd VibeChard
 swift build -c release
 ln -s "$PWD/.build/release/vch" /usr/local/bin/vch    # CLI 보관 경로에 맞춰
 ```
+
+### Apple 플랫폼 지원
+
+격리 메커니즘——worktree, PATH shim, `DerivedData` / `ModuleCache` / SwiftPM /
+`xcresult` 리디렉션——은 플랫폼 비의존적이며 모든 `xcodebuild` 호출에
+적용됩니다. 시뮬레이터 클론과 웜 템플릿은 **iOS, watchOS, tvOS, visionOS** 에
+맞춰 매개변수화되어 있습니다. 일상적인 검증은 **iOS** 에 집중되어 있으며,
+`vch run`(설치 + 실행)에서 가장 많이 사용되는 경로입니다. 나머지 셋은 동일한
+코드 경로로 지원되지만 실기기 dogfooding 은 적습니다. macOS(실기기 타깃)
+프로젝트의 빌드와 테스트도 정상 동작합니다——시뮬레이터 클론을 쓰지 않을
+뿐입니다.
 
 ## 빠른 시작
 

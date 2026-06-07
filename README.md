@@ -38,9 +38,10 @@ own simulator clone — and your `~/Library/Developer/` stays untouched.
   <img src="docs/images/vch-list.en.png" alt="vch list output: three parallel agent tasks, two ok one fail, with vch state details" width="720">
 </p>
 
-> **Status: alpha.** The CLI surface is settling but not yet
-> frozen; on-disk `.vch/state.json` may gain fields. Pin a tag if you
-> need stability.
+> **Status: stable (1.0).** The CLI surface and the on-disk
+> `.vch/state.json` schema (v1) are frozen; changes follow
+> [Semantic Versioning](https://semver.org/) — breaking changes wait
+> for a 2.0.
 
 ## Why a CLI just for this?
 
@@ -110,7 +111,8 @@ The formula installs:
 
 ### From source
 
-Requirements: macOS 13+, Xcode 15.3+ (Swift 5.10+).
+Build host: macOS 13+ with Xcode 15.3+ (Swift 5.10+). The `vch` binary
+it produces targets macOS 13+.
 
 ```sh
 git clone https://github.com/maples7/VibeChard.git
@@ -118,6 +120,18 @@ cd VibeChard
 swift build -c release
 ln -s "$PWD/.build/release/vch" /usr/local/bin/vch    # or wherever you keep CLI bins
 ```
+
+### Apple platform support
+
+The isolation machinery — worktree, PATH shim, `DerivedData` /
+`ModuleCache` / SwiftPM / `xcresult` redirection — is platform-agnostic
+and applies to any `xcodebuild` invocation. Simulator cloning and warm
+templates are parameterized for **iOS, watchOS, tvOS, and visionOS**.
+Day-to-day validation concentrates on **iOS**, which is the most
+exercised path for `vch run` (install + launch); the other three are
+supported on the same code paths but see lighter real-device
+dogfooding. macOS (device-target) projects build and test fine — they
+just don't use a simulator clone.
 
 ## Quickstart
 
