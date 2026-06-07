@@ -402,6 +402,35 @@ final class VchCLISmokeTests: XCTestCase {
         )
     }
 
+    /// #162: `--existing-sim` flag-conflict validation must be wired
+    /// into the CLI, not just unit-tested in Core. The conflict is
+    /// rejected *before* any workspace/simulator lookup, so this test
+    /// is hermetic (no git repo, no simctl). Guards against the
+    /// validation being dropped from `execute()` during a refactor.
+    func testBuildRejectsExistingSimWithDevice() throws {
+        let result = try runVch([
+            "build", "--existing-sim", "iPhone 16", "--device", "iPhone 16 Pro",
+        ])
+        XCTAssertEqual(result.exitCode, ExitCode.usage, "stderr: \(result.stderr)")
+        XCTAssertTrue(
+            result.stderr.contains("mutually exclusive"),
+            "expected the --device conflict message; got: \(result.stderr)"
+        )
+    }
+
+    /// Same wiring guard for `vch run` + `--erase-clone`: erasing a
+    /// shared simulator vch does not own is refused (hard rule #9).
+    func testRunRejectsExistingSimWithEraseClone() throws {
+        let result = try runVch([
+            "run", "--existing-sim", "iPhone 16", "--erase-clone",
+        ])
+        XCTAssertEqual(result.exitCode, ExitCode.usage, "stderr: \(result.stderr)")
+        XCTAssertTrue(
+            result.stderr.contains("--erase-clone cannot be combined with --existing-sim"),
+            "expected the --erase-clone conflict message; got: \(result.stderr)"
+        )
+    }
+
     /// AP's typo correction is a better diagnostic than our generic
     /// nudge. When `--schem` triggers a "Did you mean '--scheme'?"
     /// suggestion, we must defer to it rather than stacking a second

@@ -231,9 +231,9 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 | `vch open [<name>]` | worktree を IDE で開く（`--with xcode`/`code`/`cursor`/…）。 |
 | `vch <name>` | worktree のシェルに入る。分離環境と PATH shim が有効。 |
 | `vch exec <name> -- <cmd...>` | タスクの worktree 内で任意コマンドを実行（分離有効）。 |
-| `vch build [<name>]` | `xcodebuild build` を実行し `-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。タスク worktree 内では `<name>` を省略可（`--scheme`、`--project`、`--workspace`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--verbose`）。 |
+| `vch build [<name>]` | `xcodebuild build` を実行し `-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。タスク worktree 内では `<name>` を省略可（`--scheme`、`--project`、`--workspace`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`--verbose`）。 |
 | `vch test [<name>]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。タスク worktree 内では `<name>` を省略可。シミュレーターは遅延クローン（`--device`、`--project`、`--workspace`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`、`--test-execution-idle-timeout`）。 |
-| `vch run [<name>]` | タスクのシミュレータークローン上でビルド・インストール・起動。タスク worktree 内では `<name>` を省略可（`--project`、`--workspace`、`--erase-clone`、`--shutdown-template`、`-- launch-args`）。 |
+| `vch run [<name>]` | タスクのシミュレータークローン上でビルド・インストール・起動。タスク worktree 内では `<name>` を省略可（`--project`、`--workspace`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`-- launch-args`）。 |
 | `vch logs <name>` | タスク直近のビルド/テストの完全な xcodebuild ログを表示（`--test`/`--build`）。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | タスク用シミュレータークローンを明示的に管理。`vch sim clone --device <name>` を繰り返すことで 1 タスクが複数（iOS + watchOS など、プラットフォームごとに 1 つ）の クローンを持てる ([#99](https://github.com/Maples7/VibeChard/issues/99))。 |
 | `vch sim warm-template {create,list,remove}` | 共有の *warm* シミュレーターテンプレートを管理（iOS / watchOS / tvOS / visionOS、[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |

@@ -352,6 +352,21 @@ public struct SimulatorService: Sendable {
         try simctl.erase(udid: udid)
     }
 
+    /// Resolve a `--existing-sim <udid|name>` selector against the live
+    /// `simctl list devices` snapshot, without cloning or touching
+    /// `state.json`. Used by `vch run --existing-sim` / `vch build
+    /// --existing-sim` to target a long-lived shared simulator the user
+    /// owns instead of a per-task clone. (#162)
+    public func resolveExistingSimulator(
+        selector: String
+    ) throws -> ExistingSimulatorResolver.Match {
+        let devices = try simctl.allDevices()
+        return try ExistingSimulatorResolver.resolve(
+            selector: selector,
+            devices: devices
+        )
+    }
+
     /// Read the task's single simulator binding (#99). Returns nil
     /// when there's no binding. Throws `simulatorBindingAmbiguous`
     /// when the task has two or more bindings — callers that want

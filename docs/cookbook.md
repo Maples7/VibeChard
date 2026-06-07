@@ -17,6 +17,7 @@ down. For the day-to-day flow, see the
 - [Skipping the first-boot delay with warm simulator templates](#skipping-the-first-boot-delay-with-warm-simulator-templates)
 - [Resetting per-task simulator state](#resetting-per-task-simulator-state)
 - [When `simctl clone` says the template is "Booted"](#when-simctl-clone-says-the-template-is-booted)
+- [Installing onto an existing shared simulator](#installing-onto-an-existing-shared-simulator)
 - [Cleaning up tasks whose branches have already merged](#cleaning-up-tasks-whose-branches-have-already-merged)
 
 ## Branching off mid-WIP work
@@ -291,6 +292,54 @@ never auto-touches a shared resource). If another task's
 `vch run` is currently driving the same template, an automatic
 shutdown would yank it out from under that task. With the flag
 explicit you decide once per invocation.
+
+## Installing onto an existing shared simulator
+
+vch's default is **per-task isolation**: the first `vch build` /
+`vch test` / `vch run` that needs a simulator lazily clones one
+(`<device>-vch-<task>`) so parallel agents never trample each other's
+state, and `vch land` / `vch rm` reap that clone when the task is done.
+
+Manual UI verification sometimes wants the opposite. If you keep one
+simulator open all day and eyeball it (say `iPhone 16`, a fixed UDID),
+you want the build installed *there* — not on a throwaway clone that
+vanishes on `vch land`. `vch run --existing-sim` is the explicit opt-in
+for exactly that:
+
+```sh
+# By UDID (exact, case-insensitive) — unambiguous:
+vch run add-paywall --existing-sim E8B1BF6D-1234-5678-9ABC-DEF012345678 \
+  -- -UsePreviewSampleData
+
+# Or by exact device name, when it's unique in `simctl list devices`:
+vch run add-paywall --existing-sim 'iPhone 16' -- -UsePreviewSampleData
+```
+
+vch resolves the device, boots it (idempotent — a no-op if it's already
+booted), builds the simulator variant **reusing the task's isolated
+DerivedData / SwiftPM caches**, then `simctl install` + `simctl launch`
+onto that device and opens `Simulator.app`. Crucially, it takes **no
+`simctl clone`** and writes **no per-task binding** to `state.json`, so
+`vch land` / `vch rm` never touch your shared simulator, and vch never
+erases it (hard rule #9: vch does not own that device).
+
+`vch build --existing-sim <udid|name>` is the build-only variant: it
+builds the simulator variant against that device (`-destination
+id=<udid>`) without booting, installing, or launching — handy when you
+want a `Debug-iphonesimulator` product to `simctl install` yourself.
+
+Notes:
+
+- `--existing-sim` is mutually exclusive with `--device` (that flag
+  clones a fresh per-task simulator off a *template*). vch rejects the
+  combination rather than guessing which you meant.
+- `--runtime`, `--erase-clone`, and `--shutdown-template` are likewise
+  rejected (as is `--no-sim` on `vch build`): they only make sense for
+  the per-task clone / warm-template path, and erasing a shared device
+  you don't own would wipe the state you're trying to watch.
+- If a *name* matches two or more devices (e.g. the same model on two
+  runtimes), vch refuses and lists each candidate's UDID so you can
+  re-run with the precise one.
 
 ## Cleaning up tasks whose branches have already merged
 

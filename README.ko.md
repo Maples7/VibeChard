@@ -231,9 +231,9 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 | `vch open [<name>]` | worktree 를 IDE 로 열기 (`--with xcode`/`code`/`cursor`/…). |
 | `vch <name>` | worktree 셸로 진입 — 격리 환경과 PATH shim 활성. |
 | `vch exec <name> -- <cmd...>` | 작업 worktree 내부에서 임의 명령 실행 (격리 활성). |
-| `vch build [<name>]` | `xcodebuild build` 실행 시 `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 작업 worktree 안에서는 `<name>` 생략 가능 (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--verbose`). |
+| `vch build [<name>]` | `xcodebuild build` 실행 시 `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 작업 worktree 안에서는 `<name>` 생략 가능 (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `--verbose`). |
 | `vch test [<name>]` | `xcodebuild test` 실행 시 `-resultBundlePath` 주입. 작업 worktree 안에서는 `<name>` 생략 가능; 시뮬레이터는 지연 클론 (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`, `--test-execution-idle-timeout`). |
-| `vch run [<name>]` | 작업의 시뮬레이터 클론 위에서 빌드·설치·실행. 작업 worktree 안에서는 `<name>` 생략 가능 (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `-- launch-args`). |
+| `vch run [<name>]` | 작업의 시뮬레이터 클론 위에서 빌드·설치·실행. 작업 worktree 안에서는 `<name>` 생략 가능 (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `-- launch-args`). |
 | `vch logs <name>` | 작업 가장 최근 빌드/테스트의 전체 xcodebuild 로그 출력 (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업별 시뮬레이터 클론(들)을 명시적으로 관리. `vch sim clone --device <name>`을 반복하면 한 작업이 플랫폼당 하나씩(예: iOS + watchOS) 여러 클론을 가질 수 있음 ([#99](https://github.com/Maples7/VibeChard/issues/99)). |
 | `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿 관리 (iOS / watchOS / tvOS / visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)). |

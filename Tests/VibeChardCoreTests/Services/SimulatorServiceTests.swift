@@ -1297,6 +1297,66 @@ final class SimulatorServiceTests: XCTestCase {
         XCTAssertEqual(simctl.createCalls.count, 0, "should not create when device exists")
     }
 
+    // MARK: - resolveExistingSimulator (#162)
+
+    func testResolveExistingSimulatorReadsFromAllDevices() throws {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [
+                device("SHARED-UDID", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+                       .init(platform: .iOS, major: 26, minor: 5)),
+            ]
+        )
+        let match = try service.resolveExistingSimulator(selector: "iPhone 16")
+        XCTAssertEqual(match.udid, "SHARED-UDID")
+        XCTAssertEqual(match.name, "iPhone 16")
+        XCTAssertEqual(match.runtime?.platform, .iOS)
+    }
+
+    func testResolveExistingSimulatorDoesNotTouchState() throws {
+        // The whole point of --existing-sim is to NOT bind the shared
+        // simulator to the task; `vch land` / `vch rm` would otherwise
+        // reap it. Prove resolution leaves state.json byte-identical.
+        let (service, fs, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [
+                device("SHARED-UDID", "iPhone 16",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+                       .init(platform: .iOS, major: 26, minor: 5)),
+            ]
+        )
+        let statePath = Workspace(mainWorktreePath: mainRepo)
+            .statePath(for: try TaskName("alpha"))
+        let before = try fs.readFile(at: statePath)
+
+        _ = try service.resolveExistingSimulator(selector: "SHARED-UDID")
+
+        let after = try fs.readFile(at: statePath)
+        XCTAssertEqual(before, after, "resolveExistingSimulator must not write state.json")
+        let state = try TaskState.parse(after)
+        XCTAssertTrue(state.allSimulators.isEmpty, "no per-task binding should be recorded")
+    }
+
+    func testResolveExistingSimulatorThrowsNotFound() {
+        let (service, _, _) = makeService(
+            seedingTask: "alpha",
+            seedingState: emptyState("alpha"),
+            devices: [
+                device("OTHER", "iPad Pro",
+                       "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+                       .init(platform: .iOS, major: 26, minor: 5)),
+            ]
+        )
+        XCTAssertThrowsError(try service.resolveExistingSimulator(selector: "iPhone 16")) { err in
+            guard case VibeChardError.existingSimulatorNotFound = err else {
+                return XCTFail("expected existingSimulatorNotFound, got \(err)")
+            }
+        }
+    }
+
 }
 
 // MARK: - test double

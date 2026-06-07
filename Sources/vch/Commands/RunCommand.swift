@@ -58,6 +58,9 @@ struct RunCommand: ParsableCommand {
     @Flag(name: .long, help: "If `simctl clone` fails because the warm template is currently Booted (e.g. you launched it from Simulator.app earlier), shut the template down and retry. Off by default: vch never auto-touches shared resources without an opt-in.")
     var shutdownTemplate: Bool = false
 
+    @Option(name: .long, help: "Install + launch on an EXISTING shared simulator (by UDID or exact name) instead of a per-task clone. Skips `simctl clone`, records no per-task binding (so `vch land`/`vch rm` never reap it), and never erases it. Mutually exclusive with --device.")
+    var existingSim: String?
+
     @Argument(parsing: .postTerminator,
               help: "Args forwarded verbatim to `simctl launch` (i.e. to the app's `main`).")
     var launchArgs: [String] = []
@@ -74,6 +77,7 @@ struct RunCommand: ParsableCommand {
                 runtime: runtime,
                 eraseClone: eraseClone,
                 shutdownTemplate: shutdownTemplate,
+                existingSim: existingSim,
                 launchArgs: launchArgs
             )
         }
@@ -89,8 +93,19 @@ struct RunCommand: ParsableCommand {
         runtime: String?,
         eraseClone: Bool = false,
         shutdownTemplate: Bool = false,
+        existingSim: String? = nil,
         launchArgs: [String]
     ) throws {
+        // #162: reject incompatible flag combinations up front so the
+        // user is told immediately, regardless of cwd / workspace state.
+        try ExistingSimulatorResolver.validateOptions(
+            existingSim: existingSim,
+            device: device,
+            runtime: runtime,
+            eraseClone: eraseClone,
+            shutdownTemplate: shutdownTemplate
+        )
+
         let cwd = FileManager.default.currentDirectoryPath
         let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
         let workspace = location.workspace
@@ -148,60 +163,96 @@ struct RunCommand: ParsableCommand {
             noSim: false,
             extraArgs: []
         )
-        opts.destinationPlatform = buildService.destinationPlatformHint(
-            task: task,
-            scheme: opts.scheme,
-            configuration: configuration,
-            requestedDevice: device,
-            requestedRuntime: runtime,
-            xcodebuildContainer: xcodebuildContainer,
-            noSim: false
-        )
 
-        // `vch run` always needs a simulator clone to install onto.
-        // `resolveSimulator` only returns nil when `noSim == true`
-        // (which we forced false above) or when the workspace has no
-        // simulator service, which never happens for the disk impl.
-        guard let resolved = try buildService.resolveSimulator(
-            task: task,
-            requestedDevice: device,
-            requestedRuntime: runtime,
-            requestedPlatform: opts.destinationPlatform,
-            noSim: false,
-            shutdownTemplate: shutdownTemplate
-        ) else {
-            // Defensive: should be unreachable given DiskSimctlClient
-            // is always wired in. Treat as a usage error so callers
-            // can react appropriately.
-            throw VibeChardError.missingArgument("--device")
-        }
-        guard let resolvedPlatform = resolved.platform else {
-            throw VibeChardError.simulatorPlatformUnknown(
-                udid: resolved.udid,
-                name: resolved.name
-            )
-        }
+        // Resolve the target simulator. Two paths:
+        //   • #162 `--existing-sim`: install onto a pre-existing shared
+        //     simulator (by UDID or name). No `simctl clone`, no
+        //     per-task binding written to state.json, never erased.
+        //   • default: lazy-clone (or reuse) a per-task simulator.
+        // Both converge on `(simUDID, simPlatform, simName)`, then run
+        // the same build → install → launch pipeline below.
+        let simUDID: String
+        let simPlatform: SimRuntimeVersion.Platform
+        let simName: String
 
-        if resolved.createdNow {
+        if let existingSim {
+            let match = try simulator.resolveExistingSimulator(selector: existingSim)
+            guard let platform = match.runtime?.platform else {
+                throw VibeChardError.simulatorPlatformUnknown(
+                    udid: match.udid,
+                    name: match.name
+                )
+            }
+            simUDID = match.udid
+            simPlatform = platform
+            simName = match.name
             CLIBridge.eprintln(
-                "→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))"
+                "→ targeting existing simulator '\(match.name)' (\(match.udid.prefix(8))…\(formatRuntime(match.runtime))) — shared, not a per-task clone"
             )
-        }
-        // #68: opt-in `--erase-clone` wipes accumulated state
-        // (UserDefaults, app containers, keychain) before this
-        // run. Useful when the template was used interactively
-        // and the app's first-launch behavior depends on a clean
-        // defaults domain.
-        if eraseClone {
             CLIBridge.eprintln(
-                "→ erasing simulator '\(resolved.name)' (--erase-clone)"
+                "→ booting simulator '\(match.name)'\(formatRuntime(match.runtime)) …"
             )
-            try simulator.eraseClone(udid: resolved.udid)
+            try simulator.bootIfNeeded(udid: match.udid, name: match.name)
+        } else {
+            opts.destinationPlatform = buildService.destinationPlatformHint(
+                task: task,
+                scheme: opts.scheme,
+                configuration: configuration,
+                requestedDevice: device,
+                requestedRuntime: runtime,
+                xcodebuildContainer: xcodebuildContainer,
+                noSim: false
+            )
+
+            // `vch run` always needs a simulator clone to install onto.
+            // `resolveSimulator` only returns nil when `noSim == true`
+            // (which we forced false above) or when the workspace has no
+            // simulator service, which never happens for the disk impl.
+            guard let resolved = try buildService.resolveSimulator(
+                task: task,
+                requestedDevice: device,
+                requestedRuntime: runtime,
+                requestedPlatform: opts.destinationPlatform,
+                noSim: false,
+                shutdownTemplate: shutdownTemplate
+            ) else {
+                // Defensive: should be unreachable given DiskSimctlClient
+                // is always wired in. Treat as a usage error so callers
+                // can react appropriately.
+                throw VibeChardError.missingArgument("--device")
+            }
+            guard let resolvedPlatform = resolved.platform else {
+                throw VibeChardError.simulatorPlatformUnknown(
+                    udid: resolved.udid,
+                    name: resolved.name
+                )
+            }
+
+            if resolved.createdNow {
+                CLIBridge.eprintln(
+                    "→ cloned simulator '\(resolved.name)' (\(resolved.udid.prefix(8))…\(formatRuntime(resolved.runtime)))"
+                )
+            }
+            // #68: opt-in `--erase-clone` wipes accumulated state
+            // (UserDefaults, app containers, keychain) before this
+            // run. Useful when the template was used interactively
+            // and the app's first-launch behavior depends on a clean
+            // defaults domain.
+            if eraseClone {
+                CLIBridge.eprintln(
+                    "→ erasing simulator '\(resolved.name)' (--erase-clone)"
+                )
+                try simulator.eraseClone(udid: resolved.udid)
+            }
+            CLIBridge.eprintln(
+                "→ booting simulator '\(resolved.name)'\(formatRuntime(resolved.runtime)) …"
+            )
+            try buildService.bootSimulator(resolved)
+
+            simUDID = resolved.udid
+            simPlatform = resolvedPlatform
+            simName = resolved.name
         }
-        CLIBridge.eprintln(
-            "→ booting simulator '\(resolved.name)'\(formatRuntime(resolved.runtime)) …"
-        )
-        try buildService.bootSimulator(resolved)
 
         // Best-effort: open Simulator.app so the user sees the run.
         // `simctl boot` only boots the headless simulator process.
@@ -210,8 +261,8 @@ struct RunCommand: ParsableCommand {
         let plan = try buildService.prepareBuild(
             task: task,
             options: opts,
-            resolvedSimulatorUDID: resolved.udid,
-            resolvedSimulatorPlatform: resolvedPlatform,
+            resolvedSimulatorUDID: simUDID,
+            resolvedSimulatorPlatform: simPlatform,
             baseEnv: baseEnv
         )
 
@@ -253,15 +304,15 @@ struct RunCommand: ParsableCommand {
             scheme: scheme,
             xcodebuildContainer: xcodebuildContainer,
             configuration: configuration,
-            simulatorUDID: resolved.udid,
-            simulatorPlatform: resolvedPlatform
+            simulatorUDID: simUDID,
+            simulatorPlatform: simPlatform
         )
         CLIBridge.eprintln(
-            "→ installing '\(target.bundleID)' on \(resolved.name) …"
+            "→ installing '\(target.bundleID)' on \(simName) …"
         )
         try runService.installAndLaunch(
             target: target,
-            simulatorUDID: resolved.udid,
+            simulatorUDID: simUDID,
             launchArgs: launchArgs
         )
         let argsSuffix = launchArgs.isEmpty

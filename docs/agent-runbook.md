@@ -78,6 +78,16 @@ Run the app on the task's simulator clone:
 vch run fix-login --scheme MyApp --device "iPhone 16" -- -UITestMode
 ```
 
+To install + launch onto a pre-existing **shared** simulator you keep
+open and watch — instead of the per-task clone — pass `--existing-sim
+<udid|name>`. vch skips the clone, records no per-task binding (so
+`vch land` / `vch rm` never reap it), boots the device, and never
+erases it (mutually exclusive with `--device`):
+
+```sh
+vch run fix-login --scheme MyApp --existing-sim "iPhone 16" -- -UITestMode
+```
+
 If the requested device type and runtime are installed but no base
 simulator exists yet, pass the runtime explicitly. vch will create the
 base simulator before cloning it for the task:
