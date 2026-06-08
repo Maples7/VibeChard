@@ -333,6 +333,14 @@ to override.
 If `vch new` printed a hint about `eval "$(vch shellenv)"`, set
 `VCH_NEW_HINT=0` to silence it (or just install the shell helpers).
 
+If you routinely boot a warm template by hand (e.g. for manual UI
+checks) and then watch `vch build` / `vch test` / `vch run` refuse to
+clone it, set `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` to make
+`--shutdown-template` the default for this shell or repo. The global
+default stays conservative — vch never auto-touches a shared template
+(hard rule #9) — so this is a per-user/per-repo opt-in; an explicit
+`--shutdown-template` always wins.
+
 ## What VibeChard is not
 
 - **Not an AI vendor wrapper.** No SDK, no API key, no model

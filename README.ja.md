@@ -303,6 +303,8 @@ Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的�
 
 `vch new` が `eval "$(vch shellenv)"` のヒントを表示した場合、`VCH_NEW_HINT=0` で抑制できます（あるいはシェル helper をインストールすれば自動的に消えます）。
 
+warm template を手動で起動して（例: 手動 UI チェック）から `vch build` / `vch test` / `vch run` がクローンを拒否する状況によく遭遇するなら、`VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` を設定すると、このシェルやリポジトリで `--shutdown-template` がデフォルトになります。グローバルのデフォルトは保守的なまま（vch は共有テンプレートを自動で触りません — hard rule #9）なので、これはユーザー単位・リポジトリ単位のオプトインです。明示的な `--shutdown-template` は常に優先されます。
+
 ## VibeChard ではないもの
 
 - **AI ベンダーのラッパーではありません。** SDK も API キーもモデル抽象もありません。好きなエージェントを使ってください——VibeChard は並列セッションを安全にすることだけを担当します。

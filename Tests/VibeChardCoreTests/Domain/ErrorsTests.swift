@@ -206,6 +206,11 @@ final class ErrorsTests: XCTestCase {
         // delegation knob and we're not just refusing to help.
         XCTAssertTrue(msg.contains("--shutdown-template"),
                       "expected --shutdown-template hint in: \(msg)")
+        // Point at the persistable opt-in (#164) so users who hit this
+        // on every clone learn they can set it once instead of retyping
+        // the flag each invocation.
+        XCTAssertTrue(msg.contains("VCH_SHUTDOWN_TEMPLATE_ON_CLONE"),
+                      "expected persistable opt-in hint in: \(msg)")
     }
 
     func testSimulatorPlatformUnavailableMessageIsActionableAndBusinessExit() {

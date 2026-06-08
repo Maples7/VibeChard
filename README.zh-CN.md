@@ -300,6 +300,8 @@ test` / `vch run` 用的是同一套——所以你在 `vch <name>` 里手敲
 如果 `vch new` 提示了 `eval "$(vch shellenv)"`，可以用 `VCH_NEW_HINT=0`
 关闭这条提示（或者直接安装好 shell helper）。
 
+如果你经常手动 boot 一个 warm template（例如做手动 UI 验收），然后发现 `vch build` / `vch test` / `vch run` 拒绝克隆它，可以设置 `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1`，让 `--shutdown-template` 在当前 shell 或仓库里成为默认行为。全局默认仍然保持保守（vch 绝不主动碰共享模板——hard rule #9），所以这只是按用户 / 按仓库的 opt-in；显式传 `--shutdown-template` 始终优先。
+
 ## VibeChard 不是什么
 
 - **不是 AI 厂商封装。** 没有 SDK、没有 API key、没有模型抽象。用任何 agent 都行——VibeChard 只负责让并行会话安全。

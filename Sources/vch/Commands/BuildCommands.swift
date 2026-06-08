@@ -137,13 +137,20 @@ private enum BuildOrTest {
                 noSim: noSim
             )
 
+            // #164: the explicit `--shutdown-template` flag always wins;
+            // otherwise `VCH_SHUTDOWN_TEMPLATE_ON_CLONE` lets the user
+            // make it the default for this shell/repo. Resolved here
+            // (not in `validateOptions`) so a global opt-in never trips
+            // the `--existing-sim` conflict check above.
             let clone = try service.resolveSimulator(
                 task: task,
                 requestedDevice: device,
                 requestedRuntime: runtime,
                 requestedPlatform: opts.destinationPlatform,
                 noSim: noSim,
-                shutdownTemplate: shutdownTemplate
+                shutdownTemplate: ShutdownTemplatePreference.resolve(
+                    flag: shutdownTemplate, env: baseEnv
+                )
             )
             if let clone {
                 guard let platform = clone.platform else {

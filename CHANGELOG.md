@@ -9,6 +9,15 @@ The English README is the source of truth; localized READMEs may lag.
 ## Unreleased
 
 ### Added
+- `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` makes `--shutdown-template` the
+  default for `vch build` / `vch test` / `vch run`, so a Booted shared
+  warm template no longer requires retyping the flag on every clone
+  ([#164](https://github.com/Maples7/VibeChard/issues/164)). The global
+  default stays conservative (vch never auto-touches a shared template
+  per hard rule #9); the env var is a per-user/per-repo opt-in, and the
+  `simulatorTemplateBooted` error now points at it. An explicit
+  `--shutdown-template` still wins, and the opt-in is ignored on the
+  `--existing-sim` path (no clone happens there).
 - `vch run --existing-sim <udid|name>` and `vch build --existing-sim
   <udid|name>` target a pre-existing **shared** simulator instead of a
   per-task clone — the explicit opt-in for "install/build onto the
