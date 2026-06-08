@@ -298,6 +298,8 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 如果 `vch new` 提示了 `eval "$(vch shellenv)"`，可以用 `VCH_NEW_HINT=0`
 關掉這條提示（或者直接安裝好 shell helper）。
 
+如果你經常手動 boot 一個 warm template（例如做手動 UI 驗收），然後發現 `vch build` / `vch test` / `vch run` 拒絕克隆它，可以設定 `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1`，讓 `--shutdown-template` 在當前 shell 或倉庫裡成為預設行為。全域預設仍然保持保守（vch 絕不主動碰共享模板——hard rule #9），所以這只是按使用者 / 按倉庫的 opt-in；顯式傳 `--shutdown-template` 始終優先。
+
 ## VibeChard 不是什麼
 
 - **不是 AI 廠商封裝。** 沒有 SDK、沒有 API key、沒有模型抽象。用任何 agent 都行——VibeChard 只負責讓並行工作階段安全。

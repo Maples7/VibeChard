@@ -307,6 +307,8 @@ build` 와 동일하게 동작합니다. "작업 환경에 들어가기" 전용�
 
 `vch new` 가 `eval "$(vch shellenv)"` 힌트를 출력했다면 `VCH_NEW_HINT=0` 으로 끌 수 있습니다(또는 shell helper 를 설치해도 사라집니다).
 
+warm template 을 직접 부팅한 뒤(예: 수동 UI 확인) `vch build` / `vch test` / `vch run` 이 클론을 거부하는 상황을 자주 만난다면, `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` 을 설정해 이 셸/저장소에서 `--shutdown-template` 를 기본값으로 만들 수 있습니다. 전역 기본값은 보수적으로 유지되며(vch 는 공유 템플릿을 자동으로 건드리지 않습니다 — hard rule #9), 이것은 사용자별/저장소별 opt-in 입니다. 명시적인 `--shutdown-template` 가 항상 우선합니다.
+
 ## VibeChard 가 아닌 것
 
 - **AI 벤더 래퍼가 아닙니다.** SDK 도, API 키도, 모델 추상화도 없습니다.

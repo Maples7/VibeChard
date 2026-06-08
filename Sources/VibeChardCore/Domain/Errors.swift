@@ -229,7 +229,7 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "simulator clone '\(name)' (\(udid.prefix(8))…) did not become Booted after `xcrun simctl bootstatus \(udid) -b`; simctl still reports state \(state). Refusing to start xcodebuild because it can wait indefinitely on this destination. Try `xcrun simctl bootstatus \(udid) -b` manually, or reset the clone with `vch sim erase <task>` / `vch clean <task> --kill-stuck-tests` if a prior test process is stuck."
         case let .simulatorTemplateBooted(name, udid):
             let prefix = String(udid.prefix(8))
-            return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it)"
+            return "simulator template '\(name)' (\(prefix)…) is currently Booted — `xcrun simctl clone` refuses to clone a booted device. Either shut it down manually (`xcrun simctl shutdown \(udid)`) or pass --shutdown-template to let vch do it for you (off by default per hard rule #9: the warm template is shared across tasks, so vch never auto-touches it). To make --shutdown-template the default for this shell/repo, set VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1."
         case let .worktreeBusy(path, holders):
             return Self.renderWorktreeBusy(path: path, holders: holders)
         case let .logFileMissing(path, hint):

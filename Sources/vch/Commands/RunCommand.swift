@@ -208,13 +208,17 @@ struct RunCommand: ParsableCommand {
             // `resolveSimulator` only returns nil when `noSim == true`
             // (which we forced false above) or when the workspace has no
             // simulator service, which never happens for the disk impl.
+            // #164: `--shutdown-template` wins; otherwise the
+            // `VCH_SHUTDOWN_TEMPLATE_ON_CLONE` opt-in makes it the default.
             guard let resolved = try buildService.resolveSimulator(
                 task: task,
                 requestedDevice: device,
                 requestedRuntime: runtime,
                 requestedPlatform: opts.destinationPlatform,
                 noSim: false,
-                shutdownTemplate: shutdownTemplate
+                shutdownTemplate: ShutdownTemplatePreference.resolve(
+                    flag: shutdownTemplate, env: baseEnv
+                )
             ) else {
                 // Defensive: should be unreachable given DiskSimctlClient
                 // is always wired in. Treat as a usage error so callers

@@ -175,6 +175,8 @@ vch build [<name>] [flags] [-- xcodebuild-extras]
   `simctl clone` refuses because the template is Booted (off by
   default; see
   [When `simctl clone` says the template is "Booted"](cookbook.md#when-simctl-clone-says-the-template-is-booted)).
+  Set `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` to make it the default for
+  this shell/repo without changing the conservative global default.
 - `--existing-sim <udid|name>` builds the **simulator** variant against
   a pre-existing shared simulator (selected by UDID — exact,
   case-insensitive — or exact device name) instead of a per-task clone:
@@ -210,6 +212,8 @@ vch test [<name>] [flags] [-- xcodebuild-extras]
 - `--shutdown-template` shuts a Booted warm template down and retries
   the clone (see
   [When `simctl clone` says the template is "Booted"](cookbook.md#when-simctl-clone-says-the-template-is-booted)).
+  `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` makes it the default for this
+  shell/repo.
 - By default prints only a concise summary (one line per suite,
   failing tests expanded with file:line and assertion message) plus
   the full log and result bundle paths; `--verbose` mirrors

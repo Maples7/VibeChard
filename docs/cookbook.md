@@ -293,6 +293,15 @@ never auto-touches a shared resource). If another task's
 shutdown would yank it out from under that task. With the flag
 explicit you decide once per invocation.
 
+If you hit this on *every* clone — typically because you keep a warm
+template booted for manual UI checks, or a previous session left it
+Booted — set `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` (shell profile, repo
+`.envrc`, or CI) to make `--shutdown-template` the default without
+retyping it. It only changes the default for you: the conservative
+global behaviour (hard rule #9) is unchanged, an explicit
+`--shutdown-template` still wins, and the opt-in never applies to the
+`--existing-sim` path (no clone happens there).
+
 ## Installing onto an existing shared simulator
 
 vch's default is **per-task isolation**: the first `vch build` /
