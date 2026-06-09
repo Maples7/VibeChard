@@ -6,7 +6,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 The English README is the source of truth; localized READMEs may lag.
 
-## Unreleased
+## 1.1.0 - 2026-06-09
 
 ### Added
 - `VCH_SHUTDOWN_TEMPLATE_ON_CLONE=1` makes `--shutdown-template` the
