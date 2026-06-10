@@ -248,7 +248,7 @@ template trap, and pruning merged tasks.
 | `vch <name>` | Drop into a shell inside the worktree with isolation active. |
 | `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
 | `vch build [<name>]` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected; `<name>` is optional inside a task worktree (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `--verbose`). |
-| `vch test [<name>]` | `xcodebuild test` with `-resultBundlePath` injected; `<name>` is optional inside a task worktree; lazy sim clone (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`, `--test-execution-idle-timeout`). |
+| `vch test [<name>]` | `xcodebuild test` with `-resultBundlePath` injected; `<name>` is optional inside a task worktree; lazy sim clone (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`, `--test-execution-idle-timeout`, `--progress-interval`). |
 | `vch run [<name>]` | Build, install, launch on the task's sim clone; `<name>` is optional inside a task worktree (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `-- launch-args`). |
 | `vch logs <name>` | Print the most recent build/test xcodebuild log (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone(s) explicitly; a task can own one clone per platform (e.g. iOS + watchOS) via repeated `vch sim clone --device <name>` ([#99](https://github.com/Maples7/VibeChard/issues/99)). |

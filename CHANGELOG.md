@@ -6,6 +6,20 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 The English README is the source of truth; localized READMEs may lag.
 
+## Unreleased
+
+### Added
+- `vch test` now prints a periodic `→ still running (Nm elapsed, last
+  output Ns ago)` heartbeat to stderr during long, output-quiet
+  xcodebuild phases, so a slow run — most acutely a cold watchOS
+  clone+boot+build+codesign+validate — stays distinguishable from a
+  hang ([#167](https://github.com/Maples7/VibeChard/issues/167)). The
+  "last output" figure tails the same byte stream that feeds
+  `.vch/last-test.log`, so it doubles as a liveness signal. Cadence is
+  controlled by `--progress-interval <seconds>` (default 30; `0`
+  disables), and the heartbeat is suppressed under `--verbose` since
+  the full firehose is already live.
+
 ## 1.1.0 - 2026-06-09
 
 ### Added

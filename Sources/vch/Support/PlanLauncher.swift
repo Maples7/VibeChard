@@ -94,6 +94,8 @@ enum PlanLauncher {
         mirror: Bool,
         idleTimeout: TimeInterval? = nil,
         shouldEnforceIdleTimeout: @escaping () -> Bool = { true },
+        heartbeatInterval: TimeInterval? = nil,
+        onHeartbeat: ((_ elapsedSeconds: TimeInterval, _ secondsSinceLastOutput: TimeInterval) -> Void)? = nil,
         onLine: @escaping (String) -> Void
     ) throws -> RunResult {
         // Make sure the parent dir exists.
@@ -194,27 +196,48 @@ enum PlanLauncher {
         }
 
         var idleTimeoutResult: IdleTimeout?
-        if let idleTimeout, idleTimeout > 0 {
+        let idleLimit = idleTimeout ?? 0
+        let wantsIdleWatchdog = idleLimit > 0
+        // Heartbeat is purely a progress signal, so it's pointless when
+        // the caller already mirrors the firehose (`--verbose`).
+        let heartbeatEvery = mirror ? 0 : (heartbeatInterval ?? 0)
+        let wantsHeartbeat = heartbeatEvery > 0 && onHeartbeat != nil
+        if wantsIdleWatchdog || wantsHeartbeat {
             // A lightweight polling loop keeps this path independent of
             // RunLoop state while the pipe-drain workers own stream reads.
-            let checkInterval = min(max(idleTimeout / 10, 0.05), 1.0)
+            // Poll fast enough to honor the tighter of the two cadences.
+            var cadences: [Double] = []
+            if wantsIdleWatchdog { cadences.append(idleLimit) }
+            if wantsHeartbeat { cadences.append(heartbeatEvery) }
+            let checkInterval = min(max((cadences.min() ?? 1.0) / 10, 0.05), 1.0)
+            var nextHeartbeatAt = started.addingTimeInterval(heartbeatEvery)
             while proc.isRunning {
-                let idleSeconds = secondsSinceLastActivity()
+                let now = Date()
+                // Emit a heartbeat on its own cadence, regardless of
+                // whether the child is currently producing output — that
+                // silence is exactly what makes a long run look hung.
+                if wantsHeartbeat, now >= nextHeartbeatAt {
+                    onHeartbeat?(now.timeIntervalSince(started), secondsSinceLastActivity())
+                    nextHeartbeatAt = now.addingTimeInterval(heartbeatEvery)
+                }
                 // The caller decides when an idle period is meaningful;
                 // for `vch test`, this stays false until test execution starts.
-                if shouldEnforceIdleTimeout(), idleSeconds >= idleTimeout {
-                    idleTimeoutResult = IdleTimeout(
-                        pid: proc.processIdentifier,
-                        idleSeconds: idleSeconds,
-                        elapsedSeconds: Date().timeIntervalSince(started)
-                    )
-                    proc.terminate()
-                    if !waitForExit(proc, timeout: 2.0) {
+                if wantsIdleWatchdog, shouldEnforceIdleTimeout() {
+                    let idleSeconds = secondsSinceLastActivity()
+                    if idleSeconds >= idleLimit {
+                        idleTimeoutResult = IdleTimeout(
+                            pid: proc.processIdentifier,
+                            idleSeconds: idleSeconds,
+                            elapsedSeconds: Date().timeIntervalSince(started)
+                        )
+                        proc.terminate()
+                        if !waitForExit(proc, timeout: 2.0) {
 #if canImport(Darwin)
-                        _ = Darwin.kill(proc.processIdentifier, SIGKILL)
+                            _ = Darwin.kill(proc.processIdentifier, SIGKILL)
 #endif
+                        }
+                        break
                     }
-                    break
                 }
                 Thread.sleep(forTimeInterval: checkInterval)
             }
