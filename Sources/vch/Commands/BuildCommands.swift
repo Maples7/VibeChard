@@ -27,6 +27,7 @@ private enum BuildOrTest {
         existingSim: String? = nil,
         verbose: Bool = false,
         testExecutionIdleTimeout: Double? = nil,
+        progressInterval: Double? = nil,
         extraArgs: [String]
     ) throws {
         // #162: reject incompatible flag combinations up front so the
@@ -243,6 +244,13 @@ private enum BuildOrTest {
                     let reached = s.reachedTestExecution
                     summarizerLock.unlock()
                     return reached
+                },
+                heartbeatInterval: progressInterval,
+                onHeartbeat: { elapsed, sinceLastOutput in
+                    CLIBridge.eprintln(ProgressHeartbeat.line(
+                        elapsedSeconds: elapsed,
+                        secondsSinceLastOutput: sinceLastOutput
+                    ))
                 },
                 onLine: {
                     summarizerLock.lock()
@@ -503,6 +511,9 @@ struct TestCommand: ParsableCommand {
     @Option(name: .long, help: "Fail with diagnostics after this many seconds with no xcodebuild output once test execution has started. Use 0 to disable. Default: 300.")
     var testExecutionIdleTimeout: Double = 300
 
+    @Option(name: .long, help: "Emit a '→ still running …' heartbeat to stderr every N seconds during long, output-quiet phases so a slow run (e.g. a cold watchOS clone+boot+build) stays distinguishable from a hang. Suppressed under --verbose (the firehose is already live). Use 0 to disable. Default: 30.")
+    var progressInterval: Double = 30
+
     @Flag(name: .long, help: "Replay the last `vch test <name>` invocation verbatim, reusing the recorded extra args.")
     var rerun: Bool = false
 
@@ -525,6 +536,9 @@ struct TestCommand: ParsableCommand {
         try CLIBridge.run {
             guard testExecutionIdleTimeout >= 0 else {
                 throw ValidationError("--test-execution-idle-timeout must be greater than or equal to 0")
+            }
+            guard progressInterval >= 0 else {
+                throw ValidationError("--progress-interval must be greater than or equal to 0")
             }
             // #46: --rerun / --rerun-failed are mutually exclusive
             // with each other and with positional extra args.
@@ -613,6 +627,7 @@ struct TestCommand: ParsableCommand {
                 shutdownTemplate: shutdownTemplate,
                 verbose: verbose,
                 testExecutionIdleTimeout: testExecutionIdleTimeout > 0 ? testExecutionIdleTimeout : nil,
+                progressInterval: progressInterval > 0 ? progressInterval : nil,
                 extraArgs: effectiveExtraArgs
             )
         }

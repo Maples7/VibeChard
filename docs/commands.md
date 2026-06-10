@@ -224,6 +224,14 @@ vch test [<name>] [flags] [-- xcodebuild-extras]
   stalled test execution: vch terminates the child, exits 124, and
   prints the task, PID, simulator state, log path, result bundle path,
   command, and recovery hints. Use `0` to disable the watchdog.
+- `--progress-interval <seconds>` defaults to 30. During long,
+  output-quiet phases (most acutely a cold watchOS clone+boot+build)
+  vch prints a `→ still running (Nm elapsed, last output Ns ago)`
+  heartbeat to stderr on this cadence, so a slow run stays
+  distinguishable from a hang — the "last output" figure tails the same
+  stream as `.vch/last-test.log` and doubles as a liveness signal. Use
+  `0` to disable; suppressed under `--verbose` (the firehose is already
+  live).
 - The full firehose is always tee'd to `<wt>/.vch/last-test.log`.
 - Counts come from the xcresult bundle so swift-testing
   (`@Suite` / `@Test` / `#expect`) targets are reported correctly.

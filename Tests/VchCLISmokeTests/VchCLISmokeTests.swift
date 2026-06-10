@@ -628,6 +628,98 @@ final class VchCLISmokeTests: XCTestCase {
         XCTAssertTrue(result.stdout.contains("? test status unknown"), result.stdout)
     }
 
+    func testTestEmitsProgressHeartbeatDuringSilentPhase() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        // A short, output-quiet run that succeeds on its own: it emits
+        // one line, then stays silent for ~0.8s before exiting 0. With a
+        // 0.1s heartbeat the wrapper should print several "→ still
+        // running" lines during that silent window — the #167 fix.
+        let toolEnv = try installSlowSucceedingXcodebuild(
+            rootDir: fixture.rootDir,
+            silentSeconds: 0.8
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+
+        let result = try runVch(
+            [
+                "test", "alpha",
+                "--scheme", "App",
+                "--no-sim",
+                "--progress-interval", "0.1",
+                // Disable the idle watchdog so this exercises only the
+                // heartbeat: the child exits cleanly on its own.
+                "--test-execution-idle-timeout", "0",
+            ],
+            cwd: fixture.repoPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        XCTAssertTrue(
+            result.stderr.contains("→ still running ("),
+            "expected a progress heartbeat on stderr\nstderr: \(result.stderr)"
+        )
+        XCTAssertTrue(
+            result.stderr.contains("last output"),
+            "heartbeat should report time since last output\nstderr: \(result.stderr)"
+        )
+    }
+
+    func testTestSuppressesProgressHeartbeatUnderVerbose() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let fixture = try makeManagedTaskFixture(
+            taskName: "alpha",
+            simulator: nil
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let toolEnv = try installSlowSucceedingXcodebuild(
+            rootDir: fixture.rootDir,
+            silentSeconds: 0.8
+        )
+        let env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+
+        let result = try runVch(
+            [
+                "test", "alpha",
+                "--scheme", "App",
+                "--no-sim",
+                "--verbose",
+                "--progress-interval", "0.1",
+                "--test-execution-idle-timeout", "0",
+            ],
+            cwd: fixture.repoPath,
+            env: env
+        )
+
+        XCTAssertEqual(result.exitCode, 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        XCTAssertFalse(
+            result.stderr.contains("→ still running ("),
+            "heartbeat must be suppressed under --verbose\nstderr: \(result.stderr)"
+        )
+    }
+
+    func testTestRejectsNegativeProgressInterval() throws {
+        let result = try runVch(["test", "alpha", "--progress-interval=-1"])
+        XCTAssertNotEqual(result.exitCode, 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        XCTAssertTrue(
+            result.stderr.contains("--progress-interval must be greater than or equal to 0"),
+            "stderr: \(result.stderr)"
+        )
+    }
+
     func testTestTerminatesChildXcodebuildWhenWrapperGetsSIGTERM() throws {
         try assertTestTerminatesChildXcodebuildWhenWrapperGetsSignal(
             SIGTERM,
@@ -1234,6 +1326,30 @@ final class VchCLISmokeTests: XCTestCase {
             "VCH_SMOKE_XCODEBUILD_PID": rootDir.appendingPathComponent("xcodebuild.pid").path,
             "VCH_SMOKE_XCODEBUILD_READY": rootDir.appendingPathComponent("xcodebuild-ready").path,
             "VCH_SMOKE_XCODEBUILD_TERMINATED": rootDir.appendingPathComponent("xcodebuild-terminated").path,
+        ]
+    }
+
+    private func installSlowSucceedingXcodebuild(rootDir: URL, silentSeconds: Double) throws -> [String: String] {
+        let pathBin = rootDir.appendingPathComponent("fake-bin")
+        try FileManager.default.createDirectory(
+            at: pathBin,
+            withIntermediateDirectories: true
+        )
+        // Emit one line, fall silent for `silentSeconds`, then exit 0.
+        // The silent window is what the heartbeat must illuminate, and
+        // the self-terminating child keeps the test from depending on
+        // the idle-timeout watchdog to end the run.
+        try writeExecutable(
+            pathBin.appendingPathComponent("xcodebuild"),
+            body: """
+            #!/bin/sh
+            echo "Testing started"
+            sleep \(silentSeconds)
+            exit 0
+            """
+        )
+        return [
+            "PATH": "\(pathBin.path):/usr/bin:/bin",
         ]
     }
 
