@@ -11,7 +11,7 @@ public enum VibeChard {
     /// Semantic version of the `vch` binary.
     /// Bumped manually in `git tag v*` releases. The release workflow
     /// fails fast if this constant doesn't match the pushed tag.
-    public static let version = "1.1.0"
+    public static let version = "1.2.0"
 
     /// Canonical public repository URL used for version-pinned docs.
     public static let repositoryURL = "https://github.com/Maples7/VibeChard"

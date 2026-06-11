@@ -6,7 +6,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 The English README is the source of truth; localized READMEs may lag.
 
-## Unreleased
+## 1.2.0 - 2026-06-11
 
 ### Added
 - `vch test` now prints a periodic `→ still running (Nm elapsed, last
