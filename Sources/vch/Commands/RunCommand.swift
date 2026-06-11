@@ -34,7 +34,7 @@ struct RunCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String?
 
-    @Option(name: .long, help: "Scheme to build/run. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
+    @Option(name: .long, help: "Scheme to build/run. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`; in a multi-scheme repo with no recorded scheme, vch asks you to pass --scheme.")
     var scheme: String?
 
     @Option(name: .long, help: "Xcode project path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --workspace.")
@@ -129,14 +129,19 @@ struct RunCommand: ParsableCommand {
         )
 
         // Reuse the same scheme-resolution rules as `vch build`/`vch
-        // test` so the three commands feel like one workflow.
+        // test` so the three commands feel like one workflow. Fail fast
+        // (before any simulator boot) when the repo is multi-scheme and
+        // nothing could be picked: `vch run`'s post-`--` args go to
+        // `simctl launch`, not xcodebuild, so there is no `-scheme`
+        // escape hatch — hence `extraArgs: []`. (#169)
         let schemeResolver = SchemeResolver(
             workspace: workspace,
             lister: DiskXcodebuildLister()
         )
-        let resolvedScheme = try schemeResolver.resolve(
+        let resolvedScheme = try schemeResolver.resolveRequired(
             task: task,
             explicit: scheme,
+            extraArgs: [],
             xcodebuildContainer: xcodebuildContainer
         )
         if let r = resolvedScheme, scheme == nil {

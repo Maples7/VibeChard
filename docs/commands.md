@@ -158,7 +158,12 @@ vch build [<name>] [flags] [-- xcodebuild-extras]
   vch-managed task worktree; vch infers it from `.vch/state.json`.
 - `--scheme` is optional when the project has exactly one shared
   scheme (auto-detected via `xcodebuild -list -json`); once recorded,
-  vch reuses it on subsequent calls.
+  vch reuses it on subsequent calls. In a repo with two or more shared
+  schemes and no recorded scheme, vch fails fast with the candidate
+  list and asks for `--scheme <name>` instead of leaking xcodebuild's
+  `-scheme`/`-derivedDataPath` flag conflict
+  ([#169](https://github.com/Maples7/VibeChard/issues/169)); a
+  `-scheme` passed after `--` is still honored.
 - `--project <path>` / `--workspace <path>` select an explicit
   xcodebuild container (relative to the task worktree unless absolute).
   They are mutually exclusive and are useful for nested Xcode projects

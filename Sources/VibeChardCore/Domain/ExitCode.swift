@@ -59,7 +59,8 @@ public extension VibeChardError {
              .seedSourceTaskNotFound,
              .seedSourceHasNoSwiftPMCache,
              .existingSimulatorNotFound,
-             .existingSimulatorAmbiguous:
+             .existingSimulatorAmbiguous,
+             .schemeResolutionAmbiguous:
             return ExitCode.business
         case .simulatorBootVerificationFailed,
              .externalCommandFailed,

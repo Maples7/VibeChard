@@ -20,6 +20,21 @@ The English README is the source of truth; localized READMEs may lag.
   disables), and the heartbeat is suppressed under `--verbose` since
   the full firehose is already live.
 
+### Fixed
+- `vch build` / `vch test` / `vch run` now fail fast with an
+  actionable error in a multi-scheme repo when no scheme can be
+  resolved (no `--scheme`, no persisted scheme, and `xcodebuild -list
+  -json` reports two or more shared schemes), listing the candidate
+  schemes and suggesting `--scheme <name>`
+  ([#169](https://github.com/Maples7/VibeChard/issues/169)). Previously
+  vch proceeded and leaked xcodebuild's opaque "The flag -scheme … is
+  required when specifying -derivedDataPath" — and `vch run
+  --existing-sim` booted the shared simulator *before* that failure.
+  The check now runs before any simulator clone/boot, so an
+  unresolvable scheme produces no side effects. `vch build` / `vch
+  test` still honor a `-scheme` passed after `--` (it flows to
+  xcodebuild), and single-shared-scheme auto-pick is unchanged.
+
 ## 1.1.0 - 2026-06-09
 
 ### Added

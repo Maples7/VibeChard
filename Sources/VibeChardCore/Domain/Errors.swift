@@ -181,6 +181,16 @@ public enum VibeChardError: Error, CustomStringConvertible {
     /// `--erase-clone`, `--shutdown-template`). The shared simulator is
     /// a resource vch does not own, so none of them apply. (#162)
     case existingSimulatorIncompatibleOption(option: String)
+    /// `vch build` / `vch test` / `vch run` could not resolve a scheme:
+    /// the repo exposes two or more shared schemes (per `xcodebuild
+    /// -list -json`) and the task has neither a `--scheme` flag nor a
+    /// persisted scheme to pick from. vch always injects
+    /// `-derivedDataPath`, which makes xcodebuild *require* `-scheme`,
+    /// so proceeding would only reach xcodebuild's opaque "The flag
+    /// -scheme … is required when specifying -derivedDataPath" — and
+    /// `vch run` would have booted a simulator first. Fail fast with
+    /// the candidate list instead. (#169)
+    case schemeResolutionAmbiguous(available: [String])
 
     // External command failure (exit 3)
     case externalCommandFailed(cmd: String, exitCode: Int32, stderr: String)
@@ -332,6 +342,10 @@ public enum VibeChardError: Error, CustomStringConvertible {
             return "--existing-sim and --device are mutually exclusive: --device clones a per-task simulator off a template, --existing-sim installs onto a pre-existing shared one"
         case let .existingSimulatorIncompatibleOption(option):
             return "\(option) cannot be combined with --existing-sim: it applies only to vch's per-task clone, not a pre-existing shared simulator vch does not own"
+        case let .schemeResolutionAmbiguous(available):
+            let listing = available.map { "  - \($0)" }.joined(separator: "\n")
+            let example = available.first ?? "<name>"
+            return "could not resolve a scheme: this repo exposes \(available.count) shared schemes and the task has no persisted scheme to pick from. Pass --scheme <name> (e.g. --scheme \(example)):\n\(listing)"
         }
     }
 

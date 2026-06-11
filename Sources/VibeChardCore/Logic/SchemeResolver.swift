@@ -16,10 +16,15 @@ import Foundation
 ///      `vch.toml` in v1).
 ///   3. **`xcodebuild -list -json` single-shared-scheme** — if the
 ///      worktree exposes exactly one shared scheme, use it and tell
-///      the user once. Anything ambiguous (zero or 2+ schemes) falls
+///      the user once. Zero schemes / detection-unavailable falls
 ///      through to the historical "no -scheme flag → xcodebuild's
 ///      built-in default" path so we don't change behavior in repos
-///      where the user is happy with what they had.
+///      where the user is happy with what they had. Two-or-more
+///      shared schemes is ambiguous: `resolve` still returns nil
+///      (callers that can tolerate a missing scheme keep working),
+///      but `resolveRequired` fails fast with the candidate list so
+///      `vch build` / `vch test` / `vch run` never leak xcodebuild's
+///      `-scheme` / `-derivedDataPath` flag conflict (#169).
 ///
 /// All shell-outs go through `XcodebuildLister` so the resolver is
 /// fully unit-testable with an in-memory fake.
@@ -110,6 +115,21 @@ public struct SchemeResolver: Sendable {
         }
     }
 
+    /// Richer result of resolution: the picked scheme (if any) plus the
+    /// shared schemes `xcodebuild -list -json` reported. The schemes are
+    /// captured only when tier 3 was actually reached (no explicit /
+    /// persisted scheme); they are `[]` otherwise, or when auto-detection
+    /// was unavailable. Used by `resolveRequired` to fail fast with a
+    /// candidate list in multi-scheme repos (#169).
+    public struct ResolutionOutcome: Sendable, Equatable {
+        public let resolved: Resolved?
+        public let availableSchemes: [String]
+        public init(resolved: Resolved?, availableSchemes: [String]) {
+            self.resolved = resolved
+            self.availableSchemes = availableSchemes
+        }
+    }
+
     public let workspace: Workspace
     public let fs: FileSystem
     public let lister: XcodebuildLister?
@@ -122,16 +142,38 @@ public struct SchemeResolver: Sendable {
         self.fs = fs
     }
 
-    /// Resolve scheme using the three-tier strategy. Returns nil when
-    /// no strategy produced one — caller should let xcodebuild fall
-    /// back to its built-in default (today's behavior).
+    /// Lenient resolution: the three-tier strategy, returning nil when
+    /// no tier produced a scheme. Never throws on ambiguity — a caller
+    /// that can tolerate a missing scheme keeps working. The `vch
+    /// build` / `vch test` / `vch run` commands use `resolveRequired`
+    /// instead, which fails fast in multi-scheme repos (#169).
     public func resolve(
         task: TaskName,
         explicit: String?,
         xcodebuildContainer: XcodebuildContainer? = nil
     ) throws -> Resolved? {
+        try resolveWithDiagnostics(
+            task: task,
+            explicit: explicit,
+            xcodebuildContainer: xcodebuildContainer
+        ).resolved
+    }
+
+    /// Same three-tier resolution as `resolve`, but also reports the
+    /// shared schemes seen via `xcodebuild -list -json` so callers can
+    /// render an actionable error when resolution comes up empty in a
+    /// multi-scheme repo. `availableSchemes` is populated only when
+    /// tier 3 was reached and the lister succeeded.
+    public func resolveWithDiagnostics(
+        task: TaskName,
+        explicit: String?,
+        xcodebuildContainer: XcodebuildContainer? = nil
+    ) throws -> ResolutionOutcome {
         if let explicit, !explicit.isEmpty {
-            return Resolved(scheme: explicit, source: .explicit)
+            return ResolutionOutcome(
+                resolved: Resolved(scheme: explicit, source: .explicit),
+                availableSchemes: []
+            )
         }
         // Tier 2: state.json
         let statePath = workspace.statePath(for: task)
@@ -139,22 +181,75 @@ public struct SchemeResolver: Sendable {
            let data = try? fs.readFile(at: statePath),
            let state = try? TaskState.parse(data),
            let persisted = state.scheme, !persisted.isEmpty {
-            return Resolved(scheme: persisted, source: .persisted)
+            return ResolutionOutcome(
+                resolved: Resolved(scheme: persisted, source: .persisted),
+                availableSchemes: []
+            )
         }
         // Tier 3: single-shared-scheme detection. Best-effort — any
         // failure (no xcodebuild, malformed JSON, network FS hiccup)
-        // returns nil so we don't break invocations in projects where
-        // auto-detection is unavailable.
-        guard let lister else { return nil }
+        // returns no scheme so we don't break invocations in projects
+        // where auto-detection is unavailable.
+        guard let lister else {
+            return ResolutionOutcome(resolved: nil, availableSchemes: [])
+        }
         let wt = workspace.worktreePath(for: task)
         guard let raw = try? lister.listJSON(
             cwd: wt,
             xcodebuildContainer: xcodebuildContainer
-        ) else { return nil }
+        ) else {
+            return ResolutionOutcome(resolved: nil, availableSchemes: [])
+        }
         let schemes = SchemePickerJSON.parseSchemes(raw)
         if schemes.count == 1 {
-            return Resolved(scheme: schemes[0], source: .autoDetected)
+            return ResolutionOutcome(
+                resolved: Resolved(scheme: schemes[0], source: .autoDetected),
+                availableSchemes: schemes
+            )
         }
+        return ResolutionOutcome(resolved: nil, availableSchemes: schemes)
+    }
+
+    /// Resolve a scheme, failing fast with a user-facing error when the
+    /// repo is multi-scheme and nothing could be picked (#169).
+    ///
+    /// vch always injects `-derivedDataPath`, and xcodebuild refuses to
+    /// run with `-derivedDataPath` but no `-scheme`. So when resolution
+    /// comes up empty in a multi-scheme repo, letting the command
+    /// proceed only reaches xcodebuild's cryptic flag-conflict error —
+    /// possibly *after* vch has already booted a simulator. Catch it
+    /// here so the caller can bail before any such side effect.
+    ///
+    /// `extraArgs` is the `vch build` / `vch test` escape hatch: those
+    /// post-`--` args flow verbatim to xcodebuild, so a user-supplied
+    /// `-scheme` there is honored and suppresses the error. `vch run`
+    /// passes `[]` because its post-`--` args go to `simctl launch`,
+    /// not xcodebuild.
+    public func resolveRequired(
+        task: TaskName,
+        explicit: String?,
+        extraArgs: [String] = [],
+        xcodebuildContainer: XcodebuildContainer? = nil
+    ) throws -> Resolved? {
+        let outcome = try resolveWithDiagnostics(
+            task: task,
+            explicit: explicit,
+            xcodebuildContainer: xcodebuildContainer
+        )
+        if let resolved = outcome.resolved { return resolved }
+        // The user passed `-scheme` after `--` (build / test only) —
+        // honor it and let xcodebuild consume it.
+        if extraArgs.contains("-scheme") { return nil }
+        // Multi-scheme repo with nothing to disambiguate: the one case
+        // we can name precisely. Fail before xcodebuild leaks its flag
+        // conflict (and before a simulator gets booted).
+        if outcome.availableSchemes.count >= 2 {
+            throw VibeChardError.schemeResolutionAmbiguous(
+                available: outcome.availableSchemes
+            )
+        }
+        // Zero schemes / detection unavailable: preserve best-effort
+        // fall-through (today's behavior).
         return nil
     }
 }
