@@ -147,6 +147,107 @@ final class SchemeResolverTests: XCTestCase {
         let r = try resolver.resolve(task: task, explicit: "")
         XCTAssertEqual(r, .init(scheme: "Persisted", source: .persisted))
     }
+
+    // MARK: - diagnostics (#169)
+
+    func testDiagnosticsReportAvailableSchemesWhenAmbiguous() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(schemes: ["A", "B", "C"])
+        )
+        let outcome = try resolver.resolveWithDiagnostics(task: task, explicit: nil)
+        XCTAssertNil(outcome.resolved)
+        XCTAssertEqual(outcome.availableSchemes, ["A", "B", "C"])
+    }
+
+    func testDiagnosticsOmitSchemesWhenPersistedWins() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha", scheme: "Persisted"),
+            lister: FakeLister(schemes: ["A", "B"])
+        )
+        let outcome = try resolver.resolveWithDiagnostics(task: task, explicit: nil)
+        XCTAssertEqual(outcome.resolved, .init(scheme: "Persisted", source: .persisted))
+        // Tier 3 never reached, so the lister is never consulted.
+        XCTAssertEqual(outcome.availableSchemes, [])
+    }
+
+    // MARK: - resolveRequired (#169)
+
+    func testResolveRequiredThrowsWhenMultipleSchemes() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(schemes: ["BeanLedger", "WidgetsExtension", "WatchApp"])
+        )
+        XCTAssertThrowsError(try resolver.resolveRequired(task: task, explicit: nil)) { error in
+            guard case let VibeChardError.schemeResolutionAmbiguous(available) = error else {
+                return XCTFail("expected .schemeResolutionAmbiguous, got \(error)")
+            }
+            XCTAssertEqual(available, ["BeanLedger", "WidgetsExtension", "WatchApp"])
+            // Exit code groups with the other "ambiguous, pass a flag" errors.
+            XCTAssertEqual((error as! VibeChardError).exitCode, ExitCode.business)
+            // Message lists candidates and suggests --scheme.
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("--scheme BeanLedger"), message)
+            XCTAssertTrue(message.contains("WidgetsExtension"), message)
+        }
+    }
+
+    func testResolveRequiredEscapeHatchWhenExtraArgsHaveScheme() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(schemes: ["A", "B"])
+        )
+        // `vch build -- -scheme Foo` flows `-scheme` straight to
+        // xcodebuild, so vch must not pre-empt it with an error.
+        let r = try resolver.resolveRequired(
+            task: task, explicit: nil, extraArgs: ["-scheme", "Foo"]
+        )
+        XCTAssertNil(r)
+    }
+
+    func testResolveRequiredFallsThroughWhenNoSchemes() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(schemes: [])
+        )
+        XCTAssertNil(try resolver.resolveRequired(task: task, explicit: nil),
+                     "zero schemes preserves best-effort fall-through, no throw")
+    }
+
+    func testResolveRequiredFallsThroughWhenListerUnavailable() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(throwOnList: true)
+        )
+        XCTAssertNil(try resolver.resolveRequired(task: task, explicit: nil),
+                     "detection-unavailable preserves best-effort fall-through, no throw")
+    }
+
+    func testResolveRequiredReturnsAutoDetectedSingleScheme() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(schemes: ["OnlyOne"])
+        )
+        let r = try resolver.resolveRequired(task: task, explicit: nil)
+        XCTAssertEqual(r, .init(scheme: "OnlyOne", source: .autoDetected))
+    }
+
+    func testResolveRequiredPrefersExplicitOverAmbiguity() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha",
+            state: emptyState("alpha"),
+            lister: FakeLister(schemes: ["A", "B"])
+        )
+        let r = try resolver.resolveRequired(task: task, explicit: "CLI")
+        XCTAssertEqual(r, .init(scheme: "CLI", source: .explicit))
+    }
 }
 
 // MARK: - test double

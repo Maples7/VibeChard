@@ -67,16 +67,19 @@ private enum BuildOrTest {
 
         // #6 reduced — single-scheme auto-pick. CLI flag wins, then
         // state.json's last-recorded scheme, then a single shared
-        // scheme via `xcodebuild -list -json`. Anything else falls
-        // through to xcodebuild's built-in default (today's behavior
-        // when --scheme is omitted), so this is purely additive.
+        // scheme via `xcodebuild -list -json`. Zero schemes / detection
+        // unavailable still falls through to xcodebuild's built-in
+        // default. A multi-scheme repo with nothing to pick fails fast
+        // (before any simulator clone/boot) unless the user passed
+        // `-scheme` after `--`, which flows straight to xcodebuild. (#169)
         let schemeResolver = SchemeResolver(
             workspace: workspace,
             lister: DiskXcodebuildLister()
         )
-        let resolvedScheme = try schemeResolver.resolve(
+        let resolvedScheme = try schemeResolver.resolveRequired(
             task: task,
             explicit: scheme,
+            extraArgs: extraArgs,
             xcodebuildContainer: xcodebuildContainer
         )
         if let r = resolvedScheme, scheme == nil {
@@ -383,7 +386,7 @@ struct BuildCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String?
 
-    @Option(name: .long, help: "Scheme to build. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
+    @Option(name: .long, help: "Scheme to build. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`; in a multi-scheme repo with no recorded scheme, vch asks you to pass --scheme.")
     var scheme: String?
 
     @Option(name: .long, help: "Xcode project path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --workspace.")
@@ -478,7 +481,7 @@ struct TestCommand: ParsableCommand {
               completion: .custom(TaskNameCompletion.candidates))
     var name: String?
 
-    @Option(name: .long, help: "Scheme to test. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`.")
+    @Option(name: .long, help: "Scheme to test. If omitted, vch reuses the scheme persisted in .vch/state.json, or auto-picks the single shared scheme via `xcodebuild -list -json`; in a multi-scheme repo with no recorded scheme, vch asks you to pass --scheme.")
     var scheme: String?
 
     @Option(name: .long, help: "Xcode project path to pass to xcodebuild (relative to the task worktree unless absolute). Cannot be combined with --workspace.")
