@@ -176,11 +176,25 @@ lands on `master`.
    ```
 
 [`release.yml`](.github/workflows/release.yml) triggers on the tag
-push: it verifies the tag matches `VibeChard.version`, runs the
-test suite in release mode, creates the GitHub Release, and bumps
-the formula in `Maples7/homebrew-tap`. If `HOMEBREW_TAP_TOKEN` is
-unset the tap step is skipped — the rest of the release still
-completes.
+push: it verifies the tag matches `VibeChard.version`, builds the
+release CLI, runs the tests, and calls `bottles.yml` to build and
+reinstall-test native Apple Silicon and Intel Homebrew bottles. The same
+bottle workflow runs on pull requests. It uses Homebrew's relocation
+checks and JSON metadata; do not hand-author bottle checksums or label
+architecture-specific binaries as `all`.
+
+The publisher uploads the verified bottles and merged `vch.rb` to a draft
+GitHub Release, makes the assets public, then updates
+`Maples7/homebrew-tap`. `HOMEBREW_TAP_TOKEN` is required and must have
+Contents read/write access to the tap (or classic `repo` scope). A missing
+or invalid token fails validation before publication. The repository's
+`GITHUB_TOKEN` only needs Contents write permission in the publish job.
+
+If publishing or the tap push fails, fix the cause and rerun the failed
+jobs so they reuse the verified artifacts (retained for seven days).
+Already-public release assets are never overwritten with different bytes;
+if a full rebuild differs, cut a new patch release instead. An older tag
+cannot downgrade the tap.
 
 ## Local commands
 

@@ -1,0 +1,122 @@
+name: Homebrew bottles
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Bottle (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Older supported runners let Homebrew use these bottles on newer
+        # macOS versions of the same architecture, including beta systems.
+        os: [macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.formula.outputs.version }}
+      count: ${{ strategy.job-total }}
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f
+        with:
+          stable: true
+
+      - name: Prepare formula for this source revision
+        id: formula
+        env:
+          SOURCE_REF: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(ruby -e 'puts File.read("Sources/VibeChardCore/Domain/VibeChard.swift")[/public static let version = "([^"]+)"/, 1]')
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/${SOURCE_REF}.tar.gz"
+          curl --fail --location --retry 3 "$url" -o "$RUNNER_TEMP/vch-source.tar.gz"
+          sha256=$(shasum -a 256 "$RUNNER_TEMP/vch-source.tar.gz" | awk '{print $1}')
+          tap_dir="$(brew --repository)/Library/Taps/maples7/homebrew-tap"
+          git clone --depth 1 https://github.com/Maples7/homebrew-tap "$tap_dir"
+          ruby scripts/homebrew/release.rb render Formula/vch.rb "$tap_dir/vch.rb" "$version" "$url" "$sha256"
+          git -C "$tap_dir" add vch.rb
+          git -C "$tap_dir" -c user.name='vch bottle CI' -c user.email='ci@vch.invalid' commit -m "Prepare vch $version bottle"
+          mkdir -p bottle
+          cp "$tap_dir/vch.rb" bottle/vch.rb
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test formula
+        run: |
+          brew install --build-bottle maples7/tap/vch
+          brew test maples7/tap/vch
+
+      - name: Generate bottle and metadata
+        working-directory: bottle
+        env:
+          VERSION: ${{ steps.formula.outputs.version }}
+        run: |
+          brew bottle --json --no-rebuild \
+            --root-url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}" maples7/tap/vch
+          brew bottle --merge --write --no-commit --no-all-checks ./*.bottle.json
+
+      - name: Reinstall the bottle and verify its receipt
+        run: |
+          brew uninstall maples7/tap/vch
+          brew install --force-bottle ./bottle/*.bottle.tar.gz
+          brew test maples7/tap/vch
+          brew ruby -e 'require "formula_installer"; require "tab"; f = Formulary.factory("maples7/tap/vch"); abort "No compatible bottle" unless FormulaInstaller.new(f).pour_bottle?; abort "Installed from source" unless Tab.for_formula(f).poured_from_bottle'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bottle-${{ matrix.os }}
+          path: bottle/
+          if-no-files-found: error
+          retention-days: 7
+
+  assemble:
+    name: Assemble bottle formula
+    needs: build
+    runs-on: macos-14
+    timeout-minutes: 15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+      VERSION: ${{ needs.build.outputs.version }}
+      BOTTLE_COUNT: ${{ needs.build.outputs.count }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f
+        with:
+          stable: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bottle-*
+          path: bottles
+      - name: Validate payloads and merge Homebrew metadata
+        run: |
+          set -euo pipefail
+          ruby scripts/homebrew/release.rb stage bottles dist "$VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}" "$BOTTLE_COUNT"
+          tap_dir="$(brew --repository)/Library/Taps/maples7/homebrew-tap"
+          git clone --depth 1 https://github.com/Maples7/homebrew-tap "$tap_dir"
+          cp dist/vch.rb "$tap_dir/vch.rb"
+          brew bottle --merge --write --no-commit --no-all-checks dist/*.bottle.json
+          cp "$tap_dir/vch.rb" dist/vch.rb
+          ruby -c dist/vch.rb
+      - uses: actions/upload-artifact@v7
+        with:
+          name: homebrew-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7

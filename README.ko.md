@@ -92,6 +92,13 @@ VibeChard 는 (2) 를 선택했습니다. 이것이 `.zshrc` 스니펫이 아닌
 brew install maples7/tap/vch
 ```
 
+안정 버전은 Apple Silicon의 macOS 14+ 및 Intel의 macOS 15+용으로 미리
+컴파일된 Homebrew bottle을 제공합니다. 호환되는 bottle이 있으면 vch를
+컴파일하거나 소스 빌드용 Xcode 버전 검사를 거치지 않고 설치합니다.
+다른 구성과 `--HEAD`는 소스에서 빌드합니다. macOS 업데이트 후 이전 Xcode
+버전 때문에 Homebrew가 설치를 거부하면 아래 수동 소스 설치 방법을
+사용하세요. Apple 프로젝트를 빌드하려면 여전히 Xcode가 필요합니다.
+
 formula 가 설치하는 항목:
 
 - `vch` 를 Homebrew 의 `bin/` 에 (`PATH` 에 포함)
