@@ -40,7 +40,7 @@ final class LandServiceTests: XCTestCase {
         ]
         git.currentBranchByCwd = [mainRepo: "main"]
         git.revListCountByRange["main..agent/alpha"] = 2
-        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.diffNamesByRange["main...agent/alpha"] = ["src/foo.swift"]
         git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
         // Trigger the auto-rm failure: `removeTask` consults
         // `statusIsDirty(worktreeCwd:)` on the *task* worktree (which
@@ -98,7 +98,7 @@ final class LandServiceTests: XCTestCase {
         ]
         git.currentBranchByCwd = [mainRepo: "main"]
         git.revListCountByRange["main..agent/alpha"] = 1
-        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.diffNamesByRange["main...agent/alpha"] = ["src/foo.swift"]
         git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
         // Even with a dirty task worktree, --keep should not touch it.
         git.dirtyWorktrees = [wtPath]
@@ -151,12 +151,43 @@ final class LandServiceTests: XCTestCase {
         ]
         git.currentBranchByCwd = [mainRepo: "main"]
         git.revListCountByRange["main..agent/alpha"] = 1
-        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.diffNamesByRange["main...agent/alpha"] = ["src/foo.swift"]
         git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
         if let remote = upstreamRemote {
             git.upstreamRemoteByBranch["main"] = remote
         }
         return (workspace, task, fs, git)
+    }
+
+    func testDryRunExcludesTargetOnlyDiffEvenWhenTargetOnlyPathIsDirty() throws {
+        let world = try makeHappyPathWorld()
+        world.git.diffNamesByRange["main..agent/alpha"] = ["base-only.txt", "src/foo.swift"]
+        world.git.statusPathsByCwd[world.workspace.mainWorktreePath] = ["base-only.txt"]
+        let service = LandService(workspace: world.workspace, git: world.git, fs: world.fs)
+
+        let outcome = try service.land(world.task, options: .init(dryRun: true))
+
+        XCTAssertEqual(outcome.touchedPaths, ["src/foo.swift"])
+        XCTAssertFalse(outcome.merged)
+        XCTAssertTrue(world.git.mergeCalls.isEmpty)
+    }
+
+    func testDivergedTaskDiffStillRejectsOverlappingDirtyPaths() throws {
+        let world = try makeHappyPathWorld()
+        world.git.statusPathsByCwd[world.workspace.mainWorktreePath] = ["base-only.txt", "src/foo.swift"]
+        let service = LandService(workspace: world.workspace, git: world.git, fs: world.fs)
+
+        XCTAssertThrowsError(try service.land(world.task, options: .init(dryRun: true))) { error in
+            guard case let .landMergeOverlap(paths) = error as? VibeChardError else {
+                return XCTFail("expected landMergeOverlap, got \(error)")
+            }
+            XCTAssertEqual(paths, ["src/foo.swift"])
+        }
+        XCTAssertTrue(world.git.mergeCalls.isEmpty)
+
+        let allowed = try service.land(world.task, options: .init(allowDirty: true, dryRun: true))
+        XCTAssertEqual(allowed.touchedPaths, ["src/foo.swift"])
+        XCTAssertTrue(world.git.mergeCalls.isEmpty)
     }
 
     func testPushDefaultRemoteUsesUpstreamConfig() throws {
@@ -382,7 +413,7 @@ final class LandServiceTests: XCTestCase {
         ]
         git.currentBranchByCwd = [mainRepo: "main"]
         git.revListCountByRange["main..agent/alpha"] = 1
-        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.diffNamesByRange["main...agent/alpha"] = ["src/foo.swift"]
         git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
         return (workspace, task, fs, git)
     }
@@ -631,7 +662,7 @@ final class LandServiceTests: XCTestCase {
         ]
         git.currentBranchByCwd = [mainRepo: "main"]
         git.revListCountByRange["main..\(adoptedBranch)"] = 1
-        git.diffNamesByRange["main..\(adoptedBranch)"] = ["src/foo.swift"]
+        git.diffNamesByRange["main...\(adoptedBranch)"] = ["src/foo.swift"]
         git.lastSubjectByBranch[adoptedBranch] = "feat: codex spike"
 
         let service = LandService(workspace: workspace, git: git, fs: fs, clock: SystemClock())
@@ -714,7 +745,7 @@ final class LandServiceTests: XCTestCase {
         ]
         git.currentBranchByCwd = [mainRepo: "main"]
         git.revListCountByRange["main..agent/alpha"] = 1
-        git.diffNamesByRange["main..agent/alpha"] = ["src/foo.swift"]
+        git.diffNamesByRange["main...agent/alpha"] = ["src/foo.swift"]
         git.lastSubjectByBranch["agent/alpha"] = "feat: foo"
         return (workspace, task, fs, git)
     }

@@ -362,6 +362,9 @@ the worktree.
 - Refuses on a no-op merge, on a wrong main branch, and when the main
   worktree has uncommitted changes whose paths intersect the task
   branch's diff (use `--allow-dirty` to override).
+- The preview and overlap check use the task's changes since its
+  merge base with the target branch. Changes made only on the target
+  branch are excluded; renames include both the old and new paths.
 - `--keep` skips the auto-rm; `--dry-run` prints the plan without
   modifying anything.
 - After a successful auto-rm, vch also deletes the per-task simulator

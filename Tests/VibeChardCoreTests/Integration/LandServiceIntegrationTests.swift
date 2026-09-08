@@ -182,6 +182,92 @@ final class LandServiceIntegrationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: taskPath), "dry-run must not remove worktree")
     }
 
+    func testDivergedBranchesExcludeBaseOnlyPathsAndPreserveTheirDirtyEdits() throws {
+        let workspace = try makeRepo()
+        let (task, taskPath) = try newTaskWithBranch("diverged", workspace: workspace)
+        try commitFile(workspace: workspace, worktreePath: taskPath,
+                       name: "task-only.txt", contents: "task\n", message: "Task change")
+        try commitFile(workspace: workspace, worktreePath: workspace.mainWorktreePath,
+                       name: "base-only.txt", contents: "base\n", message: "Base change")
+
+        // The ordinary two-tip API retains its original meaning.
+        XCTAssertEqual(
+            try DiskGitClient().diffNamesOnly(repoCwd: workspace.mainWorktreePath,
+                                              base: "main", head: task.branchName),
+            ["base-only.txt", "task-only.txt"]
+        )
+        let (_, service) = makeServices(workspace: workspace)
+        let preview = try service.land(task, options: .init(dryRun: true, keep: true))
+        XCTAssertEqual(preview.touchedPaths, ["task-only.txt"])
+
+        let dirtyContents = "base\nlocal edit\n"
+        let dirtyPath = "\(workspace.mainWorktreePath)/base-only.txt"
+        try dirtyContents.write(toFile: dirtyPath, atomically: true, encoding: .utf8)
+
+        let dirtyPreview = try service.land(task, options: .init(dryRun: true, keep: true))
+        XCTAssertEqual(dirtyPreview.touchedPaths, ["task-only.txt"])
+        XCTAssertFalse(dirtyPreview.merged)
+
+        let outcome = try service.land(task, options: .init(keep: true))
+        XCTAssertTrue(outcome.merged)
+        XCTAssertEqual(try String(contentsOfFile: dirtyPath, encoding: .utf8), dirtyContents)
+        XCTAssertEqual(
+            try String(contentsOfFile: "\(workspace.mainWorktreePath)/task-only.txt", encoding: .utf8),
+            "task\n"
+        )
+        XCTAssertEqual(
+            try DiskGitClient().statusPaths(worktreeCwd: workspace.mainWorktreePath),
+            ["base-only.txt"]
+        )
+    }
+
+    func testDivergedTaskChangesProtectAddedDeletedModifiedAndRenamedPaths() throws {
+        let workspace = try makeRepo()
+        let mainPath = workspace.mainWorktreePath
+        try commitFile(workspace: workspace, worktreePath: mainPath,
+                       name: "removed.txt", contents: "remove me\n", message: "Seed deletion")
+        try commitFile(workspace: workspace, worktreePath: mainPath,
+                       name: "edited.txt", contents: "edit me\n", message: "Seed modification")
+        let (task, taskPath) = try newTaskWithBranch("path-changes", workspace: workspace)
+        let runner = DiskProcessRunner()
+        let renamedPath = "renamed\tfile\n.txt"
+        try requireSuccess(runner.run("/usr/bin/git", args: ["config", "diff.renames", "true"],
+                                      cwd: mainPath, env: gitEnv))
+        try requireSuccess(runner.run("/usr/bin/git", args: ["mv", "README.md", renamedPath],
+                                      cwd: taskPath, env: gitEnv))
+        try requireSuccess(runner.run("/usr/bin/git", args: ["rm", "removed.txt"],
+                                      cwd: taskPath, env: gitEnv))
+        try "added\n".write(toFile: "\(taskPath)/added.txt", atomically: true, encoding: .utf8)
+        try "edited\n".write(toFile: "\(taskPath)/edited.txt", atomically: true, encoding: .utf8)
+        try requireSuccess(runner.run("/usr/bin/git", args: ["add", "."], cwd: taskPath, env: gitEnv))
+        try requireSuccess(runner.run("/usr/bin/git", args: ["commit", "-qm", "Task changes"],
+                                      cwd: taskPath, env: gitEnv))
+        try commitFile(workspace: workspace, worktreePath: mainPath,
+                       name: "base-only.txt", contents: "base\n", message: "Base change")
+
+        let expectedPaths = ["README.md", "added.txt", "edited.txt", renamedPath, "removed.txt"].sorted()
+        let (_, service) = makeServices(workspace: workspace)
+        let preview = try service.land(task, options: .init(dryRun: true, keep: true))
+        XCTAssertEqual(preview.touchedPaths.sorted(), expectedPaths)
+
+        for path in expectedPaths {
+            let fullPath = "\(mainPath)/\(path)"
+            let original = FileManager.default.contents(atPath: fullPath)
+            try "local edit\n".write(toFile: fullPath, atomically: true, encoding: .utf8)
+            XCTAssertThrowsError(try service.land(task, options: .init(dryRun: true, keep: true))) { error in
+                guard case let .landMergeOverlap(paths) = error as? VibeChardError else {
+                    return XCTFail("expected overlap for \(path), got \(error)")
+                }
+                XCTAssertEqual(paths, [path])
+            }
+            if let original {
+                try original.write(to: URL(fileURLWithPath: fullPath))
+            } else {
+                try FileManager.default.removeItem(atPath: fullPath)
+            }
+        }
+    }
+
     func testSquashStrategyProducesSquashedCommit() throws {
         let workspace = try makeRepo()
         let (task, taskPath) = try newTaskWithBranch("epsilon", workspace: workspace)
