@@ -85,7 +85,8 @@ public struct LandService: Sendable {
         /// Human-readable description if the auto-`rm` step failed but
         /// the merge already succeeded. The merge is not rolled back.
         public let removeError: String?
-        /// `[base..task]` paths the merge touched, surfaced for `--dry-run`.
+        /// Paths changed from the target/task merge base to the task tip,
+        /// surfaced for `--dry-run`.
         public let touchedPaths: [String]
         /// `true` when every per-task simulator clone was deleted
         /// after a successful auto-`rm`. `false` when there was no
@@ -171,7 +172,7 @@ public struct LandService: Sendable {
             throw VibeChardError.landNoIntoInferred(taskName: task.raw)
         }
 
-        let diff = try git.diffNamesOnly(
+        let diff = try git.diffNamesSinceMergeBase(
             repoCwd: workspace.mainWorktreePath,
             base: into,
             head: taskBranch

@@ -84,9 +84,13 @@ public protocol GitClient: Sendable {
     func currentBranch(repoCwd: String) throws -> String?
 
     /// `git diff --name-only <base>..<head>` parsed into repo-relative
-    /// paths. Used by `vch land` to compute the merge's footprint and
-    /// to detect overlap with a dirty main worktree. (#7)
+    /// paths, comparing the two tips directly.
     func diffNamesOnly(repoCwd: String, base: String, head: String) throws -> [String]
+
+    /// Paths changed from the merge base of `base` and `head` to `head`.
+    /// Used by `vch land` to exclude changes made only on the target.
+    /// Renames include both paths so overlap checks protect the source too.
+    func diffNamesSinceMergeBase(repoCwd: String, base: String, head: String) throws -> [String]
 
     /// `git rev-list --count <base>..<head>` — number of commits on
     /// `head` that aren't yet on `base`. `0` means the merge would be
@@ -351,6 +355,20 @@ public struct DiskGitClient: GitClient {
             cwd: repoCwd
         )
         try requireSuccess(result, label: "git diff --name-only -z \(base)..\(head)")
+        return result.stdout
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
+    }
+
+    public func diffNamesSinceMergeBase(repoCwd: String, base: String, head: String) throws -> [String] {
+        // Treat renames as deletion + addition so --name-only includes
+        // both endpoints regardless of the user's diff.renames setting.
+        let result = try runner.run(
+            gitPath,
+            args: ["diff", "--name-only", "--no-renames", "-z", "\(base)...\(head)", "--"],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git diff --name-only --no-renames -z \(base)...\(head)")
         return result.stdout
             .split(separator: "\0", omittingEmptySubsequences: true)
             .map(String.init)

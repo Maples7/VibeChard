@@ -243,7 +243,7 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
     /// Branch that `currentBranch` should return for a given cwd.
     /// Defaults to nil (detached HEAD).
     var currentBranchByCwd: [String: String?] = [:]
-    /// Diff outputs keyed by `"\(base)..\(head)"`.
+    /// Diff outputs keyed by `"\(base)..\(head)"` or `"\(base)...\(head)"`.
     var diffNamesByRange: [String: [String]] = [:]
     /// Ahead counts keyed by `"\(base)..\(head)"`.
     var revListCountByRange: [String: Int] = [:]
@@ -267,6 +267,10 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
 
     func diffNamesOnly(repoCwd: String, base: String, head: String) throws -> [String] {
         diffNamesByRange["\(base)..\(head)"] ?? []
+    }
+
+    func diffNamesSinceMergeBase(repoCwd: String, base: String, head: String) throws -> [String] {
+        diffNamesByRange["\(base)...\(head)"] ?? []
     }
 
     func revListCount(repoCwd: String, base: String, head: String) throws -> Int {

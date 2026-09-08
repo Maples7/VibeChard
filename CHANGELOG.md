@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 The English README is the source of truth; localized READMEs may lag.
 
+## Unreleased
+
+### Fixed
+- `vch land` now computes its preview and dirty-path overlap check
+  from the target/task merge base to the task tip. Files changed only
+  on the target branch no longer inflate the preview or cause false
+  overlap refusals. Renames protect both the old and new paths
+  ([#173](https://github.com/Maples7/VibeChard/issues/173)).
+
 ## 1.2.0 - 2026-06-11
 
 ### Added
