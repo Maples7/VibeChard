@@ -87,6 +87,12 @@ VibeChard 選的是 (2)。這就是為什麼它是 CLI，而不是一段 `.zshrc
 brew install maples7/tap/vch
 ```
 
+穩定版本提供預先編譯的 Homebrew bottle，支援 Apple Silicon 的 macOS 14+
+和 Intel 的 macOS 15+。有相容 bottle 時，Homebrew 不必編譯 vch，也不會
+觸發原始碼建置的 Xcode 版本檢查。其他組態及 `--HEAD` 仍從原始碼建置；
+若升級 macOS 後，Homebrew 因 Xcode 版本較舊而拒絕安裝，可依下方步驟
+手動從原始碼安裝。建置 Apple 專案仍需要 Xcode。
+
 formula 會安裝：
 
 - `vch` 到 Homebrew 的 `bin/`（在 `PATH` 上）

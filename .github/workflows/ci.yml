@@ -7,8 +7,11 @@ on:
     branches: [master, main]
 
 jobs:
+  bottles:
+    uses: ./.github/workflows/bottles.yml
+
   build-test:
-    name: Build & Test
+    name: Swift build & test
     runs-on: macos-14
     timeout-minutes: 20
     steps:
@@ -22,6 +25,9 @@ jobs:
 
       - name: Resolve packages
         run: swift package resolve
+
+      - name: Test Homebrew release helpers
+        run: ruby scripts/homebrew/release_test.rb
 
       - name: Build (release)
         run: swift build -c release
@@ -38,3 +44,17 @@ jobs:
           # exec it. We pass -version (cheap, no project required); a
           # successful exec replaces the shim with xcodebuild itself.
           VCH_SHIM_DEBUG=1 ./.build/release/vch-xcodebuild-shim -version
+
+  required-check:
+    name: Build & Test
+    needs: [build-test, bottles]
+    if: always()
+    runs-on: macos-14
+    steps:
+      - name: Require Swift tests and both Homebrew bottles
+        env:
+          SWIFT_RESULT: ${{ needs.build-test.result }}
+          BOTTLES_RESULT: ${{ needs.bottles.result }}
+        run: |
+          test "$SWIFT_RESULT" = success
+          test "$BOTTLES_RESULT" = success

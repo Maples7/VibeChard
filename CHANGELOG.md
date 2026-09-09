@@ -9,6 +9,12 @@ The English README is the source of truth; localized READMEs may lag.
 ## Unreleased
 
 ### Fixed
+- Homebrew releases now build and verify Apple Silicon and Intel bottles,
+  publish their assets before updating the tap, and include the generated
+  bottle checksums. Compatible installs no longer compile vch or hit
+  Homebrew's source-build Xcode minimum-version gate. Remove the redundant
+  macOS dependency declaration rejected by current Homebrew
+  ([#172](https://github.com/Maples7/VibeChard/issues/172)).
 - `vch land` now computes its preview and dirty-path overlap check
   from the target/task merge base to the task tip. Files changed only
   on the target branch no longer inflate the preview or cause false

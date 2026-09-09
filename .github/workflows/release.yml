@@ -1,44 +1,39 @@
 name: Release
 
-# Triggered when a `v*` tag is pushed (e.g. `v0.1.0`, `v0.2.0-beta1`).
-# Builds + tests release-mode binaries as a sanity check, creates the
-# GitHub Release, then syncs `Formula/vch.rb` into
-# `maples7/homebrew-tap` with the release URL/checksum so
-# `brew install maples7/tap/vch` picks up the new version automatically.
-#
-# Required secret (set on the VibeChard repo, not the tap):
-#   HOMEBREW_TAP_TOKEN  — a PAT with `repo` scope on the tap repo.
-#                         The default GITHUB_TOKEN can't push to other
-#                         repositories, so this PAT is mandatory.
-#                         If unset, the release fails before publishing
-#                         artifacts so Homebrew can't silently lag behind.
+# Tag releases validate the CLI and both Homebrew bottles before publishing.
+# HOMEBREW_TAP_TOKEN needs Contents: read/write on Maples7/homebrew-tap
+# (or classic repo scope). GITHUB_TOKEN publishes this repository's assets.
 
 on:
   push:
     tags:
       - 'v*'
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Release & bump tap
+  validate:
+    name: Validate release
     runs-on: macos-14
     timeout-minutes: 30
-    env:
-      # Hoist the secret to a job-level env var so shell steps can verify it.
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
       - uses: actions/checkout@v5
 
       - name: Verify Homebrew tap token
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          if [ -z "${TAP_TOKEN}" ]; then
+          if [ -z "${GH_TOKEN}" ]; then
             echo "::error::HOMEBREW_TAP_TOKEN is required; refusing to publish a release without updating maples7/homebrew-tap." >&2
             exit 1
           fi
+          gh api --silent repos/Maples7/homebrew-tap
 
       - name: Verify tag matches source version
         run: |
@@ -99,52 +94,73 @@ jobs:
             }
           done
 
-      - name: Check out Homebrew tap
-        uses: actions/checkout@v5
+  bottles:
+    needs: validate
+    uses: ./.github/workflows/bottles.yml
+
+  publish:
+    name: Publish bottles & update tap
+    needs: bottles
+    runs-on: macos-14
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
         with:
-          repository: maples7/homebrew-tap
+          name: homebrew-release
+          path: dist
+
+      - uses: actions/checkout@v5
+        with:
+          repository: Maples7/homebrew-tap
           ref: master
           path: .homebrew-tap
-          token: ${{ env.TAP_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Bump Homebrew formula in tap
+      - name: Verify tap write authentication before publishing
+        run: git -C .homebrew-tap push --dry-run origin HEAD:refs/heads/master
+
+      - name: Refuse to downgrade the tap
         run: |
-          set -euo pipefail
-
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-          download_url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
-          sha256="$(curl -fsSL "$download_url" | shasum -a 256 | awk '{print $1}')"
-
-          cp Formula/vch.rb .homebrew-tap/vch.rb
-          ruby - .homebrew-tap/vch.rb "$download_url" "$version" "$sha256" <<'RUBY'
-          path, url, version, sha256 = ARGV
-          text = File.read(path)
-          text = text.sub(/^  url ".*"$/, %(  url "#{url}"))
-          text = text.sub(/^  version ".*"$/, %(  version "#{version}"))
-          text = text.sub(/^  sha256 ".*"$/, %(  sha256 "#{sha256}"))
-          File.write(path, text)
+          ruby - .homebrew-tap/vch.rb dist/vch.rb <<'RUBY'
+          require "rubygems"
+          versions = ARGV.map { |path| Gem::Version.new(File.read(path)[/^  version "([^"]+)"$/, 1]) }
+          abort "Refusing to downgrade the Homebrew tap" if versions.first > versions.last
           RUBY
 
+      - name: Publish verified assets before updating the tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          prerelease=false
+          if [[ "$tag" == *-* ]]; then prerelease=true; fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft > "$RUNNER_TEMP/release.json"; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --draft --prerelease="$prerelease" --generate-notes
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft > "$RUNNER_TEMP/release.json"
+          fi
+          if ruby -rjson -e 'exit(JSON.parse(File.read(ARGV[0])).fetch("isDraft") ? 0 : 1)' "$RUNNER_TEMP/release.json"; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" dist/* --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+          else
+            # A retry must not replace public assets underneath existing checksums.
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/published"
+            for asset in dist/*; do
+              cmp "$asset" "$RUNNER_TEMP/published/$(basename "$asset")"
+            done
+          fi
+
+      - name: Update Homebrew tap formula
+        run: |
+          set -euo pipefail
+          cp dist/vch.rb .homebrew-tap/vch.rb
           cd .homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet -- vch.rb; then
-            echo "Tap formula already up to date."
-            exit 0
-          fi
-
+          if git diff --quiet -- vch.rb; then exit 0; fi
           git add vch.rb
-          git commit -m "vch ${version}" \
-            -m "Auto-bumped from VibeChard ${tag}."
+          git commit -m "vch ${GITHUB_REF_NAME#v} with bottles"
           git push origin master
-
-      - name: Create GitHub Release
-        # v3 = first Node 24 major (April 2026); inputs unchanged from v2.
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          draft: false
-          # Anything like `v0.1.0-beta1` is treated as a prerelease.
-          prerelease: ${{ contains(github.ref_name, '-') }}

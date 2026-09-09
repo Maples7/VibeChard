@@ -6,18 +6,12 @@ class Vch < Formula
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
 
-  # Stable channel — populated by .github/workflows/release.yml on tag
-  # push. Until v0.1.0 is cut, install with `brew install --HEAD`.
-  # The release workflow uses mislav/bump-homebrew-formula-action to
-  # rewrite `url` / `sha256` / `version` in the tap repo. The
-  # `archive/refs/tags/<tag>.tar.gz` URL is the auto-generated source
-  # tarball GitHub publishes for every tag; the bump action both
-  # rewrites the URL prefix here and downloads it to compute sha256.
+  # Release template: the workflows fill in the source URL, version,
+  # checksum and Homebrew-generated bottle block before updating the tap.
 
   head "https://github.com/maples7/VibeChard.git", branch: "master"
 
   depends_on xcode: ["15.3", :build]
-  depends_on :macos
   depends_on macos: :ventura # macOS 13+ floor; matches Package.swift
 
   def install

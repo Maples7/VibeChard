@@ -101,6 +101,13 @@ VibeChard does (2). That’s the whole reason it’s a CLI instead of a
 brew install maples7/tap/vch
 ```
 
+Stable releases provide precompiled Homebrew bottles for Apple Silicon on
+macOS 14+ and Intel on macOS 15+. When a compatible bottle is available,
+Homebrew installs it without compiling vch or applying its source-build
+Xcode version check. Other configurations and `--HEAD` build from source;
+if Homebrew rejects an older Xcode after a macOS upgrade, use the manual
+source instructions below. Xcode is still needed to build Apple projects.
+
 The formula installs:
 
 - `vch` into Homebrew's `bin/` (on `PATH`)
