@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.2.1 - 2026-09-09
+
 ### Fixed
 - Homebrew releases now build and verify Apple Silicon and Intel bottles,
   publish their assets before updating the tap, and include the generated
