@@ -70,7 +70,8 @@ jobs:
       - name: Reinstall the bottle and verify its receipt
         run: |
           brew uninstall maples7/tap/vch
-          brew install --force-bottle ./bottle/*.bottle.tar.gz
+          # Current Homebrew restricts local package paths to developer mode.
+          HOMEBREW_DEVELOPER=1 brew install --force-bottle ./bottle/*.bottle.tar.gz
           brew test maples7/tap/vch
           brew ruby -e 'require "formula_installer"; require "tab"; f = Formulary.factory("maples7/tap/vch"); abort "No compatible bottle" unless FormulaInstaller.new(f).pour_bottle?; abort "Installed from source" unless Tab.for_formula(f).poured_from_bottle'
 
