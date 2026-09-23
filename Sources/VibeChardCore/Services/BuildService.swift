@@ -121,6 +121,16 @@ public struct BuildService: Sendable {
             throw VibeChardError.taskNotFound(name: task.raw)
         }
 
+        let nameDestinationRuntime: SimRuntimeVersion?
+        if resolvedSimulatorUDID == nil, options.device != nil, let label = options.runtime {
+            guard let parsed = SimRuntimeVersion.parse(runtimeLabel: label) else {
+                throw VibeChardError.invalidRuntime(label)
+            }
+            nameDestinationRuntime = parsed
+        } else {
+            nameDestinationRuntime = nil
+        }
+
         // Same scratch tree ExecService creates. We only need DerivedData
         // / SwiftPM / ModuleCache here — no shim symlinks (M4 invokes
         // xcodebuild directly per Q-decision "direct, not via shim").
@@ -147,7 +157,8 @@ public struct BuildService: Sendable {
             }
             destinationPlatform = platform
         } else {
-            destinationPlatform = options.destinationPlatform
+            destinationPlatform = nameDestinationRuntime?.platform
+                ?? options.destinationPlatform
                 ?? options.runtime.flatMap { SimRuntimeVersion.parse(runtimeLabel: $0)?.platform }
                 ?? .iOS
         }
@@ -167,6 +178,7 @@ public struct BuildService: Sendable {
             destinationUDID: resolvedSimulatorUDID,
             destinationPlatform: destinationPlatform,
             destinationDevice: resolvedSimulatorUDID == nil ? options.device : nil,
+            destinationRuntime: nameDestinationRuntime,
             extraArgs: options.extraArgs
         ))
 

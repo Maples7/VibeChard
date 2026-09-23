@@ -38,6 +38,7 @@ public enum BuildPlanner {
         public let destinationUDID: String?
         public let destinationPlatform: SimRuntimeVersion.Platform
         public let destinationDevice: String?
+        public let destinationRuntime: SimRuntimeVersion?
         public let extraArgs: [String]
 
         public init(
@@ -51,6 +52,7 @@ public enum BuildPlanner {
             destinationUDID: String? = nil,
             destinationPlatform: SimRuntimeVersion.Platform = .iOS,
             destinationDevice: String?,
+            destinationRuntime: SimRuntimeVersion? = nil,
             extraArgs: [String]
         ) {
             self.action = action
@@ -63,6 +65,7 @@ public enum BuildPlanner {
             self.destinationUDID = destinationUDID
             self.destinationPlatform = destinationPlatform
             self.destinationDevice = destinationDevice
+            self.destinationRuntime = destinationRuntime
             self.extraArgs = extraArgs
         }
     }
@@ -101,11 +104,12 @@ public enum BuildPlanner {
             )]
         } else if let device = input.destinationDevice {
             // Fallback when the user explicitly opts out of the lazy
-            // clone via `--no-sim`. xcodebuild picks any matching
-            // simulator by name (last-wins runtime).
+            // clone via `--no-sim`. Pin OS when requested so xcodebuild
+            // does not silently substitute the latest runtime.
+            let os = input.destinationRuntime.map { ",OS=\($0.major).\($0.minor)" } ?? ""
             argv += ["-destination", destination(
                 platform: input.destinationPlatform,
-                selector: "name=\(device)"
+                selector: "name=\(device)\(os)"
             )]
         }
         // Pass the user's extras BEFORE the action so flags like

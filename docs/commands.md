@@ -170,6 +170,9 @@ vch build [<name>] [flags] [-- xcodebuild-extras]
   in repositories that also have a root `Package.swift`.
 - `--runtime 'iOS 26.4'` (or `'watchOS 11.5'`, `'tvOS 18.0'`,
   `'visionOS 2.5'`) pins the simulator runtime.
+- With `--no-sim --device <name>`, `--runtime` also pins `OS=<version>`
+  in the xcodebuild destination, allowing a named device on an older
+  installed runtime to be selected without cloning it.
 - If no base device exists and `--runtime` is omitted, vch suggests
   the newest installed runtime matching the requested device platform
   (for example, watchOS for Apple Watch templates).
