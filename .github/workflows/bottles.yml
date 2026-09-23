@@ -70,6 +70,8 @@ jobs:
       - name: Reinstall the bottle and verify its receipt
         run: |
           brew uninstall maples7/tap/vch
+          # Homebrew removes formula-specific trust on uninstall.
+          brew trust --formula maples7/tap/vch
           # Current Homebrew restricts local package paths to developer mode.
           HOMEBREW_DEVELOPER=1 brew install --force-bottle ./bottle/*.bottle.tar.gz
           brew test maples7/tap/vch
