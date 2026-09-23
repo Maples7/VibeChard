@@ -381,7 +381,36 @@ final class BuildServiceTests: XCTestCase {
             baseEnv: [:]
         )
         let i = plan.argv.firstIndex(of: "-destination")!
-        XCTAssertEqual(plan.argv[i + 1], "platform=watchOS Simulator,arch=\(BuildPlanner.hostArch),name=Apple Watch Series 10 (46mm)")
+        XCTAssertEqual(plan.argv[i + 1], "platform=watchOS Simulator,arch=\(BuildPlanner.hostArch),name=Apple Watch Series 10 (46mm),OS=11.0")
+    }
+
+    func testPrepareTestPinsOldRuntimeForNoSimNameDestination() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        let plan = try service.prepareTest(
+            task: try TaskName("alpha"),
+            options: .init(
+                scheme: "App",
+                device: "iPhone 13 Pro-vch-runtime-repro",
+                runtime: "iOS 18.0",
+                noSim: true
+            ),
+            baseEnv: [:]
+        )
+        let i = plan.argv.firstIndex(of: "-destination")!
+        XCTAssertEqual(plan.argv[i + 1], "platform=iOS Simulator,arch=\(BuildPlanner.hostArch),name=iPhone 13 Pro-vch-runtime-repro,OS=18.0")
+    }
+
+    func testPrepareTestRejectsInvalidRuntimeForNoSimNameDestination() throws {
+        let (service, _) = makeService(seedingTask: "alpha")
+        XCTAssertThrowsError(try service.prepareTest(
+            task: try TaskName("alpha"),
+            options: .init(device: "iPhone 13 Pro", runtime: "iOS old", noSim: true),
+            baseEnv: [:]
+        )) { error in
+            guard case VibeChardError.invalidRuntime("iOS old") = error else {
+                return XCTFail("expected invalidRuntime, got \(error)")
+            }
+        }
     }
 
     func testBootSimulatorDelegatesToSimctl() throws {

@@ -8,6 +8,13 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch build` and `vch test` with `--no-sim --device <name>
+  --runtime <version>`
+  now include `OS=<version>` in the xcodebuild destination, so a
+  named simulator on an older installed runtime is selected correctly
+  instead of defaulting to `OS:latest` ([#177](https://github.com/Maples7/VibeChard/issues/177)).
+
 ## 1.2.1 - 2026-09-09
 
 ### Fixed
