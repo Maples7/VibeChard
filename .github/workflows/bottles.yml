@@ -24,7 +24,6 @@ jobs:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALL_CLEANUP: 1
       HOMEBREW_NO_ANALYTICS: 1
-      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
     steps:
       - uses: actions/checkout@v5
         with:
@@ -49,6 +48,7 @@ jobs:
           ruby scripts/homebrew/release.rb render Formula/vch.rb "$tap_dir/vch.rb" "$version" "$url" "$sha256"
           git -C "$tap_dir" add vch.rb
           git -C "$tap_dir" -c user.name='vch bottle CI' -c user.email='ci@vch.invalid' commit -m "Prepare vch $version bottle"
+          brew trust --formula maples7/tap/vch
           mkdir -p bottle
           cp "$tap_dir/vch.rb" bottle/vch.rb
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -90,7 +90,6 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_ANALYTICS: 1
-      HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
       VERSION: ${{ needs.build.outputs.version }}
       BOTTLE_COUNT: ${{ needs.build.outputs.count }}
     steps:
@@ -112,6 +111,7 @@ jobs:
           tap_dir="$(brew --repository)/Library/Taps/maples7/homebrew-tap"
           git clone --depth 1 https://github.com/Maples7/homebrew-tap "$tap_dir"
           cp dist/vch.rb "$tap_dir/vch.rb"
+          brew trust --formula maples7/tap/vch
           brew bottle --merge --write --no-commit --no-all-checks dist/*.bottle.json
           cp "$tap_dir/vch.rb" dist/vch.rb
           ruby -c dist/vch.rb
