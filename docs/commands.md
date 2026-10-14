@@ -299,7 +299,6 @@ overwritten on each run.
 
 ```text
 vch sim clone    <name> [--device <name>] [--runtime <version>]
-                        [--erase] [--shutdown-template]
 vch sim erase    <name> [--device <name>] [--runtime <version>]
 vch sim shutdown <name> [--device <name>] [--runtime <version>]
 vch sim info     <name> [--device <name>] [--runtime <version>] [--json]

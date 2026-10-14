@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.2.3 - 2026-10-14
+
 ### Fixed
 - `vch run` opens the simulator interface by its actual application
   path in the selected Xcode, honoring `DEVELOPER_DIR` and supporting
