@@ -21,9 +21,9 @@ import VibeChardCore
 ///   • Everything after `--` is forwarded verbatim to `simctl launch`,
 ///     which forwards it to the app at launch (e.g.
 ///     `vch run alpha -- -UsePreviewSampleData`).
-///   • `Simulator.app` is opened best-effort via `open -a Simulator`
-///     so the user actually sees the launched app; failures here are
-///     non-fatal (CI runs may not have a window server).
+///   • The active Xcode's simulator UI is opened best-effort so the
+///     user sees the launched app; failures here are non-fatal
+///     (CI runs may not have a window server).
 struct RunCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
@@ -121,10 +121,11 @@ struct RunCommand: ParsableCommand {
 
         let simctl = DiskSimctlClient()
         let simulator = SimulatorService(workspace: workspace, simctl: simctl)
+        let developerDir = XcodeSelectDeveloperDirResolver()
         let buildService = BuildService(
             workspace: workspace,
             simulator: simulator,
-            developerDir: XcodeSelectDeveloperDirResolver(),
+            developerDir: developerDir,
             settingsLister: DiskBuildSettingsLister()
         )
 
@@ -263,9 +264,12 @@ struct RunCommand: ParsableCommand {
             simName = resolved.name
         }
 
-        // Best-effort: open Simulator.app so the user sees the run.
+        // Best-effort: open the selected Xcode's simulator UI.
         // `simctl boot` only boots the headless simulator process.
-        openSimulatorApp()
+        if let note = SimulatorAppService(developerDir: developerDir)
+            .open(baseEnv: baseEnv).note {
+            CLIBridge.eprintln(note)
+        }
 
         let plan = try buildService.prepareBuild(
             task: task,
@@ -328,22 +332,6 @@ struct RunCommand: ParsableCommand {
             ? ""
             : " (\(launchArgs.joined(separator: " ")))"
         CLIBridge.eprintln("✓ launched '\(target.bundleID)'\(argsSuffix)")
-    }
-
-    /// Bring up the Simulator.app window so the user sees the launched
-    /// app. Best-effort — failures (CI, headless macOS, etc.) are
-    /// silently ignored; the install/launch still happens against the
-    /// already-booted simulator process.
-    private static func openSimulatorApp() {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        proc.arguments = ["-g", "-a", "Simulator"]
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-        } catch {
-            // ignore
-        }
     }
 
     private static func formatRuntime(_ rt: SimRuntimeVersion?) -> String {

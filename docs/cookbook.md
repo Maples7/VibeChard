@@ -325,9 +325,13 @@ vch run add-paywall --existing-sim 'iPhone 16' -- -UsePreviewSampleData
 ```
 
 vch resolves the device, boots it (idempotent — a no-op if it's already
-booted), builds the simulator variant **reusing the task's isolated
+booted), and opens the simulator interface by its actual application
+path in the Xcode selected by `DEVELOPER_DIR` or `xcode-select`.
+It prefers `Simulator.app`, then `DeviceHub.app`; a missing interface
+or failure to open it produces a short note and the run continues.
+vch builds the simulator variant **reusing the task's isolated
 DerivedData / SwiftPM caches**, then `simctl install` + `simctl launch`
-onto that device and opens `Simulator.app`. Crucially, it takes **no
+onto that device. Crucially, it takes **no
 `simctl clone`** and writes **no per-task binding** to `state.json`, so
 `vch land` / `vch rm` never touch your shared simulator, and vch never
 erases it (hard rule #9: vch does not own that device).

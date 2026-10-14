@@ -276,7 +276,12 @@ clone.
   `xcodebuild -showBuildSettings -json`.
 - Everything after `--` is forwarded verbatim to `simctl launch` —
   e.g. `vch run alpha -- -UsePreviewSampleData`.
-- Boots the clone and opens `Simulator.app` if needed.
+- Boots the selected simulator and opens the interface from the
+  Xcode selected by `DEVELOPER_DIR` or `xcode-select`, using its actual
+  application path. Prefers `Simulator.app`, then `DeviceHub.app`.
+  If no interface is available or it cannot open (for example, in a
+  headless environment), prints a short note and continues the
+  build, install, and launch.
 
 ### `vch logs`
 
