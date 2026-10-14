@@ -8,6 +8,14 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch run` opens the simulator interface by its actual application
+  path in the selected Xcode, honoring `DEVELOPER_DIR` and supporting
+  both `Simulator.app` and `DeviceHub.app`. If the interface is missing
+  or cannot open, vch prints a short note and continues building,
+  installing, and launching instead of leaking `open`'s error output
+  ([#180](https://github.com/Maples7/VibeChard/issues/180)).
+
 ## 1.2.2 - 2026-09-23
 
 ### Fixed
