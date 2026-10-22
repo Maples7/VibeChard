@@ -559,17 +559,21 @@ final class SimulatorServiceTests: XCTestCase {
         XCTAssertEqual(pinned.udid, "U-OLD") // honored, not silently picked newest
     }
 
-    func testPickNewestTemplateRuntimeMissThrowsWithAvailableList() throws {
-        let (service, _, _) = makeService(
+    func testPickNewestTemplateRuntimeMissForCustomAliasSuggestsRecovery() throws {
+        let (service, _, simctl) = makeService(
             seedingTask: "alpha", seedingState: emptyState("alpha"),
             devices: [
-                device("U", "iPhone 16",
+                device("U", "My iPhone",
                        "com.apple.CoreSimulator.SimRuntime.iOS-26-4",
                        .init(major: 26, minor: 4)),
             ]
         )
+        simctl.createThrows = .externalCommandFailed(
+            cmd: "xcrun simctl create", exitCode: 1,
+            stderr: "Invalid device type: My iPhone"
+        )
         XCTAssertThrowsError(
-            try service.pickNewestTemplate(name: "iPhone 16",
+            try service.pickNewestTemplate(name: "My iPhone",
                                            requestedRuntime: "iOS 18.5")
         ) { err in
             guard case let VibeChardError.simulatorTemplateNotFound(name) = err else {
@@ -577,10 +581,15 @@ final class SimulatorServiceTests: XCTestCase {
             }
             XCTAssertTrue(name.contains("iOS 26.4"),
                           "should list installed runtimes; got: \(name)")
+            XCTAssertTrue(name.contains("xcrun simctl list devicetypes"))
+            XCTAssertTrue(name.contains("create a simulator named 'My iPhone'"))
+            XCTAssertTrue(name.contains("runtime 'iOS 18.5'"))
         }
+        XCTAssertTrue(simctl.cloneCalls.isEmpty)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
     }
 
-    /// #58: when `pickNewestTemplate` reports the available runtimes
+    /// #58: when auto-creation fails, report the available runtimes
     /// to the user, visionOS devices must be surfaced with the
     /// human-friendly "visionOS X.Y" label, **not** the internal
     /// CoreSimulator "xrOS X.Y" slug. The two strings denote the same
@@ -590,13 +599,17 @@ final class SimulatorServiceTests: XCTestCase {
     /// then rejects. This locks the dottedLabel formatting on the
     /// error path for the visionOS-vs-xrOS asymmetry specifically.
     func testPickNewestTemplateRuntimeMissShowsHumanLabelsForVisionOS() throws {
-        let (service, _, _) = makeService(
+        let (service, _, simctl) = makeService(
             seedingTask: "alpha", seedingState: emptyState("alpha"),
             devices: [
                 device("V", "Apple Vision Pro",
                        "com.apple.CoreSimulator.SimRuntime.xrOS-2-5",
                        .init(platform: .visionOS, major: 2, minor: 5)),
             ]
+        )
+        simctl.createThrows = .externalCommandFailed(
+            cmd: "xcrun simctl create", exitCode: 1,
+            stderr: "No such runtime: visionOS 1.0"
         )
         XCTAssertThrowsError(
             try service.pickNewestTemplate(name: "Apple Vision Pro",
@@ -1089,6 +1102,52 @@ final class SimulatorServiceTests: XCTestCase {
     }
 
     // MARK: - auto-create base device (#110)
+
+    func testEnsureCloneAutoCreatesMissingRuntimeAndPreservesExistingBinding() throws {
+        let oldRuntime = SimRuntimeVersion(major: 26, minor: 0)
+        let requestedRuntime = SimRuntimeVersion(major: 27, minor: 0)
+        let oldTemplate = device("OLD-TEMPLATE", "iPhone 16",
+                                 oldRuntime.runtimeIdentifier, oldRuntime)
+        let oldBinding = TaskState.SimulatorRecord(
+            cloneUDID: "OLD-CLONE", sourceUDID: oldTemplate.udid,
+            name: "iPhone 16-vch-alpha", templateName: "iPhone 16",
+            runtimeIdentifier: oldRuntime.runtimeIdentifier
+        )
+        var seed = emptyState("alpha")
+        seed.setSimulators([oldBinding])
+        let (service, fs, simctl) = makeService(
+            seedingTask: "alpha", seedingState: seed,
+            devices: [oldTemplate], cloneReturnsUDID: "NEW-CLONE"
+        )
+        simctl.createReturnsUDID = "NEW-TEMPLATE"
+        simctl.runtimes = [oldRuntime, requestedRuntime]
+
+        let resolved = try service.ensureClone(
+            task: try TaskName("alpha"), requestedDevice: "iPhone 16",
+            requestedRuntime: "iOS 27.0"
+        )
+
+        XCTAssertEqual(resolved?.udid, "NEW-CLONE")
+        XCTAssertEqual(resolved?.runtime, requestedRuntime)
+        XCTAssertEqual(resolved?.createdNow, true)
+        XCTAssertEqual(simctl.createCalls.count, 1)
+        XCTAssertEqual(simctl.createCalls.first?.name, "iPhone 16")
+        XCTAssertEqual(simctl.createCalls.first?.deviceTypeID, "iPhone 16")
+        XCTAssertEqual(simctl.createCalls.first?.runtimeID, requestedRuntime.runtimeIdentifier)
+        XCTAssertEqual(simctl.cloneCalls.count, 1)
+        XCTAssertEqual(simctl.cloneCalls.first?.source, "NEW-TEMPLATE")
+        XCTAssertTrue(simctl.shutdownCalls.isEmpty)
+        XCTAssertTrue(simctl.eraseCalls.isEmpty)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+
+        let state = try TaskState.parse(fs.readFile(at: "/repos/Demo-alpha/.vch/state.json"))
+        XCTAssertEqual(state.allSimulators.count, 2)
+        XCTAssertEqual(state.allSimulators.first, oldBinding)
+        XCTAssertEqual(state.allSimulators.last?.sourceUDID, "NEW-TEMPLATE")
+        XCTAssertEqual(state.allSimulators.last?.cloneUDID, "NEW-CLONE")
+        XCTAssertEqual(state.allSimulators.last?.templateName, "iPhone 16")
+        XCTAssertEqual(state.allSimulators.last?.runtimeIdentifier, requestedRuntime.runtimeIdentifier)
+    }
 
     func testPickNewestTemplateAutoCreatesBaseDeviceWhenMissing() throws {
         // No device with name "iPhone 17" exists, but the user passes
