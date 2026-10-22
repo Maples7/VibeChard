@@ -88,13 +88,21 @@ erases it (mutually exclusive with `--device`):
 vch run fix-login --scheme MyApp --existing-sim "iPhone 16" -- -UITestMode
 ```
 
-If the requested device type and runtime are installed but no base
-simulator exists yet, pass the runtime explicitly. vch will create the
-base simulator before cloning it for the task:
+If the requested device type and a compatible runtime are installed but
+no base simulator exists on that runtime, pass the runtime explicitly.
+vch will create the base simulator before cloning it for the task, even
+if a same-name template exists on another runtime. Existing templates
+and task bindings are preserved; the new shared base simulator stays
+under the user's lifecycle control:
 
 ```sh
 vch test fix-login --scheme MyApp --device "iPhone 17" --runtime "iOS 26.5"
 ```
+
+Automatic creation requires `--device` to name an installed device
+type. For a custom template alias, create a simulator with that name on
+the requested runtime first, select a runtime where that template
+already exists, or use a device type from `xcrun simctl list devicetypes`.
 
 Open the worktree in Xcode for manual inspection or to read build logs:
 

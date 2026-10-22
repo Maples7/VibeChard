@@ -8,6 +8,14 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- Explicit `--device` / `--runtime` requests now create a missing base
+  simulator on the requested runtime even when a same-name template
+  exists on another runtime, preserving existing templates and task
+  bindings. Custom template aliases that cannot be auto-created show
+  a recovery hint and the runtimes of existing templates
+  ([#183](https://github.com/Maples7/VibeChard/issues/183)).
+
 ## 1.2.3 - 2026-10-14
 
 ### Fixed

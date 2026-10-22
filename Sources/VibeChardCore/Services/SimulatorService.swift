@@ -508,10 +508,10 @@ public struct SimulatorService: Sendable {
     /// tiebreak by UDID). Templates with `isAvailable == false` are
     /// filtered out.
     ///
-    /// Lazy creation (#110): if the device type is valid but no base device
-    /// exists, vch auto-creates it via `simctl create`. The user still owns
-    /// the lifecycle (can delete via `vch doctor --clean`), but doesn't need
-    /// to manually run `xcrun simctl create` first.
+    /// Lazy creation (#110, #183): if the device type is valid but no base
+    /// device exists on the requested runtime, vch auto-creates it via
+    /// `simctl create`. The user owns the shared base device's lifecycle
+    /// and can delete it with `simctl`.
     ///
     /// `requestedRuntime` (#11) further filters by the runtime
     /// identifier. Accepted forms (per platform — iOS / watchOS /
@@ -528,37 +528,28 @@ public struct SimulatorService: Sendable {
         requestedPlatform: SimRuntimeVersion.Platform? = nil
     ) throws -> SimDevice {
         let all = try simctl.availableDevices()
-        var matches = all.filter { $0.isAvailable && $0.name == name }
+        let namedMatches = all.filter { $0.isAvailable && $0.name == name }
+        var matches = namedMatches
 
-        // If requestedRuntime is specified, filter further. But if no matches
-        // are found after filtering, DON'T throw yet — we may auto-create.
+        // Other runtimes must not block creation on the requested runtime.
         if let req = requestedRuntime,
            let target = parseRuntimeRequest(req) {
-            let runtimeFiltered = matches.filter { $0.runtimeVersion == target }
-            if !runtimeFiltered.isEmpty {
-                matches = runtimeFiltered
-            } else if !matches.isEmpty {
-                // We have devices with this name but NOT this runtime.
-                // Surface the runtimes we DO have so the user can copy-paste.
-                let available = all
-                    .filter { $0.isAvailable && $0.name == name }
-                    .compactMap { $0.runtimeVersion?.dottedLabel }
-                throw VibeChardError.simulatorTemplateNotFound(
-                    name: "\(name) (runtime '\(req)' — available: \(available.isEmpty ? "none" : available.joined(separator: ", ")))"
-                )
-            }
-            // else: no devices with this name at all, matches stays empty,
-            // and we'll try auto-create below.
+            matches = matches.filter { $0.runtimeVersion == target }
         }
 
         guard !matches.isEmpty else {
-            // No available device found. Try lazy creation (#110):
-            // Attempt to auto-create the base device.
-            return try createBaseDeviceIfNeeded(
-                name: name,
-                requestedRuntime: requestedRuntime,
-                requestedPlatform: requestedPlatform
-            )
+            do {
+                return try createBaseDeviceIfNeeded(
+                    name: name,
+                    requestedRuntime: requestedRuntime,
+                    requestedPlatform: requestedPlatform
+                )
+            } catch let VibeChardError.simulatorTemplateNotFound(detail) where !namedMatches.isEmpty {
+                let available = namedMatches.compactMap { $0.runtimeVersion?.dottedLabel }
+                throw VibeChardError.simulatorTemplateNotFound(
+                    name: "\(detail) (available templates: \(available.isEmpty ? "none" : available.joined(separator: ", ")))"
+                )
+            }
         }
 
         let sorted = matches.sorted { lhs, rhs in
@@ -580,8 +571,9 @@ public struct SimulatorService: Sendable {
     }
 
     /// Attempt to auto-create a base device when the device type is valid
-    /// but no instance exists yet (#110). Throws with diagnostic if
-    /// device type is not installed or runtime is invalid.
+    /// but no instance exists on the requested runtime (#110, #183).
+    /// Throws with diagnostic if the device type is not installed or the
+    /// runtime is invalid.
     private func createBaseDeviceIfNeeded(
         name: String,
         requestedRuntime: String?,
@@ -613,7 +605,8 @@ public struct SimulatorService: Sendable {
             let lower = stderr.lowercased()
             if lower.contains("invalid device type") {
                 throw VibeChardError.simulatorTemplateNotFound(
-                    name: "Device type '\(name)' not installed. Check: xcrun simctl list devicetypes"
+                    name: "Device type '\(name)' not installed. Use a device type from `xcrun simctl list devicetypes`, "
+                        + "or create a simulator named '\(name)' on runtime '\(targetRuntime.dottedLabel)' and retry"
                 )
             } else if lower.contains("no such runtime") || lower.contains("runtime.*not found") {
                 throw VibeChardError.simulatorTemplateNotFound(

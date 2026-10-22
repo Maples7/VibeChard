@@ -173,6 +173,12 @@ vch build [<name>] [flags] [-- xcodebuild-extras]
 - With `--no-sim --device <name>`, `--runtime` also pins `OS=<version>`
   in the xcodebuild destination, allowing a named device on an older
   installed runtime to be selected without cloning it.
+- With `--device <device-type> --runtime <version>`, a missing base
+  simulator on that runtime is created before cloning, even if a
+  same-name template exists on another runtime. The device type and a
+  compatible runtime must be installed. Custom template aliases must
+  already exist on the requested runtime. Existing templates and
+  bindings are preserved; the shared base simulator is user-managed.
 - If no base device exists and `--runtime` is omitted, vch suggests
   the newest installed runtime matching the requested device platform
   (for example, watchOS for Apple Watch templates).
@@ -312,6 +318,12 @@ clone for the phone target plus a watchOS clone for its companion,
 - `clone` with a `--device` that doesn't match any existing binding
   appends a new clone; with a matching `--device` (and optional
   `--runtime`) it reuses the existing one.
+- With an explicit `--runtime`, a missing base simulator is created on
+  that runtime for an installed, compatible device type, including when
+  a same-name template exists only on another runtime. Custom aliases
+  need an existing template on the requested runtime; use an installed
+  device type or create that template manually. Existing templates and
+  bindings are preserved; the shared base simulator is user-managed.
 - If the requested base device has not been created yet and
   `--runtime` is omitted, the error suggests an installed runtime for
   that device family instead of assuming iOS.
