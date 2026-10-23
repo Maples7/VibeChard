@@ -691,25 +691,11 @@ struct RemoveCommand: ParsableCommand {
                 allowDirty: allowDirty,
                 allowUnmergedBranch: allowUnmerged
             )
-            try service.removeTask(task, options: opts)
-
-            if !keepSim {
-                // Multi-binding (#99): reap every recorded clone.
-                // First failure does not block subsequent deletes —
-                // each warning is independent and we never abort
-                // because the worktree is already gone by this point.
-                let bindings = state?.allSimulators ?? []
-                if !bindings.isEmpty {
-                    let simctl = DiskSimctlClient()
-                    for sim in bindings {
-                        do {
-                            try simctl.delete(udid: sim.cloneUDID)
-                            CLIBridge.eprintln("→ deleted simulator clone '\(sim.name)'")
-                        } catch {
-                            CLIBridge.eprintln("warning: could not delete simulator clone \(sim.cloneUDID): \(error)")
-                        }
-                    }
-                }
+            let deleted = try service.removeTask(
+                task, options: opts, simctl: keepSim ? nil : DiskSimctlClient()
+            )
+            for sim in deleted {
+                CLIBridge.eprintln("→ deleted simulator clone '\(sim.name)'")
             }
 
             if state?.worktreeOwnership == .adopted {

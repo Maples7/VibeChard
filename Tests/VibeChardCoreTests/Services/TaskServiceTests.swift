@@ -733,7 +733,7 @@ final class TaskServiceTests: XCTestCase {
         XCTAssertEqual(git.branchDeleteForceCalls, [])
     }
 
-    func testRemoveStopsAtUnmergedBranchWithoutDoubleForce() throws {
+    func testRemovePreservesWorktreeWhenBranchIsUnmerged() throws {
         let (service, git, fs, _) = makeService()
         fs.seedDirectory("/Users/me/Repo-foo")
         git.branches.insert("agent/foo")
@@ -745,8 +745,8 @@ final class TaskServiceTests: XCTestCase {
                 return XCTFail("expected unmergedBranch, got \(error)")
             }
         }
-        // Worktree should still be removed even though branch deletion failed.
-        XCTAssertEqual(git.removeCalls.count, 1)
+        // Refusal must happen before deleting the task or its recovery state.
+        XCTAssertEqual(git.removeCalls.count, 0)
         XCTAssertEqual(git.branchDeleteForceCalls, [])
     }
 
@@ -760,6 +760,196 @@ final class TaskServiceTests: XCTestCase {
         try service.removeTask(TaskName("foo"), options: .forceAll)
         XCTAssertEqual(git.branchDeleteForceCalls, ["agent/foo"])
         XCTAssertFalse(git.branches.contains("agent/foo"))
+    }
+
+    private func removalFixture() throws -> (TaskService, FakeGitClient, InMemoryFileSystem, RemovalSimctl) {
+        let (service, git, fs, _) = makeService()
+        let path = "/Users/me/Repo-foo"
+        let state = TaskState(
+            name: "foo", branch: "agent/foo", createdAt: Date(), baseRef: "abc",
+            simulators: [
+                .init(cloneUDID: "IOS", sourceUDID: "SOURCE-IOS", name: "iPhone-vch-foo"),
+                .init(cloneUDID: "WATCH", sourceUDID: "SOURCE-WATCH", name: "Watch-vch-foo"),
+            ]
+        )
+        fs.seedFile("\(path)/.vch/state.json", data: try state.jsonData())
+        git.branches.insert("agent/foo")
+        git.entries.append(WorktreeEntry(path: path, head: "abc", branch: "agent/foo"))
+        git.currentBranchByCwd[path] = "agent/foo"
+        git.onRemove = { try fs.removeItem(at: $0) }
+        let simctl = RemovalSimctl()
+        simctl.devices = state.allSimulators.map {
+            SimDevice(udid: $0.cloneUDID, name: $0.name, runtime: "iOS-26-4",
+                      runtimeVersion: nil, isAvailable: false)
+        }
+        return (service, git, fs, simctl)
+    }
+
+    func testUnmergedRefusalPreservesAllBindingsAndAllowsCompleteRetry() throws {
+        let (service, git, fs, simctl) = try removalFixture()
+        let task = try TaskName("foo")
+        let original = try fs.readFile(at: service.workspace.statePath(for: task))
+        git.unmergedBranches.insert(task.branchName)
+
+        XCTAssertThrowsError(try service.removeTask(task, simctl: simctl)) { error in
+            guard case VibeChardError.unmergedBranch = error else {
+                return XCTFail("expected unmergedBranch, got \(error)")
+            }
+        }
+        XCTAssertTrue(git.removeCalls.isEmpty)
+        XCTAssertTrue(git.detachCalls.isEmpty)
+        XCTAssertTrue(git.branchDeleteCalls.isEmpty)
+        XCTAssertTrue(git.branches.contains(task.branchName))
+        XCTAssertEqual(try fs.readFile(at: service.workspace.statePath(for: task)), original)
+        XCTAssertEqual(try service.stateForTask(task).allSimulators.count, 2)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+
+        simctl.beforeDelete = {
+            XCTAssertTrue(fs.fileExists(at: service.workspace.statePath(for: task)))
+            XCTAssertTrue(git.removeCalls.isEmpty)
+        }
+        let deleted = try service.removeTask(
+            task, options: .init(allowUnmergedBranch: true), simctl: simctl
+        )
+        XCTAssertEqual(deleted.map(\.cloneUDID), ["IOS", "WATCH"])
+        XCTAssertEqual(simctl.deleteCalls, ["IOS", "WATCH"])
+        XCTAssertEqual(git.detachCalls, [service.workspace.worktreePath(for: task)])
+        XCTAssertFalse(git.branches.contains(task.branchName))
+        XCTAssertFalse(fs.directoryExists(at: service.workspace.worktreePath(for: task)))
+        XCTAssertFalse(fs.fileExists(at: service.workspace.statePath(for: task)))
+    }
+
+    func testBranchDeleteFailureKeepsTaskAndSimulatorsForRetry() throws {
+        let (service, git, _, simctl) = try removalFixture()
+        let task = try TaskName("foo")
+        git.branchDeleteError = .externalCommandFailed(cmd: "git branch -d", exitCode: 1, stderr: "ref locked")
+        XCTAssertThrowsError(try service.removeTask(task, simctl: simctl))
+        XCTAssertEqual(try service.stateForTask(task).allSimulators.count, 2)
+        XCTAssertTrue(git.branches.contains(task.branchName))
+        XCTAssertTrue(git.removeCalls.isEmpty)
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+
+        git.branchDeleteError = nil
+        try service.removeTask(task, simctl: simctl)
+        XCTAssertEqual(simctl.deleteCalls, ["IOS", "WATCH"])
+        XCTAssertEqual(git.removeCalls.count, 1)
+    }
+
+    func testPartialSimulatorCleanupRetriesWithoutDeletingMissingClone() throws {
+        let (service, git, _, simctl) = try removalFixture()
+        let task = try TaskName("foo")
+        simctl.deleteThrowsByUDID["WATCH"] = .externalCommandFailed(
+            cmd: "simctl delete", exitCode: 1, stderr: "busy"
+        )
+        XCTAssertThrowsError(try service.removeTask(task, simctl: simctl))
+        XCTAssertTrue(git.removeCalls.isEmpty)
+        XCTAssertFalse(git.branches.contains(task.branchName))
+        XCTAssertEqual(try service.stateForTask(task).allSimulators.count, 2)
+        XCTAssertEqual(try service.listTasks().map(\.name), ["foo"])
+
+        simctl.deleteThrowsByUDID = [:]
+        try service.removeTask(task, simctl: simctl)
+        XCTAssertEqual(simctl.deleteCalls, ["IOS", "WATCH", "WATCH"])
+        XCTAssertEqual(git.removeCalls.count, 1)
+    }
+
+    func testWorktreeRemovalFailureKeepsRecoveryStateUntilRetry() throws {
+        let (service, git, fs, simctl) = try removalFixture()
+        let task = try TaskName("foo")
+        git.worktreeRemoveError = .externalCommandFailed(cmd: "git worktree remove", exitCode: 1, stderr: "busy")
+        XCTAssertThrowsError(try service.removeTask(task, simctl: simctl))
+        XCTAssertEqual(try service.stateForTask(task).allSimulators.count, 2)
+        XCTAssertEqual(try service.listTasks().map(\.name), ["foo"])
+
+        git.worktreeRemoveError = nil
+        try service.removeTask(task, simctl: simctl)
+        XCTAssertEqual(simctl.deleteCalls, ["IOS", "WATCH"])
+        XCTAssertFalse(fs.directoryExists(at: service.workspace.worktreePath(for: task)))
+    }
+
+    func testRemovalReadFailuresDoNotMutateResources() throws {
+        for failure in ["status", "branch", "simulators", "state"] {
+            let (service, git, fs, simctl) = try removalFixture()
+            let error = VibeChardError.externalCommandFailed(cmd: failure, exitCode: 1, stderr: "failed")
+            let task = try TaskName("foo")
+            switch failure {
+            case "status": git.statusError = error
+            case "branch": git.branchExistsError = error
+            case "simulators": simctl.allThrows = error
+            default: fs.seedFile(service.workspace.statePath(for: task), data: Data("corrupt".utf8))
+            }
+            XCTAssertThrowsError(try service.removeTask(task, simctl: simctl), failure)
+            XCTAssertTrue(git.detachCalls.isEmpty, failure)
+            XCTAssertTrue(git.removeCalls.isEmpty, failure)
+            XCTAssertTrue(git.branches.contains(task.branchName), failure)
+            XCTAssertTrue(simctl.deleteCalls.isEmpty, failure)
+        }
+    }
+
+    func testStatelessTaskRemainsDiscoverableAfterCleanupFailure() throws {
+        let (service, git, fs, _) = makeService()
+        let task = try TaskName("foo")
+        let path = service.workspace.worktreePath(for: task)
+        fs.seedDirectory(path)
+        git.branches.insert(task.branchName)
+        git.entries.append(WorktreeEntry(path: path, head: "abc", branch: task.branchName))
+        git.currentBranchByCwd[path] = task.branchName
+        git.worktreeRemoveError = .externalCommandFailed(cmd: "git worktree remove", exitCode: 1, stderr: "busy")
+        XCTAssertThrowsError(try service.removeTask(task))
+        XCTAssertEqual(try service.pathForTask(task), path)
+        XCTAssertEqual(try service.stateForTask(task).name, task.raw)
+        XCTAssertEqual(try service.listTasks().map(\.name), [task.raw])
+        XCTAssertFalse(git.branches.contains(task.branchName))
+
+        git.worktreeRemoveError = nil
+        try service.removeTask(task)
+        XCTAssertEqual(git.removeCalls.count, 2)
+    }
+
+    func testLockedWorktreeRefusalPreservesAllResources() throws {
+        let (service, git, _, simctl) = try removalFixture()
+        let task = try TaskName("foo")
+        git.entries[1] = WorktreeEntry(
+            path: service.workspace.worktreePath(for: task), branch: task.branchName, isLocked: true
+        )
+        XCTAssertThrowsError(try service.removeTask(task, options: .forceAll, simctl: simctl))
+        XCTAssertTrue(git.detachCalls.isEmpty)
+        XCTAssertTrue(git.branches.contains(task.branchName))
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+        XCTAssertEqual(try service.stateForTask(task).allSimulators.count, 2)
+    }
+
+    func testAdoptedCleanupFailureKeepsStateAndExternalResourcesForRetry() throws {
+        let (service, git, fs, simctl) = try removalFixture()
+        let task = try TaskName("foo")
+        var state = try service.stateForTask(task)
+        state.worktreeOwnership = .adopted
+        try fs.writeFileAtomic(state.jsonData(), to: service.workspace.statePath(for: task))
+        let buildDir = service.workspace.agentBuildDir(for: task)
+        fs.seedDirectory(buildDir)
+        fs.removeItemErrors[buildDir] = .externalCommandFailed(cmd: "remove", exitCode: 1, stderr: "busy")
+
+        XCTAssertThrowsError(try service.removeTask(task, simctl: simctl))
+        XCTAssertEqual(try service.stateForTask(task).worktreeOwnership, .adopted)
+        XCTAssertTrue(git.branches.contains(task.branchName))
+        XCTAssertTrue(git.detachCalls.isEmpty)
+        XCTAssertTrue(git.removeCalls.isEmpty)
+
+        fs.removeItemErrors = [:]
+        try service.removeTask(task, simctl: simctl)
+        XCTAssertEqual(simctl.deleteCalls, ["IOS", "WATCH"])
+        XCTAssertTrue(fs.directoryExists(at: service.workspace.worktreePath(for: task)))
+        XCTAssertFalse(fs.fileExists(at: service.workspace.statePath(for: task)))
+        XCTAssertFalse(fs.directoryExists(at: buildDir))
+        XCTAssertTrue(git.branches.contains(task.branchName))
+        XCTAssertTrue(git.removeCalls.isEmpty)
+    }
+
+    func testRemovalWithoutSimulatorClientKeepsClones() throws {
+        let (service, _, _, simctl) = try removalFixture()
+        try service.removeTask(TaskName("foo"))
+        XCTAssertTrue(simctl.deleteCalls.isEmpty)
+        XCTAssertEqual(simctl.devices.count, 2)
     }
 
     func testRemoveAdoptedTaskOnlyRemovesVchArtifacts() throws {
@@ -999,5 +1189,15 @@ final class TaskServiceTests: XCTestCase {
         let status = service.gitStatus(forSummary: summary)
         XCTAssertEqual(status.aheadCount, 0)
         XCTAssertEqual(status.mergedIntoBase, true)
+    }
+}
+
+private final class RemovalSimctl: FakeSimctl, @unchecked Sendable {
+    var beforeDelete: (() -> Void)?
+
+    override func delete(udid: String) throws {
+        beforeDelete?()
+        try super.delete(udid: udid)
+        devices.removeAll { $0.udid == udid }
     }
 }

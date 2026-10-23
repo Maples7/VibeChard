@@ -8,6 +8,13 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch rm` checks branch merge safety before deleting task resources.
+  Cleanup keeps the worktree and state until branch and simulator
+  cleanup succeeds, so failures can be retried without losing bindings
+  or stranding the remaining clones
+  ([#186](https://github.com/Maples7/VibeChard/issues/186)).
+
 ## 1.2.4 - 2026-10-23
 
 ### Fixed

@@ -10,6 +10,7 @@ final class ShimLocatorTests: XCTestCase {
 
         func fileExists(at path: String) -> Bool { existing.contains(path) }
         func directoryExists(at path: String) -> Bool { false }
+        func resolvingSymlinks(at path: String) -> String { path }
         func createDirectory(at path: String) throws {}
         func readFile(at path: String) throws -> Data { Data() }
         func writeFileAtomic(_ data: Data, to path: String) throws {}

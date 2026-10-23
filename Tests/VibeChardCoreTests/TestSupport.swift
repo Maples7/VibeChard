@@ -25,6 +25,8 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
         directories.contains(path)
     }
 
+    func resolvingSymlinks(at path: String) -> String { path }
+
     func createDirectory(at path: String) throws {
         var components = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         // Re-build all parent paths.
@@ -54,7 +56,10 @@ final class InMemoryFileSystem: FileSystem, @unchecked Sendable {
         files[path] = data
     }
 
+    var removeItemErrors: [String: VibeChardError] = [:]
+
     func removeItem(at path: String) throws {
+        if let error = removeItemErrors[path] { throw error }
         files.removeValue(forKey: path)
         symlinks.removeValue(forKey: path)
         directories.remove(path)
@@ -167,6 +172,14 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
     var dirtyWorktrees: Set<String> = []
     var headShortSHA: String = "1234abc"
 
+    var branchExistsError: VibeChardError?
+    var statusError: VibeChardError?
+    var branchDeleteError: VibeChardError?
+    var worktreeRemoveError: VibeChardError?
+    var commitRetained = true
+    var detachCalls: [String] = []
+    var onRemove: ((String) throws -> Void)?
+
     var pruneCalls = 0
     var addNewBranchCalls: [(path: String, branch: String, base: String)] = []
     var addExistingCalls: [(path: String, branch: String)] = []
@@ -196,6 +209,8 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
 
     func worktreeRemove(repoCwd: String, path: String, force: Bool) throws {
         removeCalls.append((path, force))
+        if let worktreeRemoveError { throw worktreeRemoveError }
+        try onRemove?(path)
         entries.removeAll { $0.path == path }
     }
 
@@ -204,11 +219,32 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
     }
 
     func branchExists(repoCwd: String, name: String) throws -> Bool {
-        branches.contains(name)
+        if let branchExistsError { throw branchExistsError }
+        return branches.contains(name)
+    }
+
+    func checkBranchMerged(repoCwd: String, name: String) throws {
+        if unmergedBranches.contains(name) {
+            throw VibeChardError.unmergedBranch(name: name)
+        }
+    }
+
+    func isCommitRetained(repoCwd: String, ref: String, excludingBranch: String) throws -> Bool {
+        commitRetained
+    }
+
+    func detachHEAD(worktreeCwd: String) throws {
+        detachCalls.append(worktreeCwd)
+        currentBranchByCwd.removeValue(forKey: worktreeCwd)
+        entries = entries.map { entry in
+            entry.path == worktreeCwd
+                ? WorktreeEntry(path: entry.path, head: entry.head, isDetached: true) : entry
+        }
     }
 
     func branchDelete(repoCwd: String, name: String) throws {
         branchDeleteCalls.append(name)
+        if let branchDeleteError { throw branchDeleteError }
         if unmergedBranches.contains(name) {
             throw VibeChardError.unmergedBranch(name: name)
         }
@@ -217,12 +253,14 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
 
     func branchDeleteForce(repoCwd: String, name: String) throws {
         branchDeleteForceCalls.append(name)
+        if let branchDeleteError { throw branchDeleteError }
         branches.remove(name)
         unmergedBranches.remove(name)
     }
 
     func statusIsDirty(worktreeCwd: String) throws -> Bool {
-        dirtyWorktrees.contains(worktreeCwd)
+        if let statusError { throw statusError }
+        return dirtyWorktrees.contains(worktreeCwd)
     }
 
     func revParseHEADShort(repoCwd: String) throws -> String {

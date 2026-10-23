@@ -10,6 +10,9 @@ public protocol FileSystem: Sendable {
     func fileExists(at path: String) -> Bool
     func directoryExists(at path: String) -> Bool
 
+    /// Resolve symbolic links for comparison with paths reported by Git.
+    func resolvingSymlinks(at path: String) -> String
+
     /// Recursively create the directory if needed. No-op if it exists.
     func createDirectory(at path: String) throws
 
@@ -61,6 +64,10 @@ public struct DiskFileSystem: FileSystem {
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
         return exists && isDir.boolValue
+    }
+
+    public func resolvingSymlinks(at path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
     public func createDirectory(at path: String) throws {
