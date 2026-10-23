@@ -49,6 +49,20 @@ final class PorcelainParserTests: XCTestCase {
         XCTAssertEqual(entries[0].branch, "x")
     }
 
+    func testLockedWorktreesWithAndWithoutReason() {
+        let entries = PorcelainParser.parseWorktreeList("""
+        worktree /tmp/one
+        locked
+
+        worktree /tmp/two
+        locked keep for later
+
+        worktree /tmp/three
+        detached
+        """)
+        XCTAssertEqual(entries.map(\.isLocked), [true, true, false])
+    }
+
     func testEmptyInput() {
         XCTAssertEqual(PorcelainParser.parseWorktreeList("").count, 0)
         XCTAssertEqual(PorcelainParser.parseWorktreeList("\n\n").count, 0)

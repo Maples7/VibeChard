@@ -131,7 +131,7 @@ final class TaskServiceIntegrationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path))
     }
 
-    func testRemoveStopsAtUnmergedBranchWithoutDoubleForce() throws {
+    func testRemovePreservesUnmergedTaskUntilRetry() throws {
         let workspace = try makeRepo()
         let service = makeService(workspace: workspace)
         let task = try TaskName("alpha")
@@ -148,26 +148,21 @@ final class TaskServiceIntegrationTests: XCTestCase {
         try requireSuccess(runner.run("/usr/bin/git", args: ["add", "feature.txt"], cwd: path, env: env))
         try requireSuccess(runner.run("/usr/bin/git", args: ["commit", "-q", "-m", "feature"], cwd: path, env: env))
 
-        // Default: branch is unmerged, so the (-d) delete should fail and
-        // we surface unmergedBranch. The worktree itself is gone.
+        // An unmerged-branch refusal must preserve the task for retry.
         XCTAssertThrowsError(try service.removeTask(task)) { error in
             guard case VibeChardError.unmergedBranch = error else {
                 return XCTFail("expected unmergedBranch, got \(error)")
             }
         }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        XCTAssertNoThrow(try service.stateForTask(task))
 
         // Branch should still exist.
         let exists = try DiskGitClient().branchExists(repoCwd: workspace.mainWorktreePath, name: "agent/alpha")
         XCTAssertTrue(exists)
 
-        // Recovery: allowUnmergedBranch should force-delete it.
-        // The worktree is already gone, so call git directly through service:
-        // but service.removeTask requires the worktree to exist. Use the
-        // public service hook only when valid; here we exercise force-delete
-        // directly through GitClient as the recovery path the user has via
-        // `vch repair` + manual git in v1.
-        try DiskGitClient().branchDeleteForce(repoCwd: workspace.mainWorktreePath, name: "agent/alpha")
+        try service.removeTask(task, options: .init(allowUnmergedBranch: true))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path))
         let stillExists = try DiskGitClient().branchExists(repoCwd: workspace.mainWorktreePath, name: "agent/alpha")
         XCTAssertFalse(stillExists)
     }

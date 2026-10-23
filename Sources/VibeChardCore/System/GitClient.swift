@@ -7,13 +7,15 @@ public struct WorktreeEntry: Equatable, Sendable {
     public let branch: String?
     public let isBare: Bool
     public let isDetached: Bool
+    public let isLocked: Bool
 
-    public init(path: String, head: String? = nil, branch: String? = nil, isBare: Bool = false, isDetached: Bool = false) {
+    public init(path: String, head: String? = nil, branch: String? = nil, isBare: Bool = false, isDetached: Bool = false, isLocked: Bool = false) {
         self.path = path
         self.head = head
         self.branch = branch
         self.isBare = isBare
         self.isDetached = isDetached
+        self.isLocked = isLocked
     }
 }
 
@@ -47,6 +49,17 @@ public protocol GitClient: Sendable {
     func worktreePrune(repoCwd: String) throws
 
     func branchExists(repoCwd: String, name: String) throws -> Bool
+
+    /// Non-destructive equivalent of `git branch -d`'s merge check:
+    /// use a resolvable upstream when configured, otherwise the caller's HEAD.
+    func checkBranchMerged(repoCwd: String, name: String) throws
+
+    /// Whether a commit remains reachable from another ref or this worktree's
+    /// HEAD after deleting `excludingBranch` and a detached task worktree.
+    func isCommitRetained(repoCwd: String, ref: String, excludingBranch: String) throws -> Bool
+
+    /// Detach HEAD at its current commit without changing the index or files.
+    func detachHEAD(worktreeCwd: String) throws
 
     /// Plain `git branch -d`. Throws `unmergedBranch` if git refuses; the
     /// caller decides whether to escalate to `branchDeleteForce`.
@@ -224,6 +237,50 @@ public struct DiskGitClient: GitClient {
                 stderr: result.stderr
             )
         }
+    }
+
+    public func checkBranchMerged(repoCwd: String, name: String) throws {
+        let upstream = try runner.run(
+            gitPath, args: ["for-each-ref", "--format=%(upstream)", "refs/heads/\(name)"],
+            cwd: repoCwd
+        )
+        try requireSuccess(upstream, label: "git for-each-ref")
+        var target = "HEAD"
+        if !upstream.stdoutTrimmed.isEmpty {
+            let resolved = try runner.run(
+                gitPath, args: ["rev-parse", "--verify", "\(upstream.stdoutTrimmed)^{commit}"],
+                cwd: repoCwd
+            )
+            if resolved.succeeded { target = resolved.stdoutTrimmed }
+        }
+        let result = try runner.run(
+            gitPath, args: ["merge-base", "--is-ancestor", "refs/heads/\(name)", target],
+            cwd: repoCwd
+        )
+        if result.exitCode == 1 { throw VibeChardError.unmergedBranch(name: name) }
+        try requireSuccess(result, label: "git merge-base --is-ancestor")
+    }
+
+    public func isCommitRetained(repoCwd: String, ref: String, excludingBranch: String) throws -> Bool {
+        let result = try runner.run(
+            gitPath, args: ["for-each-ref", "--contains=\(ref)", "--format=%(refname)"],
+            cwd: repoCwd
+        )
+        try requireSuccess(result, label: "git for-each-ref --contains")
+        if result.stdout.split(whereSeparator: \.isNewline).contains(where: {
+            $0 != "refs/heads/\(excludingBranch)"
+        }) {
+            return true
+        }
+        return try revListCount(repoCwd: repoCwd, base: "HEAD", head: ref) == 0
+    }
+
+    public func detachHEAD(worktreeCwd: String) throws {
+        let head = try revParse(repoCwd: worktreeCwd, ref: "HEAD")
+        let result = try runner.run(
+            gitPath, args: ["update-ref", "--no-deref", "HEAD", head], cwd: worktreeCwd
+        )
+        try requireSuccess(result, label: "git update-ref --no-deref HEAD")
     }
 
     public func branchDelete(repoCwd: String, name: String) throws {
@@ -526,7 +583,7 @@ public struct DiskGitClient: GitClient {
 public enum PorcelainParser {
     /// Format reference: `man git-worktree`. Each entry is a block of
     /// `key value`-ish lines terminated by a blank line. Fields we care
-    /// about: `worktree`, `HEAD`, `branch`, `bare`, `detached`.
+    /// about: `worktree`, `HEAD`, `branch`, `bare`, `detached`, `locked`.
     public static func parseWorktreeList(_ output: String) -> [WorktreeEntry] {
         var entries: [WorktreeEntry] = []
         var path: String?
@@ -534,6 +591,7 @@ public enum PorcelainParser {
         var branch: String?
         var isBare = false
         var isDetached = false
+        var isLocked = false
 
         func flush() {
             guard let p = path else { return }
@@ -542,10 +600,11 @@ public enum PorcelainParser {
                 head: head,
                 branch: branch,
                 isBare: isBare,
-                isDetached: isDetached
+                isDetached: isDetached,
+                isLocked: isLocked
             ))
             path = nil; head = nil; branch = nil
-            isBare = false; isDetached = false
+            isBare = false; isDetached = false; isLocked = false
         }
 
         for rawLine in output.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
@@ -562,12 +621,14 @@ public enum PorcelainParser {
                 case "worktree": path = value
                 case "HEAD":     head = value
                 case "branch":   branch = stripRefsHeads(value)
+                case "locked":   isLocked = true
                 default: break
                 }
             } else {
                 switch line {
                 case "bare":     isBare = true
                 case "detached": isDetached = true
+                case "locked":   isLocked = true
                 default: break
                 }
             }

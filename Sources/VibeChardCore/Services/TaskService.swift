@@ -579,49 +579,110 @@ public struct TaskService: Sendable {
     /// deleting vch-owned scratch directories; the externally-created
     /// Git worktree and branch remain owned by the tool/user that made
     /// them.
-    public func removeTask(_ task: TaskName, options: RemoveOptions = .init()) throws {
+    /// When `simctl` is supplied, delete all recorded clones before removing
+    /// task state. Missing clones are skipped so a partial cleanup can retry.
+    /// With nil, simulator lifecycle remains the caller's responsibility.
+    @discardableResult
+    public func removeTask(
+        _ task: TaskName,
+        options: RemoveOptions = .init(),
+        simctl: SimctlClient? = nil
+    ) throws -> [TaskState.SimulatorRecord] {
         let wtPath = try pathForTask(task)
+        let state = fs.fileExists(at: workspace.statePath(for: task))
+            ? try stateForTask(task) : nil
+        let ownsWorktree = state?.ownsGitWorktree ?? true
+        let branch = task.branchName
+        let checkedOutBranch = ownsWorktree ? try git.currentBranch(repoCwd: wtPath) : nil
+        let exists = ownsWorktree
+            ? try git.branchExists(repoCwd: workspace.mainWorktreePath, name: branch) : false
 
-        let state = try? stateForTask(task)
-        if state?.worktreeOwnership == .adopted {
-            try removeAdoptedTaskArtifacts(task)
-            return
-        }
-
-        if !options.allowDirty {
-            let dirty = (try? git.statusIsDirty(worktreeCwd: wtPath)) ?? false
-            if dirty {
+        // Every read-only safety check precedes branch, clone, and file removal.
+        if ownsWorktree {
+            let entries = try git.worktreeList(repoCwd: workspace.mainWorktreePath)
+            let resolvedPath = fs.resolvingSymlinks(at: wtPath)
+            if entries.contains(where: { fs.resolvingSymlinks(at: $0.path) == resolvedPath && $0.isLocked }) {
+                throw VibeChardError.externalCommandFailed(
+                    cmd: "git worktree remove", exitCode: 1,
+                    stderr: "worktree at \(wtPath) is locked; unlock it with git worktree unlock before retrying"
+                )
+            }
+            if !options.allowDirty, try git.statusIsDirty(worktreeCwd: wtPath) {
                 throw VibeChardError.dirtyWorktree(path: wtPath)
             }
+            if exists, !options.allowUnmergedBranch {
+                try git.checkBranchMerged(repoCwd: workspace.mainWorktreePath, name: branch)
+            }
+            if checkedOutBranch == nil, !options.allowUnmergedBranch {
+                let head = try git.revParse(repoCwd: wtPath, ref: "HEAD")
+                if try !git.isCommitRetained(
+                    repoCwd: workspace.mainWorktreePath, ref: head, excludingBranch: branch
+                ) {
+                    throw VibeChardError.unmergedBranch(name: branch)
+                }
+            }
+        }
+        let bindings = state?.allSimulators ?? []
+        let devices: [SimDevice]
+        if let simctl, !bindings.isEmpty {
+            devices = try simctl.allDevices()
+        } else {
+            devices = []
         }
 
-        try git.worktreeRemove(repoCwd: workspace.mainWorktreePath, path: wtPath, force: options.allowDirty)
+        // Legacy tasks can be discovered by their agent branch even without
+        // state.json. Persist their identity before detaching that branch so
+        // a subsequent cleanup failure remains discoverable and retryable.
+        if state == nil {
+            let recoveryState = TaskState(
+                name: task.raw, branch: branch, createdAt: clock.now(),
+                baseRef: try git.revParseHEADShort(repoCwd: wtPath),
+                worktreeOwnership: .vchCreated
+            )
+            try fs.writeFileAtomic(recoveryState.jsonData(), to: workspace.statePath(for: task))
+        }
 
-        // Delete the branch we created. If it doesn't exist anymore (user
-        // already removed it), silently continue.
-        let branch = task.branchName
-        let exists = (try? git.branchExists(repoCwd: workspace.mainWorktreePath, name: branch)) ?? false
-        guard exists else { return }
-
-        do {
-            try git.branchDelete(repoCwd: workspace.mainWorktreePath, name: branch)
-        } catch VibeChardError.unmergedBranch {
+        // Keep the worktree and state until every other cleanup succeeds.
+        // A detached HEAD retains the task commit if branch deletion succeeds
+        // but later cleanup fails; state.json still identifies the task.
+        if exists {
+            if checkedOutBranch == branch {
+                try git.detachHEAD(worktreeCwd: wtPath)
+            }
             if options.allowUnmergedBranch {
                 try git.branchDeleteForce(repoCwd: workspace.mainWorktreePath, name: branch)
             } else {
-                throw VibeChardError.unmergedBranch(name: branch)
+                try git.branchDelete(repoCwd: workspace.mainWorktreePath, name: branch)
             }
         }
+
+        var deleted: [TaskState.SimulatorRecord] = []
+        if let simctl {
+            let existingUDIDs = Set(devices.map(\.udid))
+            for sim in bindings where existingUDIDs.contains(sim.cloneUDID) {
+                try simctl.delete(udid: sim.cloneUDID)
+                deleted.append(sim)
+            }
+        }
+        if ownsWorktree {
+            try git.worktreeRemove(
+                repoCwd: workspace.mainWorktreePath, path: wtPath, force: options.allowDirty
+            )
+        } else {
+            try removeAdoptedTaskArtifacts(task)
+        }
+        return deleted
     }
 
     private func removeAdoptedTaskArtifacts(_ task: TaskName) throws {
-        let vchDir = workspace.vchDir(for: task)
-        if fs.directoryExists(at: vchDir) || fs.fileExists(at: vchDir) {
-            try fs.removeItem(at: vchDir)
-        }
+        // Keep state.json available if build-cache removal fails.
         let buildDir = workspace.agentBuildDir(for: task)
         if fs.directoryExists(at: buildDir) || fs.fileExists(at: buildDir) {
             try fs.removeItem(at: buildDir)
+        }
+        let vchDir = workspace.vchDir(for: task)
+        if fs.directoryExists(at: vchDir) || fs.fileExists(at: vchDir) {
+            try fs.removeItem(at: vchDir)
         }
     }
 

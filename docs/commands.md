@@ -442,6 +442,19 @@ manually if you also want to delete the external worktree and branch.
 - `--allow-unmerged` force-deletes a branch that isn't fully merged.
 - `--keep-sim` retains the per-task simulator clone.
 
+Merge and dirty-worktree checks run before any resources are deleted.
+The merge check follows `git branch -d`: it uses a resolvable upstream
+when configured, otherwise the main worktree's current `HEAD`.
+If cleanup fails, fix the reported problem and rerun `vch rm` with the
+same flags (or add `--allow-unmerged` after an unmerged-branch refusal).
+The worktree and `.vch/state.json` remain until branch and simulator
+cleanup succeeds. After a partial cleanup, the worktree may have a
+detached `HEAD`; its commit and simulator bindings remain available,
+and retry skips branches and clones already deleted. Any new detached
+commits without another retaining ref still require `--allow-unmerged`.
+Tasks missing their state file get minimal recovery state before cleanup.
+No recovery files are written outside the task worktree.
+
 ### `vch prune`
 
 ```text
