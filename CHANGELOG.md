@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.2.4 - 2026-10-23
+
 ### Fixed
 - Explicit `--device` / `--runtime` requests now create a missing base
   simulator on the requested runtime even when a same-name template
