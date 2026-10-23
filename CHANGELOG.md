@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.2.5 - 2026-10-23
+
 ### Fixed
 - `vch rm` checks branch merge safety before deleting task resources.
   Cleanup keeps the worktree and state until branch and simulator
