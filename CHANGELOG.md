@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.3.0 - 2026-11-03
+
 ### Fixed
 - `vch test --rerun` and `--rerun-failed` restore the last test's
   scheme, project/workspace, configuration, and exact simulator
