@@ -103,7 +103,26 @@ does not tee or summarize xcodebuild output.
 
 Once you have a failing run, `vch test foo --rerun-failed` replays
 only the failed cases without re-typing the identifier — vch reads
-them out of the recorded xcresult bundle.
+them out of the recorded xcresult bundle. Both rerun modes restore
+the last test's scheme, configuration, project/workspace, and simulator
+destination, even if the task has several bindings or you built
+another scheme since testing:
+
+```sh
+vch test foo --scheme App --device 'iPhone 15' --runtime 'iOS 17.0' \
+  --only-testing AppTests/MySuite
+vch test foo --rerun
+vch test foo --rerun-failed
+# Override just the runtime; keep the recorded device and test args:
+vch test foo --rerun --runtime 'iOS 18.0'
+```
+
+Explicit options replace recorded values. A deleted or unavailable
+recorded clone produces a recovery hint; add `--device` and `--runtime`
+to select or recreate a destination. Old state files without a saved
+test context replay extra args with current defaults and a warning.
+See the [test command reference](commands.md#vch-test) for override and
+run-control rules.
 
 ## Keeping a long-running task current
 

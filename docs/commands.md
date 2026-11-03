@@ -249,9 +249,31 @@ vch test [<name>] [flags] [-- xcodebuild-extras]
 - The full firehose is always tee'd to `<wt>/.vch/last-test.log`.
 - Counts come from the xcresult bundle so swift-testing
   (`@Suite` / `@Test` / `#expect`) targets are reported correctly.
-- `--rerun` replays the prior invocation verbatim;
-  `--rerun-failed` re-runs only the tests that failed last time
-  (uses the recorded xcresult). See
+- `--rerun` restores the last test's scheme, project/workspace,
+  configuration, device/runtime, exact managed clone, and extra args.
+  A later `vch build` does not change that test context.
+  `--rerun-failed` restores the same context and replaces test
+  selectors with failures from the recorded xcresult.
+- Explicit `--scheme`, `--configuration`, `--project` / `--workspace`,
+  `--device`, and `--runtime` override their recorded values (including
+  equivalent flags in recorded pass-through args). A project/workspace
+  override replaces the entire container selection. Device/runtime
+  overrides keep the other recorded destination value and resolve a
+  clone normally; `--no-sim` bypasses managed clones and keeps the
+  recorded device/runtime. A run that used no clone continues without
+  one on replay; start a fresh invocation to switch back to cloning.
+  If the prior run passed raw `-destination` args, supply both `--device`
+  and `--runtime` to replace that selection; a partial override is
+  rejected because raw destinations can contain UDIDs or multiple targets.
+- `--verbose`, `--test-execution-idle-timeout`, `--progress-interval`,
+  `--erase-clone`, and `--shutdown-template` apply to the current run
+  only. Rerun flags cannot be combined with each other, fresh
+  `--only-testing` / `--skip-testing`, or extra args after `--`.
+- Older state files without a test context still replay extra args
+  with current defaults and a warning. If a recorded clone was deleted
+  or is unavailable, vch refuses to substitute another destination;
+  pass `--device` and `--runtime` to select or recreate it, or start a
+  fresh test invocation. See
   [Running a subset of tests](cookbook.md#running-a-subset-of-tests).
 
 ### `vch run`

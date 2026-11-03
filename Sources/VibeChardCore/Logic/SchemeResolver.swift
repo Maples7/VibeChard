@@ -229,8 +229,14 @@ public struct SchemeResolver: Sendable {
         task: TaskName,
         explicit: String?,
         extraArgs: [String] = [],
-        xcodebuildContainer: XcodebuildContainer? = nil
+        xcodebuildContainer: XcodebuildContainer? = nil,
+        useDefaults: Bool = true
     ) throws -> Resolved? {
+        // A recorded invocation owns its scheme, even when the original
+        // call omitted it. Later builds must not supply a new default.
+        if !useDefaults {
+            return explicit.map { Resolved(scheme: $0, source: .explicit) }
+        }
         let outcome = try resolveWithDiagnostics(
             task: task,
             explicit: explicit,

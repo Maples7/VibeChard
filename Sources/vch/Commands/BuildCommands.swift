@@ -15,21 +15,23 @@ private enum BuildOrTest {
     static func execute(
         action: Action,
         taskName: String?,
-        scheme: String?,
-        project: String?,
-        workspacePath: String?,
-        configuration: String?,
-        device: String?,
-        runtime: String?,
-        noSim: Bool,
+        options: BuildService.Options,
+        recordedSimulatorUDID: String? = nil,
+        useSchemeDefaults: Bool = true,
         eraseClone: Bool = false,
         shutdownTemplate: Bool = false,
         existingSim: String? = nil,
         verbose: Bool = false,
         testExecutionIdleTimeout: Double? = nil,
-        progressInterval: Double? = nil,
-        extraArgs: [String]
+        progressInterval: Double? = nil
     ) throws {
+        let scheme = options.scheme
+        let configuration = options.configuration
+        let device = options.device
+        let runtime = options.runtime
+        let noSim = options.noSim
+        let extraArgs = options.extraArgs
+        let xcodebuildContainer = options.xcodebuildContainer
         // #162: reject incompatible flag combinations up front so the
         // user is told immediately, regardless of cwd / workspace state.
         try ExistingSimulatorResolver.validateOptions(
@@ -47,10 +49,6 @@ private enum BuildOrTest {
         let task = try TaskArgumentResolver.resolve(
             explicit: taskName,
             current: location.taskName
-        )
-        let xcodebuildContainer = try XcodebuildContainer.resolve(
-            project: project,
-            workspace: workspacePath
         )
         let baseEnv = ProcessInfo.processInfo.environment
 
@@ -80,7 +78,8 @@ private enum BuildOrTest {
             task: task,
             explicit: scheme,
             extraArgs: extraArgs,
-            xcodebuildContainer: xcodebuildContainer
+            xcodebuildContainer: xcodebuildContainer,
+            useDefaults: useSchemeDefaults
         )
         if let r = resolvedScheme, scheme == nil {
             switch r.source {
@@ -92,15 +91,8 @@ private enum BuildOrTest {
             }
         }
 
-        var opts = BuildService.Options(
-            scheme: resolvedScheme?.scheme ?? scheme,
-            xcodebuildContainer: xcodebuildContainer,
-            configuration: configuration,
-            device: device,
-            runtime: runtime,
-            noSim: noSim,
-            extraArgs: extraArgs
-        )
+        var opts = options
+        opts.scheme = resolvedScheme?.scheme ?? scheme
 
         // Resolve the simulator destination. Two paths converge on
         // `(buildSimUDID, resolvedPlatform, displayRuntime)`:
@@ -154,7 +146,8 @@ private enum BuildOrTest {
                 noSim: noSim,
                 shutdownTemplate: ShutdownTemplatePreference.resolve(
                     flag: shutdownTemplate, env: baseEnv
-                )
+                ),
+                recordedUDID: recordedSimulatorUDID
             )
             if let clone {
                 guard let platform = clone.platform else {
@@ -340,8 +333,8 @@ private enum BuildOrTest {
             switch action {
             case .build: try service.recordBuild(task: task, outcome: outcome, scheme: opts.scheme)
             case .test:  try service.recordTest(task: task, outcome: outcome,
-                                                scheme: opts.scheme,
-                                                extraArgs: extraArgs)
+                                                options: opts,
+                                                resolvedSimulator: resolved)
             }
         } catch {
             CLIBridge.eprintln("warning: could not update state.json: \(error)")
@@ -428,19 +421,17 @@ struct BuildCommand: ParsableCommand {
             try BuildOrTest.execute(
                 action: .build,
                 taskName: name,
-                scheme: scheme,
-                project: project,
-                workspacePath: workspace,
-                configuration: configuration,
-                device: device,
-                runtime: runtime,
-                noSim: noSim,
+                options: .init(
+                    scheme: scheme,
+                    xcodebuildContainer: try XcodebuildContainer.resolve(project: project, workspace: workspace),
+                    configuration: configuration, device: device, runtime: runtime,
+                    noSim: noSim, extraArgs: extraArgs
+                ),
                 eraseClone: eraseClone,
                 shutdownTemplate: shutdownTemplate,
                 existingSim: existingSim,
                 verbose: verbose,
-                testExecutionIdleTimeout: nil,
-                extraArgs: extraArgs
+                testExecutionIdleTimeout: nil
             )
         }
     }
@@ -517,10 +508,10 @@ struct TestCommand: ParsableCommand {
     @Option(name: .long, help: "Emit a '→ still running …' heartbeat to stderr every N seconds during long, output-quiet phases so a slow run (e.g. a cold watchOS clone+boot+build) stays distinguishable from a hang. Suppressed under --verbose (the firehose is already live). Use 0 to disable. Default: 30.")
     var progressInterval: Double = 30
 
-    @Flag(name: .long, help: "Replay the last `vch test <name>` invocation verbatim, reusing the recorded extra args.")
+    @Flag(name: .long, help: "Replay the last test's recorded scheme, project/workspace, configuration, destination and extra args. Explicit options override recorded values; --no-sim opts out of the recorded clone. Output, timeout and clone-reset controls apply to this run only.")
     var rerun: Bool = false
 
-    @Flag(name: .long, help: "Re-run only the tests that failed in the most recent `vch test <name>` (uses the recorded xcresult bundle).")
+    @Flag(name: .long, help: "Restore the last test's context as with --rerun, then narrow selection to failures from its recorded xcresult bundle.")
     var rerunFailed: Bool = false
 
     @Option(name: .long, parsing: .singleValue,
@@ -562,76 +553,45 @@ struct TestCommand: ParsableCommand {
                 throw VibeChardError.testRerunWithExtraArgs
             }
 
-            // Default path: extra args come straight from the CLI.
-            // Rerun paths: load `state.json` + (for --rerun-failed)
-            // the xcresult bundle to derive the effective args.
-            let effectiveExtraArgs: [String]
+            var options = BuildService.Options(
+                scheme: scheme,
+                xcodebuildContainer: try XcodebuildContainer.resolve(project: project, workspace: workspace),
+                configuration: configuration, device: device, runtime: runtime,
+                noSim: noSim,
+                extraArgs: TestSelectorMerger.extraArgs(only: onlyTesting, skip: skipTesting, extra: extraArgs)
+            )
+            let replay: RerunPlanner.Replay?
             if rerun || rerunFailed {
-                let cwd = FileManager.default.currentDirectoryPath
-                let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
-                let workspace = location.workspace
-                let task = try TaskArgumentResolver.resolve(
-                    explicit: name,
-                    current: location.taskName
+                let location = try WorkspaceLocator.locateCurrent(cwd: FileManager.default.currentDirectoryPath)
+                let task = try TaskArgumentResolver.resolve(explicit: name, current: location.taskName)
+                let prepared = try BuildService(workspace: location.workspace).prepareTestRerun(
+                    task: task, overrides: options, failedOnly: rerunFailed
                 )
-                let statePath = workspace.statePath(for: task)
-                guard FileManager.default.fileExists(atPath: statePath),
-                      let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
-                      let state = try? TaskState.parse(data),
-                      let last = state.lastTest else {
-                    throw VibeChardError.testNoPriorRun(taskName: task.raw)
+                replay = prepared
+                options = prepared.options
+                if prepared.usedLegacyState {
+                    CLIBridge.eprintln("warning: prior test has no recorded invocation context; using current scheme/destination defaults — pass --scheme, --device and --runtime if needed")
                 }
-                let priorArgs = last.extraArgs ?? []
-                if rerunFailed {
-                    let bundlePath = workspace.resultBundlePath(for: task)
-                    let summary = (try? DiskXcresultReader().summary(at: bundlePath))
-                    // #64: prefer `rerunIdentifier(targetName:)` over
-                    // the raw `testIdentifier` so short-form
-                    // identifiers (`Suite/Case()` instead of
-                    // `Target/Suite/Case()`) get the test-target
-                    // prefix prepended before they reach
-                    // `xcodebuild -only-testing:`.
-                    let ids = (summary?.failures ?? []).compactMap { $0.rerunIdentifier() }
-                    if ids.isEmpty {
-                        throw VibeChardError.testNoPriorFailures(taskName: task.raw)
-                    }
-                    effectiveExtraArgs = RerunPlanner.extraArgsForRerunFailed(
-                        prior: priorArgs,
-                        failureIdentifiers: ids
-                    )
-                    CLIBridge.eprintln("→ rerunning \(ids.count) failed test\(ids.count == 1 ? "" : "s") from last run")
+                if let count = prepared.failureCount {
+                    CLIBridge.eprintln("→ rerunning \(count) failed test\(count == 1 ? "" : "s") from last run")
                 } else {
-                    effectiveExtraArgs = priorArgs
-                    CLIBridge.eprintln("→ rerunning last `vch test \(task.raw)` invocation\(priorArgs.isEmpty ? "" : " (with recorded args)")")
+                    CLIBridge.eprintln("→ rerunning last `vch test \(task.raw)` invocation (with recorded context and args)")
                 }
             } else {
-                // #86: translate first-class selector flags into the
-                // canonical `-only-testing:<id>` / `-skip-testing:<id>`
-                // xcodebuild form, then append the user's verbatim
-                // pass-through args.
-                effectiveExtraArgs = TestSelectorMerger.extraArgs(
-                    only: onlyTesting,
-                    skip: skipTesting,
-                    extra: extraArgs
-                )
+                replay = nil
             }
 
             try BuildOrTest.execute(
                 action: .test,
                 taskName: name,
-                scheme: scheme,
-                project: project,
-                workspacePath: workspace,
-                configuration: configuration,
-                device: device,
-                runtime: runtime,
-                noSim: noSim,
+                options: options,
+                recordedSimulatorUDID: replay?.simulatorUDID,
+                useSchemeDefaults: replay?.usedLegacyState ?? true,
                 eraseClone: eraseClone,
                 shutdownTemplate: shutdownTemplate,
                 verbose: verbose,
                 testExecutionIdleTimeout: testExecutionIdleTimeout > 0 ? testExecutionIdleTimeout : nil,
-                progressInterval: progressInterval > 0 ? progressInterval : nil,
-                extraArgs: effectiveExtraArgs
+                progressInterval: progressInterval > 0 ? progressInterval : nil
             )
         }
     }

@@ -196,6 +196,18 @@ public struct SimulatorService: Sendable {
                         runtime: template.runtimeVersion)
     }
 
+    /// Replay an exact per-task destination. Never substitute a different
+    /// clone or silently fall back to a host destination after deletion.
+    public func reuseRecordedClone(task: TaskName, udid: String) throws -> Resolved {
+        let state = try TaskState.parse(fs.readFile(at: workspace.statePath(for: task)))
+        guard let record = state.allSimulators.first(where: { $0.cloneUDID == udid }),
+              let live = try info(udid: udid), live.isAvailable else {
+            throw VibeChardError.testRerunSimulatorUnavailable(taskName: task.raw, udid: udid)
+        }
+        return Resolved(udid: udid, name: record.name, createdNow: false,
+                        runtime: live.runtimeVersion ?? record.runtimeVersion)
+    }
+
     /// Build a `Resolved` from an existing binding. Centralised so
     /// the parsing of `runtimeIdentifier → SimRuntimeVersion` stays
     /// in one place.

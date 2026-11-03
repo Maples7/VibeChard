@@ -208,6 +208,7 @@ final class TaskStateTests: XCTestCase {
         let state = try TaskState.parse(Data(json.utf8))
         XCTAssertNotNil(state.lastTest)
         XCTAssertNil(state.lastTest?.extraArgs)
+        XCTAssertNil(state.lastTest?.invocation)
     }
 
     func testRoundtripsTestRecordExtraArgs() throws {

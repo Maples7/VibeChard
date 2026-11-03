@@ -21,7 +21,7 @@ public extension VibeChardError {
         switch self {
            case .invalidTaskName, .missingArgument, .xcodebuildContainerConflict,
                .landConflictingStrategies, .newConflictingCdExec,
-             .testConflictingRerunFlags, .testRerunWithExtraArgs, .invalidRuntime,
+             .testConflictingRerunFlags, .testRerunWithExtraArgs, .testRerunDestinationOverride, .invalidRuntime,
              .existingSimulatorConflictsWithDevice, .existingSimulatorIncompatibleOption:
             return ExitCode.usage
         case .worktreeAlreadyExists,
@@ -55,6 +55,7 @@ public extension VibeChardError {
              .syncBaseUnresolved,
              .syncDirtyWorktree,
              .testNoPriorRun,
+             .testRerunSimulatorUnavailable,
              .testNoPriorFailures,
              .seedSourceTaskNotFound,
              .seedSourceHasNoSwiftPMCache,
