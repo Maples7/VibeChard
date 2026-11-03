@@ -2,7 +2,7 @@ import Foundation
 
 /// Explicit xcodebuild project/workspace context. Passing one of these
 /// keeps nested Apple projects from being shadowed by a root Package.swift.
-public enum XcodebuildContainer: Equatable, Sendable {
+public enum XcodebuildContainer: Codable, Equatable, Sendable {
     case project(String)
     case workspace(String)
 

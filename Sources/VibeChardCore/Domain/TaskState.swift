@@ -224,14 +224,45 @@ public struct TaskState: Codable, Equatable, Sendable {
         /// vch ≤ v0.3.0 that didn't persist the field; `[]` when the
         /// run had no extra args. (#46)
         public let extraArgs: [String]?
+        /// Effective test context, independent of the task's mutable
+        /// default scheme and simulator bindings. Nil on older state.
+        public let invocation: TestInvocation?
 
         public init(finishedAt: Date, durationSeconds: Double, success: Bool,
-                    resultBundlePath: String?, extraArgs: [String]? = nil) {
+                    resultBundlePath: String?, extraArgs: [String]? = nil,
+                    invocation: TestInvocation? = nil) {
             self.finishedAt = finishedAt
             self.durationSeconds = durationSeconds
             self.success = success
             self.resultBundlePath = resultBundlePath
             self.extraArgs = extraArgs
+            self.invocation = invocation
+        }
+    }
+
+    public struct TestInvocation: Codable, Equatable, Sendable {
+        public let scheme: String?
+        public let xcodebuildContainer: XcodebuildContainer?
+        public let configuration: String?
+        public let device: String?
+        public let runtime: String?
+        /// True when the original run did not use a managed clone,
+        /// including host-only tests. Avoids adopting a later binding.
+        public let noSim: Bool
+        public let simulatorUDID: String?
+
+        public init(scheme: String? = nil,
+                    xcodebuildContainer: XcodebuildContainer? = nil,
+                    configuration: String? = nil,
+                    device: String? = nil, runtime: String? = nil,
+                    noSim: Bool = false, simulatorUDID: String? = nil) {
+            self.scheme = scheme
+            self.xcodebuildContainer = xcodebuildContainer
+            self.configuration = configuration
+            self.device = device
+            self.runtime = runtime
+            self.noSim = noSim
+            self.simulatorUDID = simulatorUDID
         }
     }
 

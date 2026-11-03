@@ -587,6 +587,67 @@ final class VchCLISmokeTests: XCTestCase {
         XCTAssertEqual(state.lastTest?.extraArgs, [])
     }
 
+    func testBothRerunModesRestoreDestinationAfterAnotherSchemeBuild() throws {
+        let runtime = "com.apple.CoreSimulator.SimRuntime.iOS-17-0"
+        let binding = TaskState.SimulatorRecord(
+            cloneUDID: "SIM-LAST", sourceUDID: "SRC", name: "iPhone 15-vch-alpha",
+            templateName: "iPhone 15", runtimeIdentifier: runtime
+        )
+        let fixture = try makeManagedTaskFixture(taskName: "alpha", simulator: binding)
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+        let stateURL = URL(fileURLWithPath: "\(fixture.taskPath)/.vch/state.json")
+        var state = try TaskState.parse(Data(contentsOf: stateURL))
+        state.setSimulators([binding, .init(
+            cloneUDID: "SIM-OTHER", sourceUDID: "SRC-OTHER", name: "iPhone 16-vch-alpha",
+            templateName: "iPhone 16", runtimeIdentifier: runtime
+        )])
+        try state.jsonData().write(to: stateURL)
+        let toolEnv = try installFakeToolchain(
+            rootDir: fixture.rootDir,
+            devicesJSON: """
+            {"devices":{"\(runtime)":[
+              {"udid":"SIM-LAST","name":"iPhone 15-vch-alpha","state":"Booted","isAvailable":true},
+              {"udid":"SIM-OTHER","name":"iPhone 16-vch-alpha","state":"Booted","isAvailable":true}
+            ]}}
+            """,
+            xcodebuildStderr: "", xcodebuildExitCode: 0
+        )
+        let argsURL = fixture.rootDir.appendingPathComponent("xcodebuild-args.txt")
+        var env = fixture.gitEnv.merging(toolEnv) { _, new in new }
+        env["VCH_SMOKE_ARGV"] = argsURL.path
+        try writeExecutable(fixture.rootDir.appendingPathComponent("fake-bin/xcodebuild"), body: """
+        #!/bin/sh
+        printf '%s\\n' "$@" > "$VCH_SMOKE_ARGV"
+        """)
+        try writeExecutable(
+            URL(fileURLWithPath: toolEnv["DEVELOPER_DIR"]!).appendingPathComponent("usr/bin/xcresulttool"),
+            body: """
+            #!/bin/sh
+            echo '{"testFailures":[{"testIdentifierString":"Suite/fails()","targetName":"AppTests"}]}'
+            """
+        )
+        let initial = try runVch(
+            ["test", "alpha", "--scheme", "App", "--configuration", "Release",
+             "--device", "iPhone 15", "--runtime", "iOS 17.0", "--only-testing", "AppTests/Suite"],
+            cwd: fixture.repoPath, env: env
+        )
+        XCTAssertEqual(initial.exitCode, 0, initial.stderr)
+        let build = try runVch(["build", "alpha", "--scheme", "OtherApp", "--no-sim"],
+                               cwd: fixture.repoPath, env: env)
+        XCTAssertEqual(build.exitCode, 0, build.stderr)
+        for mode in ["--rerun", "--rerun-failed"] {
+            let rerun = try runVch(["test", mode], cwd: fixture.taskPath, env: env)
+            XCTAssertEqual(rerun.exitCode, 0, rerun.stderr)
+            let args = try String(contentsOf: argsURL, encoding: .utf8).components(separatedBy: "\n")
+            XCTAssertTrue(args.contains("App"))
+            XCTAssertFalse(args.contains("OtherApp"))
+            XCTAssertTrue(args.contains("Release"))
+            XCTAssertTrue(args.contains("platform=iOS Simulator,arch=\(BuildPlanner.hostArch),id=SIM-LAST"))
+            let selection = mode == "--rerun" ? "AppTests/Suite" : "AppTests/Suite/fails()"
+            XCTAssertTrue(args.contains("-only-testing:\(selection)"))
+        }
+    }
+
     func testTestClassifiesIdleHangAfterTestingStarts() throws {
         try XCTSkipIf(
             !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),

@@ -25,6 +25,69 @@ import Foundation
 /// strings — one per argv slot — and the output is the new argv.
 public enum RerunPlanner {
 
+    public struct Replay: Sendable {
+        public let options: BuildService.Options
+        public let simulatorUDID: String?
+        public let usedLegacyState: Bool
+        public let failureCount: Int?
+    }
+
+    /// Explicit options override their recorded counterparts. Destination
+    /// overrides release the clone pin; other overrides keep the same clone.
+    public static func replay(
+        prior: TaskState.TestRecord,
+        overrides: BuildService.Options,
+        failureIdentifiers: [String]? = nil
+    ) throws -> Replay {
+        let recorded = prior.invocation
+        let replacesDestination = overrides.device != nil || overrides.runtime != nil
+        let changesDestination = replacesDestination || overrides.noSim
+        let hasRawDestination = (prior.extraArgs ?? []).contains {
+            $0 == "-destination" || $0.hasPrefix("-destination=")
+        }
+        if replacesDestination && hasRawDestination && (overrides.device == nil || overrides.runtime == nil) {
+            throw VibeChardError.testRerunDestinationOverride
+        }
+        var replacedFlags = Set<String>()
+        if overrides.scheme != nil { replacedFlags.insert("-scheme") }
+        if overrides.configuration != nil { replacedFlags.insert("-configuration") }
+        if overrides.xcodebuildContainer != nil { replacedFlags.formUnion(["-project", "-workspace"]) }
+        if replacesDestination { replacedFlags.insert("-destination") }
+        let priorArgs = removingOptions(replacedFlags, from: prior.extraArgs ?? [])
+        let options = BuildService.Options(
+            scheme: overrides.scheme ?? recorded?.scheme,
+            xcodebuildContainer: overrides.xcodebuildContainer ?? recorded?.xcodebuildContainer,
+            configuration: overrides.configuration ?? recorded?.configuration,
+            device: overrides.device ?? recorded?.device,
+            runtime: overrides.runtime ?? recorded?.runtime,
+            noSim: overrides.noSim || (recorded?.noSim ?? false),
+            extraArgs: failureIdentifiers.map {
+                extraArgsForRerunFailed(prior: priorArgs, failureIdentifiers: $0)
+            } ?? priorArgs
+        )
+        return Replay(options: options,
+                      simulatorUDID: changesDestination ? nil : recorded?.simulatorUDID,
+                      usedLegacyState: recorded == nil,
+                      failureCount: failureIdentifiers?.count)
+    }
+
+    private static func removingOptions(_ flags: Set<String>, from args: [String]) -> [String] {
+        var kept: [String] = []
+        var index = 0
+        while index < args.count {
+            let arg = args[index]
+            if flags.contains(arg) {
+                index += 2
+            } else if flags.contains(where: { arg.hasPrefix($0 + "=") }) {
+                index += 1
+            } else {
+                kept.append(arg)
+                index += 1
+            }
+        }
+        return kept
+    }
+
     /// Strip selector flags (`-only-testing:*`, `-skip-testing:*`,
     /// and their space-separated variants) from `prior`, then append
     /// `-only-testing:<id>` for each `failureIdentifier`. Order of

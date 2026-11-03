@@ -53,6 +53,16 @@ final class SchemeResolverTests: XCTestCase {
 
     // MARK: - resolver tiering
 
+    func testRecordedInvocationDoesNotAcquireSchemeFromLaterBuild() throws {
+        let (resolver, task, _) = setup(
+            taskName: "alpha", state: emptyState("alpha", scheme: "LaterBuild"),
+            lister: FakeLister(schemes: ["NewDefault"])
+        )
+        XCTAssertNil(try resolver.resolveRequired(task: task, explicit: nil, useDefaults: false))
+        XCTAssertEqual(try resolver.resolveRequired(task: task, explicit: "Tests", useDefaults: false),
+                       .init(scheme: "Tests", source: .explicit))
+    }
+
     func testExplicitSchemeWinsOverEverything() throws {
         let (resolver, task, _) = setup(
             taskName: "alpha",

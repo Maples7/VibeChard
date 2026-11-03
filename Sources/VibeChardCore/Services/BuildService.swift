@@ -224,10 +224,14 @@ public struct BuildService: Sendable {
         requestedRuntime: String? = nil,
         requestedPlatform: SimRuntimeVersion.Platform? = nil,
         noSim: Bool,
-        shutdownTemplate: Bool = false
+        shutdownTemplate: Bool = false,
+        recordedUDID: String? = nil
     ) throws -> SimulatorService.Resolved? {
         if noSim { return nil }
         guard let simulator else { return nil }
+        if let recordedUDID {
+            return try simulator.reuseRecordedClone(task: task, udid: recordedUDID)
+        }
         return try simulator.ensureClone(
             task: task,
             requestedDevice: requestedDevice,
@@ -305,6 +309,32 @@ public struct BuildService: Sendable {
 
     // MARK: - record outcome
 
+    public func prepareTestRerun(
+        task: TaskName,
+        overrides: Options,
+        failedOnly: Bool = false,
+        reader: XcresultReader = DiskXcresultReader()
+    ) throws -> RerunPlanner.Replay {
+        let path = workspace.statePath(for: task)
+        guard fs.fileExists(at: path) else {
+            throw VibeChardError.testNoPriorRun(taskName: task.raw)
+        }
+        let state = try TaskState.parse(fs.readFile(at: path))
+        guard let prior = state.lastTest else {
+            throw VibeChardError.testNoPriorRun(taskName: task.raw)
+        }
+        var failures: [String]?
+        if failedOnly {
+            let summary = try? reader.summary(at: prior.resultBundlePath ?? workspace.resultBundlePath(for: task))
+            let ids = (summary?.failures ?? []).compactMap { $0.rerunIdentifier() }
+            guard !ids.isEmpty else {
+                throw VibeChardError.testNoPriorFailures(taskName: task.raw)
+            }
+            failures = ids
+        }
+        return try RerunPlanner.replay(prior: prior, overrides: overrides, failureIdentifiers: failures)
+    }
+
     /// Persist a build outcome into `.vch/state.json`. Reads the
     /// current state, mutates `lastBuild`, writes atomically. If the
     /// file is missing or corrupt we surface the same errors `vch
@@ -331,6 +361,34 @@ public struct BuildService: Sendable {
                 success: outcome.success,
                 resultBundlePath: workspace.resultBundlePath(for: task),
                 extraArgs: extraArgs
+            )
+        }
+    }
+
+    public func recordTest(task: TaskName, outcome: BuildOutcome,
+                           options: Options,
+                           resolvedSimulator: SimulatorService.Resolved?) throws {
+        try mutateState(task: task) { state in
+            if let scheme = options.scheme { state.scheme = scheme }
+            let binding = state.allSimulators.first { $0.cloneUDID == resolvedSimulator?.udid }
+            let device = binding.map {
+                $0.templateName ?? SimulatorService.stripCloneSuffix(from: $0.name, task: task)
+            } ?? options.device
+            state.lastTest = TaskState.TestRecord(
+                finishedAt: outcome.finishedAt,
+                durationSeconds: outcome.durationSeconds,
+                success: outcome.success,
+                resultBundlePath: workspace.resultBundlePath(for: task),
+                extraArgs: options.extraArgs,
+                invocation: .init(
+                    scheme: options.scheme,
+                    xcodebuildContainer: options.xcodebuildContainer,
+                    configuration: options.configuration,
+                    device: device,
+                    runtime: resolvedSimulator?.runtime?.dottedLabel ?? options.runtime,
+                    noSim: resolvedSimulator == nil,
+                    simulatorUDID: resolvedSimulator?.udid
+                )
             )
         }
     }

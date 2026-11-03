@@ -8,6 +8,14 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch test --rerun` and `--rerun-failed` restore the last test's
+  scheme, project/workspace, configuration, and exact simulator
+  destination, including its runtime, even after another build or
+  with multiple simulator bindings. Explicit options override saved
+  values; older state and deleted clones show recovery guidance
+  ([#189](https://github.com/Maples7/VibeChard/issues/189)).
+
 ## 1.2.5 - 2026-10-23
 
 ### Fixed
