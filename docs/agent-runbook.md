@@ -66,6 +66,21 @@ vch test fix-login --scheme MyApp --device "iPhone 16" \
   --only-testing MyAppTests/LoginTests
 ```
 
+Repeat the last test run, or run only its failed tests:
+
+```sh
+vch test fix-login --rerun
+vch test fix-login --rerun-failed
+```
+
+Both modes restore the test's recorded scheme, configuration,
+project/workspace, and simulator destination, even after building
+another scheme or adding simulator bindings. Explicit options override
+recorded values. Older state files warn when this context is missing;
+a deleted or unavailable clone requires an explicit destination choice.
+See the [test command reference](commands.md#vch-test) for override,
+recovery, and current-run control rules.
+
 Pass an xcodebuild option that vch does not expose directly after `--`:
 
 ```sh
