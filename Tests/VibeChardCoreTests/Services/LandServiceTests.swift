@@ -56,6 +56,7 @@ final class LandServiceTests: XCTestCase {
         XCTAssertTrue(outcome.merged,
                       "merge must still report success — only the post-merge cleanup failed")
         XCTAssertFalse(outcome.removed, "auto-rm did not complete")
+        XCTAssertNil(outcome.retainedExternalWorktreePath)
         XCTAssertNotNil(outcome.removeError,
                         "removeError must be populated so the CLI can surface it")
         XCTAssertTrue(
@@ -109,6 +110,7 @@ final class LandServiceTests: XCTestCase {
         XCTAssertTrue(outcome.merged)
         XCTAssertFalse(outcome.removed,
                        "--keep means we never attempted removal, so removed=false")
+        XCTAssertNil(outcome.retainedExternalWorktreePath)
         XCTAssertNil(outcome.removeError,
                      "--keep skips removeTask entirely — no error to surface")
         XCTAssertEqual(git.removeCalls.count, 0,
@@ -541,6 +543,8 @@ final class LandServiceTests: XCTestCase {
         XCTAssertTrue(outcome.merged)
         XCTAssertTrue(outcome.removed)
         XCTAssertFalse(outcome.simRemoved)
+        XCTAssertEqual(outcome.taskBranch, world.task.branchName)
+        XCTAssertNil(outcome.retainedExternalWorktreePath)
         XCTAssertNil(outcome.simName,
                      "no recorded simulator → simName is nil")
         XCTAssertNil(outcome.simRemoveError)
@@ -666,6 +670,11 @@ final class LandServiceTests: XCTestCase {
         git.lastSubjectByBranch[adoptedBranch] = "feat: codex spike"
 
         let service = LandService(workspace: workspace, git: git, fs: fs, clock: SystemClock())
+        let preview = try service.land(task, options: .init(dryRun: true))
+        XCTAssertFalse(preview.merged)
+        XCTAssertEqual(preview.taskBranch, adoptedBranch)
+        XCTAssertNil(preview.retainedExternalWorktreePath)
+
         let outcome = try service.land(task, options: .init())
 
         // Merge must reference the adopted branch and use it in the message (#98).
@@ -682,6 +691,8 @@ final class LandServiceTests: XCTestCase {
         XCTAssertTrue(outcome.merged)
         XCTAssertTrue(outcome.removed,
                       "removed=true for adopted means vch artefacts scrubbed (not the worktree itself)")
+        XCTAssertEqual(outcome.taskBranch, adoptedBranch)
+        XCTAssertEqual(outcome.retainedExternalWorktreePath, adoptedPath)
         XCTAssertNil(outcome.removeError)
         XCTAssertEqual(git.removeCalls.count, 0,
                        "must not git worktree remove an adopted worktree")

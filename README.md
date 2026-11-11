@@ -260,7 +260,7 @@ template trap, and pruning merged tasks.
 | `vch logs <name>` | Print the most recent build/test xcodebuild log (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | Manage the per-task simulator clone(s) explicitly; a task can own one clone per platform (e.g. iOS + watchOS) via repeated `vch sim clone --device <name>` ([#99](https://github.com/Maples7/VibeChard/issues/99)). |
 | `vch sim warm-template {create,list,remove}` | Manage shared *warm* simulator templates (iOS/watchOS/tvOS/visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47)/[#58](https://github.com/Maples7/VibeChard/issues/58)). |
-| `vch land <name>` | Merge `agent/<name>` back into its base and clean up (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
+| `vch land <name>` | Merge the task branch back into its base and clean up (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
 | `vch sync <name>` | Fetch the base's upstream and rebase the task branch onto it (`--onto`, `--merge`, `--no-fetch`, `--dry-run`). |
 | `vch remove <name>` | Delete vch-created worktree, branch, and sim clone; adopted tasks are unregistered only (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
 | `vch prune` | List or remove tasks whose branch is fully merged into its base (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |

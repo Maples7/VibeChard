@@ -12,7 +12,7 @@ jobs:
 
   build-test:
     name: Swift build & test
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -49,7 +49,7 @@ jobs:
     name: Build & Test
     needs: [build-test, bottles]
     if: always()
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Require Swift tests and both Homebrew bottles
         env:

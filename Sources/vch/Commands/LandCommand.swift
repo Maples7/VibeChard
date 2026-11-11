@@ -3,22 +3,22 @@ import Foundation
 import VibeChardCore
 
 /// `vch land <name>` — merge a task branch back into its base, then
-/// remove the task worktree. Default strategy is `--no-ff`. Pre-flight
+/// clean up the task. Default strategy is `--no-ff`. Pre-flight
 /// refuses on overlapping dirty state, no-op merges, and a wrong main
 /// branch. (#7)
 struct LandCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "land",
-        abstract: "Merge a task branch back into its base and remove the worktree.",
+        abstract: "Merge a task branch back into its base and clean up the task.",
         discussion: """
-            By default the task worktree is deleted after a successful merge. \
-            Files in the worktree that aren't tracked by git — uncommitted \
-            changes, untracked files, .gitignore'd artifacts (build outputs, \
-            generated assets, caches) — are NOT carried into the destination \
-            branch, and are lost when the worktree is removed. Pass --keep \
-            to preserve the worktree if you need to copy any of those out \
-            first; see the "Preserving generated artifacts when landing" \
-            recipe at \
+            After a successful merge, vch attempts task cleanup. \
+            Successful cleanup removes a vch-created worktree and its branch. \
+            For an adopted task, cleanup unregisters the task and removes vch-owned scratch \
+            directories. The external worktree and branch are preserved.
+
+            Only committed changes are merged. Pass --keep to skip cleanup and preserve \
+            generated artifacts in a vch-created worktree. See the \
+            "Preserving generated artifacts when landing" recipe at \
             https://github.com/Maples7/VibeChard/blob/master/docs/cookbook.md#preserving-generated-artifacts-when-landing.
             """
     )
@@ -48,7 +48,7 @@ struct LandCommand: ParsableCommand {
     var message: String?
 
     @Flag(name: .long,
-          help: "Don't remove the worktree after a successful merge.")
+          help: "Skip task cleanup after a successful merge.")
     var keep: Bool = false
 
     @Flag(name: .long,
@@ -120,7 +120,7 @@ struct LandCommand: ParsableCommand {
 
         if !outcome.merged {
             // --dry-run path. Spell out exactly what would happen.
-            print("would land 'agent/\(taskName)' into '\(outcome.into)' (\(strategyLabel))")
+            print("would land '\(outcome.taskBranch)' into '\(outcome.into)' (\(strategyLabel))")
             print("  message: \(outcome.message)")
             if outcome.touchedPaths.isEmpty {
                 print("  touched: <none>")
@@ -136,12 +136,15 @@ struct LandCommand: ParsableCommand {
             return
         }
 
-        print("✓ merged 'agent/\(taskName)' into '\(outcome.into)' (\(strategyLabel))")
+        print("✓ merged '\(outcome.taskBranch)' into '\(outcome.into)' (\(strategyLabel))")
         print("  message: \(outcome.message)")
-        if outcome.removed {
+        if let path = outcome.retainedExternalWorktreePath {
+            print("✓ unregistered \(taskName)")
+            print("  kept external worktree \(path) and branch \(outcome.taskBranch)")
+        } else if outcome.removed {
             print("✓ removed worktree")
         } else if let err = outcome.removeError {
-            CLIBridge.eprintln("warning: merge succeeded but worktree removal failed: \(err)")
+            CLIBridge.eprintln("warning: merge succeeded but task cleanup failed: \(err)")
             CLIBridge.eprintln("        run `vch rm \(taskName)` after fixing the issue")
         } else {
             print("  worktree kept (--keep)")

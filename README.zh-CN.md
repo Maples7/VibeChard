@@ -237,7 +237,7 @@ warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板
 | `vch logs <name>` | 打印任务最近一次构建/测试的完整 xcodebuild 日志（`--test`/`--build`）。 |
 | `vch sim {clone,erase,shutdown,info} <name>` | 显式管理任务的模拟器克隆；通过重复执行 `vch sim clone --device <name>`，一个任务可以同时持有多个克隆（每个平台一个，例如 iOS + watchOS）（[#99](https://github.com/Maples7/VibeChard/issues/99)）。 |
 | `vch sim warm-template {create,list,remove}` | 管理共享的 *warm* 模拟器模板（iOS / watchOS / tvOS / visionOS，[#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)）。 |
-| `vch land <name>` | 把 `agent/<name>` 合并回 base 并清理（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
+| `vch land <name>` | 将任务分支合并回基线分支并清理（`--into`、`--no-ff`/`--ff-only`/`--squash`、`--keep`、`--push`/`--push-to`、`--dry-run`）。 |
 | `vch sync <name>` | 拉取 base 的 upstream 并把任务分支 rebase 上去（`--onto`、`--merge`、`--no-fetch`、`--dry-run`）。 |
 | `vch remove <name>` | 删除 vch 创建的 worktree、分支和模拟器克隆；接管的任务只注销 vch 状态（`--allow-dirty`、`--force`、`--allow-unmerged`、`--keep-sim`）。 |
 | `vch prune` | 列出或删除已完全合并进 base 的任务（`--rm`、`--allow-dirty`、`--force`、`--keep-sim`、`--json`）。 |
