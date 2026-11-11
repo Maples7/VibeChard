@@ -153,7 +153,10 @@ branch. Anything in the task worktree that isn't tracked by git —
 uncommitted changes, untracked files, and anything excluded by
 `.gitignore` (regenerated images, build outputs, caches) — is **not**
 part of the merge, and on a successful land the default `vch rm` step
-deletes the worktree along with all of that.
+removes a clean vch-created worktree along with its ignored files.
+For an adopted task, cleanup unregisters the task and removes
+vch-owned scratch directories. The external worktree and branch
+stay in place.
 
 This bites a specific shape of workflow: a script in the task worktree
 regenerates artifacts that are deliberately `.gitignore`d in the repo.

@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch land` reports the registered source branch in previews and
+  merge summaries. Cleanup of an adopted task reports the preserved
+  external worktree and branch after unregistering the task
+  ([#192](https://github.com/Maples7/VibeChard/issues/192)).
+
 ## 1.3.0 - 2026-11-04
 
 ### Fixed

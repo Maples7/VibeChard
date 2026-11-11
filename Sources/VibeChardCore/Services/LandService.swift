@@ -2,7 +2,7 @@ import Foundation
 
 /// Orchestrates `vch land`: gathers a snapshot of git state, hands it
 /// to `LandPlanner`, runs the merge if the planner approves, then
-/// (unless `--keep`) removes the task worktree via `TaskService`. (#7)
+/// (unless `--keep`) cleans up the task via `TaskService`. (#7)
 public struct LandService: Sendable {
     public let workspace: Workspace
     public let git: GitClient
@@ -77,11 +77,15 @@ public struct LandService: Sendable {
     public struct Outcome: Equatable, Sendable {
         /// `false` only when `--dry-run` was passed.
         public let merged: Bool
+        /// The registered source branch used for the planned or completed merge.
+        public let taskBranch: String
         public let into: String
         public let strategy: LandPlan.Strategy
         public let message: String
-        /// `true` when the task worktree was removed after a successful merge.
+        /// `true` when auto-rm completed after a successful merge.
         public let removed: Bool
+        /// The path retained after successfully unregistering an adopted task.
+        public let retainedExternalWorktreePath: String?
         /// Human-readable description if the auto-`rm` step failed but
         /// the merge already succeeded. The merge is not rolled back.
         public let removeError: String?
@@ -121,10 +125,12 @@ public struct LandService: Sendable {
 
         public init(
             merged: Bool,
+            taskBranch: String,
             into: String,
             strategy: LandPlan.Strategy,
             message: String,
             removed: Bool,
+            retainedExternalWorktreePath: String? = nil,
             removeError: String?,
             touchedPaths: [String],
             simRemoved: Bool = false,
@@ -135,10 +141,12 @@ public struct LandService: Sendable {
             pushError: String? = nil
         ) {
             self.merged = merged
+            self.taskBranch = taskBranch
             self.into = into
             self.strategy = strategy
             self.message = message
             self.removed = removed
+            self.retainedExternalWorktreePath = retainedExternalWorktreePath
             self.removeError = removeError
             self.touchedPaths = touchedPaths
             self.simRemoved = simRemoved
@@ -221,6 +229,7 @@ public struct LandService: Sendable {
             if resolved.dryRun {
                 return Outcome(
                     merged: false,
+                    taskBranch: taskBranch,
                     into: resolved.into,
                     strategy: resolved.strategy,
                     message: resolved.message,
@@ -338,10 +347,13 @@ public struct LandService: Sendable {
 
             return Outcome(
                 merged: true,
+                taskBranch: taskBranch,
                 into: resolved.into,
                 strategy: resolved.strategy,
                 message: resolved.message,
                 removed: removed,
+                retainedExternalWorktreePath: removed && !state.ownsGitWorktree
+                    ? workspace.worktreePath(for: task) : nil,
                 removeError: removeError,
                 touchedPaths: diff,
                 simRemoved: simRemoved,

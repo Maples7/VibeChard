@@ -1116,6 +1116,68 @@ final class VchCLISmokeTests: XCTestCase {
         )
     }
 
+    func testLandReportsAdoptedBranchAndUnregistersTask() throws {
+        try XCTSkipIf(
+            !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),
+            "/usr/bin/git not available"
+        )
+
+        let task = "repro"
+        let branch = "codex/repro"
+        let fixture = try makeAdoptCurrentFixture(worktreeLeaf: "sidecar", branch: branch)
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+
+        let adopt = try runVch(
+            ["new", task, "--adopt-current"], cwd: fixture.sidecarPath, env: fixture.gitEnv
+        )
+        XCTAssertEqual(adopt.exitCode, 0, "stderr: \(adopt.stderr)")
+        try runGit(
+            ["commit", "--allow-empty", "-m", "task change"],
+            cwd: fixture.sidecarPath, env: fixture.gitEnv
+        )
+
+        let preview = try runVch(
+            ["land", task, "--into", "main", "--dry-run"],
+            cwd: fixture.repoPath, env: fixture.gitEnv
+        )
+        XCTAssertEqual(preview.exitCode, 0, "stderr: \(preview.stderr)")
+        XCTAssertEqual(
+            preview.stdout.split(separator: "\n").first,
+            "would land '\(branch)' into 'main' (--no-ff)"
+        )
+        let statePath = "\(fixture.sidecarPath)/.vch/state.json"
+        XCTAssertTrue(FileManager.default.fileExists(atPath: statePath))
+
+        let land = try runVch(
+            ["land", task, "--into", "main"],
+            cwd: fixture.repoPath, env: fixture.gitEnv
+        )
+        XCTAssertEqual(land.exitCode, 0, "stderr: \(land.stderr)")
+        let lines = land.stdout.split(separator: "\n")
+        XCTAssertEqual(lines.first, "✓ merged '\(branch)' into 'main' (--no-ff)")
+        let sidecarPath = try fixture.sidecarPath.resolvingSymlinks()
+        XCTAssertTrue(lines.contains("✓ unregistered \(task)"), "stdout: \(land.stdout)")
+        XCTAssertTrue(
+            lines.contains("  kept external worktree \(sidecarPath) and branch \(branch)"),
+            "stdout: \(land.stdout)"
+        )
+        XCTAssertFalse(lines.contains("✓ removed worktree"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statePath))
+
+        let worktrees = try captureGit(
+            ["worktree", "list", "--porcelain"], cwd: fixture.repoPath, env: fixture.gitEnv
+        )
+        XCTAssertEqual(worktrees.exitCode, 0, "stderr: \(worktrees.stderr)")
+        XCTAssertTrue(worktrees.stdout.contains("worktree \(sidecarPath)\n"))
+        let commits = try captureGit(
+            ["rev-parse", "HEAD^2", branch], cwd: fixture.repoPath, env: fixture.gitEnv
+        )
+        XCTAssertEqual(commits.exitCode, 0, "stderr: \(commits.stderr)")
+        let revisions = commits.stdout.split(separator: "\n")
+        XCTAssertEqual(revisions.count, 2)
+        XCTAssertEqual(revisions.first, revisions.last)
+    }
+
     func testAdoptCurrentWithExplicitNameUsesExplicitName() throws {
         try XCTSkipIf(
             !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),

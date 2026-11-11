@@ -244,7 +244,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 | `vch logs <name>` | 작업 가장 최근 빌드/테스트의 전체 xcodebuild 로그 출력 (`--test`/`--build`). |
 | `vch sim {clone,erase,shutdown,info} <name>` | 작업별 시뮬레이터 클론(들)을 명시적으로 관리. `vch sim clone --device <name>`을 반복하면 한 작업이 플랫폼당 하나씩(예: iOS + watchOS) 여러 클론을 가질 수 있음 ([#99](https://github.com/Maples7/VibeChard/issues/99)). |
 | `vch sim warm-template {create,list,remove}` | 공유 *warm* 시뮬레이터 템플릿 관리 (iOS / watchOS / tvOS / visionOS, [#47](https://github.com/Maples7/VibeChard/issues/47) / [#58](https://github.com/Maples7/VibeChard/issues/58)). |
-| `vch land <name>` | `agent/<name>` 를 base 에 머지하고 정리 (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
+| `vch land <name>` | 작업 브랜치를 기준 브랜치에 병합하고 정리 (`--into`, `--no-ff`/`--ff-only`/`--squash`, `--keep`, `--push`/`--push-to`, `--dry-run`). |
 | `vch sync <name>` | base 의 upstream 을 fetch 하고 작업 브랜치를 rebase (`--onto`, `--merge`, `--no-fetch`, `--dry-run`). |
 | `vch remove <name>` | vch 가 만든 worktree, 브랜치, 시뮬레이터 클론을 삭제; 채택한 작업은 vch 상태만 해제 (`--allow-dirty`, `--force`, `--allow-unmerged`, `--keep-sim`). |
 | `vch prune` | base 에 완전히 머지된 작업을 나열/삭제 (`--rm`, `--allow-dirty`, `--force`, `--keep-sim`, `--json`). |
