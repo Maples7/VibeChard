@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.3.1 - 2026-11-11
+
 ### Fixed
 - `vch land` reports the registered source branch in previews and
   merge summaries. Cleanup of an adopted task reports the preserved

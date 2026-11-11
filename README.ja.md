@@ -89,7 +89,7 @@ VibeChard は (2) を採っています。これが「`.zshrc` のスニペッ�
 brew install maples7/tap/vch
 ```
 
-安定版では、Apple Silicon の macOS 14+ と Intel の macOS 15+ 向けに
+v1.3.1 からは、macOS 15 以降の Apple Silicon Mac と Intel Mac 向けに
 ビルド済みの Homebrew bottle を提供します。互換性のある bottle があれば、
 vch のコンパイルやソースビルド時の Xcode バージョンチェックは不要です。
 その他の構成と `--HEAD` はソースからビルドします。macOS 更新後に古い
