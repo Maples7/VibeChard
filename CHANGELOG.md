@@ -14,6 +14,10 @@ The English README is the source of truth; localized READMEs may lag.
   external worktree and branch after unregistering the task
   ([#192](https://github.com/Maples7/VibeChard/issues/192)).
 
+### Changed
+- Homebrew bottles now require macOS 15 or newer on both Apple Silicon
+  and Intel. On older supported macOS versions, build from source.
+
 ## 1.3.0 - 2026-11-04
 
 ### Fixed
