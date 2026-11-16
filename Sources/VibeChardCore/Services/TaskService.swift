@@ -562,6 +562,8 @@ public struct TaskService: Sendable {
         public let allowDirty: Bool
         /// Force-delete the branch even if not fully merged (`git branch -D`).
         public let allowUnmergedBranch: Bool
+        /// After land, the main worktree's HEAD is the local merge target.
+        var checkMergeAgainstHEAD = false
 
         public init(allowDirty: Bool = false, allowUnmergedBranch: Bool = false) {
             self.allowDirty = allowDirty
@@ -611,7 +613,10 @@ public struct TaskService: Sendable {
                 throw VibeChardError.dirtyWorktree(path: wtPath)
             }
             if exists, !options.allowUnmergedBranch {
-                try git.checkBranchMerged(repoCwd: workspace.mainWorktreePath, name: branch)
+                try git.checkBranchMerged(
+                    repoCwd: workspace.mainWorktreePath, name: branch,
+                    againstHEAD: options.checkMergeAgainstHEAD
+                )
             }
             if checkedOutBranch == nil, !options.allowUnmergedBranch {
                 let head = try git.revParse(repoCwd: wtPath, ref: "HEAD")
@@ -652,7 +657,10 @@ public struct TaskService: Sendable {
             if options.allowUnmergedBranch {
                 try git.branchDeleteForce(repoCwd: workspace.mainWorktreePath, name: branch)
             } else {
-                try git.branchDelete(repoCwd: workspace.mainWorktreePath, name: branch)
+                try git.branchDelete(
+                    repoCwd: workspace.mainWorktreePath, name: branch,
+                    againstHEAD: options.checkMergeAgainstHEAD
+                )
             }
         }
 

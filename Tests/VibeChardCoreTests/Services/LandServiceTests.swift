@@ -70,6 +70,23 @@ final class LandServiceTests: XCTestCase {
         XCTAssertEqual(git.mergeCalls.first?.branch, "agent/alpha")
     }
 
+    func testLandCleanupRefusesBranchNotMergedIntoLocalHEAD() throws {
+        let world = try makeHappyPathWorld()
+        let branch = world.task.branchName
+        world.git.unmergedBranchesAgainstHEAD.insert(branch)
+        let service = LandService(workspace: world.workspace, git: world.git, fs: world.fs)
+
+        let outcome = try service.land(world.task, options: .init())
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertFalse(outcome.removed)
+        XCTAssertEqual(outcome.removeError, VibeChardError.unmergedBranch(name: branch).description)
+        XCTAssertTrue(world.git.detachCalls.isEmpty)
+        XCTAssertTrue(world.git.branchDeleteCalls.isEmpty)
+        XCTAssertTrue(world.git.branchDeleteForceCalls.isEmpty)
+        XCTAssertTrue(world.git.removeCalls.isEmpty)
+    }
+
     func testKeepFlagSkipsRemovalEntirely() throws {
         // Belt-and-suspenders for the contract above: --keep must not
         // even attempt removeTask, so removeError is always nil.

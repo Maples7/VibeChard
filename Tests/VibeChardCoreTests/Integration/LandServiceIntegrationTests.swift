@@ -140,6 +140,40 @@ final class LandServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(log.stdoutTrimmed, "Land beta refactor")
     }
 
+    func testLandPushRemovesTaskTrackingRemoteBase() throws {
+        let workspace = try makeRepo()
+        let repoPath = workspace.mainWorktreePath
+        let remotePath = rootDir.appendingPathComponent("origin.git").path
+        let runner = DiskProcessRunner()
+        try requireSuccess(runner.run("/usr/bin/git", args: ["config", "branch.autoSetupMerge", "true"],
+                                      cwd: repoPath, env: gitEnv))
+        try requireSuccess(runner.run("/usr/bin/git", args: ["init", "-q", "--bare", remotePath],
+                                      cwd: repoPath, env: gitEnv))
+        try requireSuccess(runner.run("/usr/bin/git", args: ["remote", "add", "origin", remotePath],
+                                      cwd: repoPath, env: gitEnv))
+        try requireSuccess(runner.run("/usr/bin/git", args: ["push", "-qu", "origin", "main"],
+                                      cwd: repoPath, env: gitEnv))
+
+        let (taskService, landService) = makeServices(workspace: workspace)
+        let task = try TaskName("tracking-base")
+        let taskPath = try taskService.newTask(task, baseRef: "origin/main")
+        let upstream = try runner.run("/usr/bin/git",
+                                      args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+                                      cwd: taskPath, env: gitEnv)
+        try requireSuccess(upstream)
+        XCTAssertEqual(upstream.stdoutTrimmed, "origin/main")
+        try commitFile(workspace: workspace, worktreePath: taskPath,
+                       name: "feature.swift", contents: "// task\n", message: "Task work")
+
+        let outcome = try landService.land(task, options: .init(into: "main", push: .defaultRemote))
+
+        XCTAssertTrue(outcome.merged)
+        XCTAssertTrue(outcome.pushed, outcome.pushError ?? "")
+        XCTAssertTrue(outcome.removed, outcome.removeError ?? "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: taskPath))
+        XCTAssertFalse(try DiskGitClient().branchExists(repoCwd: repoPath, name: task.branchName))
+    }
+
     func testKeepFlagPreservesWorktree() throws {
         let workspace = try makeRepo()
         let (task, taskPath) = try newTaskWithBranch("gamma", workspace: workspace)
@@ -281,6 +315,10 @@ final class LandServiceIntegrationTests: XCTestCase {
 
         XCTAssertTrue(outcome.merged)
         XCTAssertEqual(outcome.strategy, .squash)
+        XCTAssertFalse(outcome.removed)
+        XCTAssertEqual(outcome.removeError, VibeChardError.unmergedBranch(name: task.branchName).description)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: taskPath))
+        XCTAssertTrue(try DiskGitClient().branchExists(repoCwd: workspace.mainWorktreePath, name: task.branchName))
         // Default subject is the most recent non-merge commit's subject.
         XCTAssertEqual(outcome.message, "Merge agent/epsilon: step 2: final")
 

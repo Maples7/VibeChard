@@ -169,6 +169,7 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
     var entries: [WorktreeEntry] = []
     var branches: Set<String> = []
     var unmergedBranches: Set<String> = []
+    var unmergedBranchesAgainstHEAD: Set<String> = []
     var dirtyWorktrees: Set<String> = []
     var headShortSHA: String = "1234abc"
 
@@ -223,8 +224,9 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
         return branches.contains(name)
     }
 
-    func checkBranchMerged(repoCwd: String, name: String) throws {
-        if unmergedBranches.contains(name) {
+    func checkBranchMerged(repoCwd: String, name: String, againstHEAD: Bool) throws {
+        let unmerged = againstHEAD ? unmergedBranchesAgainstHEAD : unmergedBranches
+        if unmerged.contains(name) {
             throw VibeChardError.unmergedBranch(name: name)
         }
     }
@@ -242,12 +244,10 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
         }
     }
 
-    func branchDelete(repoCwd: String, name: String) throws {
+    func branchDelete(repoCwd: String, name: String, againstHEAD: Bool) throws {
         branchDeleteCalls.append(name)
         if let branchDeleteError { throw branchDeleteError }
-        if unmergedBranches.contains(name) {
-            throw VibeChardError.unmergedBranch(name: name)
-        }
+        try checkBranchMerged(repoCwd: repoCwd, name: name, againstHEAD: againstHEAD)
         branches.remove(name)
     }
 
@@ -256,6 +256,7 @@ final class FakeGitClient: GitClient, @unchecked Sendable {
         if let branchDeleteError { throw branchDeleteError }
         branches.remove(name)
         unmergedBranches.remove(name)
+        unmergedBranchesAgainstHEAD.remove(name)
     }
 
     func statusIsDirty(worktreeCwd: String) throws -> Bool {
