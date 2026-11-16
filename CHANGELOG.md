@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.3.2 - 2026-11-16
+
 ### Fixed
 - `vch land` checks the local merge target when cleaning up after a
   `--no-ff` or `--ff-only` merge, even when the task tracks a remote
