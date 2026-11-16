@@ -52,7 +52,8 @@ public protocol GitClient: Sendable {
 
     /// Non-destructive equivalent of `git branch -d`'s merge check:
     /// use a resolvable upstream when configured, otherwise the caller's HEAD.
-    func checkBranchMerged(repoCwd: String, name: String) throws
+    /// With `againstHEAD`, always check the caller's HEAD.
+    func checkBranchMerged(repoCwd: String, name: String, againstHEAD: Bool) throws
 
     /// Whether a commit remains reachable from another ref or this worktree's
     /// HEAD after deleting `excludingBranch` and a detached task worktree.
@@ -61,9 +62,9 @@ public protocol GitClient: Sendable {
     /// Detach HEAD at its current commit without changing the index or files.
     func detachHEAD(worktreeCwd: String) throws
 
-    /// Plain `git branch -d`. Throws `unmergedBranch` if git refuses; the
-    /// caller decides whether to escalate to `branchDeleteForce`.
-    func branchDelete(repoCwd: String, name: String) throws
+    /// `git branch -d`, with the same merge target as `checkBranchMerged`.
+    /// Throws `unmergedBranch` if git refuses.
+    func branchDelete(repoCwd: String, name: String, againstHEAD: Bool) throws
 
     /// `git branch -D` — force-delete even if unmerged.
     func branchDeleteForce(repoCwd: String, name: String) throws
@@ -239,19 +240,21 @@ public struct DiskGitClient: GitClient {
         }
     }
 
-    public func checkBranchMerged(repoCwd: String, name: String) throws {
-        let upstream = try runner.run(
-            gitPath, args: ["for-each-ref", "--format=%(upstream)", "refs/heads/\(name)"],
-            cwd: repoCwd
-        )
-        try requireSuccess(upstream, label: "git for-each-ref")
+    public func checkBranchMerged(repoCwd: String, name: String, againstHEAD: Bool) throws {
         var target = "HEAD"
-        if !upstream.stdoutTrimmed.isEmpty {
-            let resolved = try runner.run(
-                gitPath, args: ["rev-parse", "--verify", "\(upstream.stdoutTrimmed)^{commit}"],
+        if !againstHEAD {
+            let upstream = try runner.run(
+                gitPath, args: ["for-each-ref", "--format=%(upstream)", "refs/heads/\(name)"],
                 cwd: repoCwd
             )
-            if resolved.succeeded { target = resolved.stdoutTrimmed }
+            try requireSuccess(upstream, label: "git for-each-ref")
+            if !upstream.stdoutTrimmed.isEmpty {
+                let resolved = try runner.run(
+                    gitPath, args: ["rev-parse", "--verify", "\(upstream.stdoutTrimmed)^{commit}"],
+                    cwd: repoCwd
+                )
+                if resolved.succeeded { target = resolved.stdoutTrimmed }
+            }
         }
         let result = try runner.run(
             gitPath, args: ["merge-base", "--is-ancestor", "refs/heads/\(name)", target],
@@ -283,8 +286,11 @@ public struct DiskGitClient: GitClient {
         try requireSuccess(result, label: "git update-ref --no-deref HEAD")
     }
 
-    public func branchDelete(repoCwd: String, name: String) throws {
-        let result = try runner.run(gitPath, args: ["branch", "-d", name], cwd: repoCwd)
+    public func branchDelete(repoCwd: String, name: String, againstHEAD: Bool) throws {
+        // ":" is not a valid remote name. The per-command override makes
+        // Git fall back to HEAD while retaining branch -d's safety checks.
+        let config = againstHEAD ? ["-c", "branch.\(name).remote=:"] : []
+        let result = try runner.run(gitPath, args: config + ["branch", "-d", name], cwd: repoCwd)
         if result.exitCode == 0 { return }
         // git refuses to delete unmerged branches with exit 1 and a stderr
         // mentioning "not fully merged". Map that to a stable error.

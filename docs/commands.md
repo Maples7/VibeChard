@@ -408,9 +408,11 @@ at adoption.
   merge base with the target branch. Changes made only on the target
   branch are excluded; renames include both the old and new paths.
 - After a successful merge, vch attempts auto-rm. Successful cleanup
-  removes a vch-created worktree and its task branch. For an adopted
-  task, cleanup removes vch-owned scratch directories and unregisters
-  the task. The external worktree and branch are preserved.
+  removes a vch-created worktree and its task branch. After a
+  `--no-ff` or `--ff-only` merge, vch checks whether the task branch
+  is merged into the local target before any optional push. For an
+  adopted task, cleanup removes vch-owned scratch directories and
+  unregisters the task. The external worktree and branch are preserved.
 - `--keep` skips auto-rm. `--dry-run` prints the plan, including the
   registered source branch, without modifying anything.
 - After a successful auto-rm, vch also deletes the per-task simulator

@@ -276,7 +276,10 @@ public struct LandService: Sendable {
             var removeError: String?
             if resolved.removeAfter {
                 do {
-                    try taskService.removeTask(task, options: .init())
+                    var removal = TaskService.RemoveOptions()
+                    // A squash commit does not retain the original task commits.
+                    removal.checkMergeAgainstHEAD = resolved.strategy != .squash
+                    try taskService.removeTask(task, options: removal)
                     removed = true
                 } catch {
                     removeError = String(describing: error)

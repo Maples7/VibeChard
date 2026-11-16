@@ -8,6 +8,12 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch land` checks the local merge target when cleaning up after a
+  `--no-ff` or `--ff-only` merge, even when the task tracks a remote
+  branch that has not been updated yet
+  ([#195](https://github.com/Maples7/VibeChard/issues/195)).
+
 ## 1.3.1 - 2026-11-11
 
 ### Fixed
