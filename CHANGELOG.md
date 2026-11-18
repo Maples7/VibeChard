@@ -8,6 +8,8 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+## 1.4.0 - 2026-11-18
+
 ### Added
 - Inside a task worktree, `vch exec -- <command>` automatically uses
   the current task ([#198](https://github.com/Maples7/VibeChard/issues/198)).
