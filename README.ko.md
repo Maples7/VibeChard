@@ -273,6 +273,7 @@ shim 은 세 개의 환경 변수(`VCH_DERIVED_DATA_PATH`, `VCH_SPM_CLONE_DIR`,
 `VCH_RESULT_BUNDLE_PATH`)를 읽고, 사용자가 해당 플래그를 명시적으로 전달하지않은 경우 `xcodebuild` 의 argv 에 주입한 뒤, 대상 디렉터리를 `mkdir -p` 로만들고, `/usr/bin/xcrun -f xcodebuild` 로 실제 `xcodebuild` 경로를 해결하여
 `execv` 로 실행합니다(자기 자신을 재귀 호출하지 않도록 `PATH` 를 우회).
 `xcrun` 과 `swift` 에 대해서는 투명한 패스스루입니다.
+`xcodebuild -list` 에는 SwiftPM 체크아웃 경로만 주입하고 이전 테스트 결과 번들을 보존합니다.
 
 결과: 에이전트가 실행할 수 있는 모든 도구 — `xcodebuild`, `swift test`,
 Tuist, 내부에서 `xcodebuild` 를 호출하는 스크립트 — 가 자동으로 격리됩니다.

@@ -8,6 +8,11 @@ The English README is the source of truth; localized READMEs may lag.
 
 ## Unreleased
 
+### Fixed
+- `vch exec -- xcodebuild -list -json` lists the project with isolated
+  SwiftPM checkouts and preserves the previous test result bundle
+  ([#198](https://github.com/Maples7/VibeChard/issues/198)).
+
 ## 1.3.2 - 2026-11-16
 
 ### Fixed

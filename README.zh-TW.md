@@ -264,6 +264,7 @@ shim 讀取三個環境變數（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 `xcodebuild` 的 argv 裡，`mkdir -p` 建立目標目錄，然後透過
 `/usr/bin/xcrun -f xcodebuild` 解析出真正的 `xcodebuild` 路徑並 `execv`
 （繞過 `PATH`，避免遞迴呼叫自己）。對 `xcrun` 與 `swift` 則是透明轉發。
+對於 `xcodebuild -list`，shim 只注入 SwiftPM checkout 路徑，並保留上一次測試的結果套件。
 
 效果：任何 agent 可能執行的工具——`xcodebuild`、`swift test`、Tuist、內部又會呼叫 `xcodebuild` 的指令稿——都會自動被隔離。無需手動傳 flag。
 

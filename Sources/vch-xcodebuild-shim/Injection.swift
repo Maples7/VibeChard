@@ -124,12 +124,14 @@ public enum ShimPlanner {
         }
 
         let userFlags = Set(userArgs.filter { $0.hasPrefix("-") })
+        // Project listing only needs the task-local SwiftPM checkouts.
+        let isListing = userFlags.contains("-list")
 
         var injected: [ShimInjectedFlag] = []
         var dirs: [String] = []
         var removals: [String] = []
 
-        if !userFlags.contains(ShimFlag.derivedDataPath),
+        if !isListing, !userFlags.contains(ShimFlag.derivedDataPath),
            let v = env[ShimEnv.derivedDataPath]?.nonEmpty {
             injected.append(ShimInjectedFlag(flag: ShimFlag.derivedDataPath, value: v))
             dirs.append(v)
@@ -141,7 +143,7 @@ public enum ShimPlanner {
             dirs.append(v)
         }
 
-        if !userFlags.contains(ShimFlag.resultBundlePath),
+        if !isListing, !userFlags.contains(ShimFlag.resultBundlePath),
            let v = env[ShimEnv.resultBundlePath]?.nonEmpty {
             injected.append(ShimInjectedFlag(flag: ShimFlag.resultBundlePath, value: v))
             // -resultBundlePath wants the file to NOT exist; create the parent only.

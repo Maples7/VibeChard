@@ -271,6 +271,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 `VCH_RESULT_BUNDLE_PATH`）を読み、ユーザーが明示的に渡していない場合は対応するフラグを `xcodebuild` の argv に注入し、ターゲットディレクトリを
 `mkdir -p` で作成、その後 `/usr/bin/xcrun -f xcodebuild` で本物の
 `xcodebuild` のパスを解決して `execv`（`PATH` を経由しないので自分自身を再帰呼び出しすることはありません）。`xcrun` と `swift` に対しては透過的にパススルーします。
+`xcodebuild -list` では SwiftPM のチェックアウト先だけを注入し、前回のテスト結果バンドルを保持します。
 
 結果：エージェントが起動しうるあらゆるツール——`xcodebuild`、`swift test`、
 Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的に隔離されます。フラグを手で渡す必要はありません。
