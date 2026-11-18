@@ -77,6 +77,25 @@ final class TaskShortcutDispatcherTests: XCTestCase {
         XCTAssertEqual(result, ["exec", "my-feature", "--", "/bin/zsh"])
     }
 
+    func testNormalizeExecInsertsSeparatorForLegacyNamedInvocation() {
+        let command = ["tool", "--", "a b", "--help", ""]
+        XCTAssertEqual(
+            TaskShortcutDispatcher.normalizeExec(["exec", "alpha"] + command),
+            ["exec", "alpha", "--"] + command
+        )
+    }
+
+    func testNormalizeExecPreservesExplicitSeparatorAndHelp() {
+        for arguments in [
+            ["exec", "--", "tool", "--help"],
+            ["exec", "alpha", "--", "tool", "--help"],
+            ["exec", "--help"],
+            ["run", "alpha", "argument"],
+        ] {
+            XCTAssertEqual(TaskShortcutDispatcher.normalizeExec(arguments), arguments)
+        }
+    }
+
     // MARK: - Edge cases
 
     func testEmptyArgvReturnsNil() {

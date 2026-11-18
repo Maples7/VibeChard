@@ -130,12 +130,13 @@ isolation env vars + `.vch/bin` PATH shim active.
 ### `vch exec`
 
 ```text
-vch exec <name> -- <cmd...>
+vch exec [<name>] -- <cmd...>
 ```
 
-Run any command inside a task's worktree with isolation active. See
-the [How isolation works](../README.md#how-isolation-works) section
-of the README for the env vars vch injects.
+Run any command inside a task's worktree with isolation active. Inside a
+task worktree, `vch exec -- <cmd...>` uses the current task. See
+[How isolation works](../README.md#how-isolation-works) for the
+environment variables vch injects.
 
 When the command resolves to the shimmed `xcodebuild`, vch injects
 isolation flags and clears a stale vch-owned result bundle if it injects

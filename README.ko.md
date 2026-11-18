@@ -237,7 +237,7 @@ warm 시뮬레이터 템플릿으로 첫 부팅 건너뛰기, 작업별 시뮬�
 | `vch path <name>` | 작업 worktree 의 절대 경로 출력. |
 | `vch open [<name>]` | worktree 를 IDE 로 열기 (`--with xcode`/`code`/`cursor`/…). |
 | `vch <name>` | worktree 셸로 진입 — 격리 환경과 PATH shim 활성. |
-| `vch exec <name> -- <cmd...>` | 작업 worktree 내부에서 임의 명령 실행 (격리 활성). |
+| `vch exec [<name>] -- <cmd...>` | 작업 worktree 내부에서 임의 명령 실행 (격리 활성). 작업 worktree 안에서는 `<name>`을 생략할 수 있습니다. |
 | `vch build [<name>]` | `xcodebuild build` 실행 시 `-derivedDataPath` / `-clonedSourcePackagesDirPath` 자동 주입. 작업 worktree 안에서는 `<name>` 생략 가능 (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `--verbose`). |
 | `vch test [<name>]` | `xcodebuild test` 실행 시 `-resultBundlePath` 주입. 작업 worktree 안에서는 `<name>` 생략 가능; 시뮬레이터는 지연 클론 (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`, `--test-execution-idle-timeout`, `--progress-interval`). |
 | `vch run [<name>]` | 작업의 시뮬레이터 클론 위에서 빌드·설치·실행. 작업 worktree 안에서는 `<name>` 생략 가능 (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `-- launch-args`). |

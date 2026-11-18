@@ -552,6 +552,42 @@ final class VchCLISmokeTests: XCTestCase {
         XCTAssertEqual(state.lastBuild?.success, true)
     }
 
+    func testExecInsideManagedTaskWorktreeCanOmitTaskName() throws {
+        let fixture = try makeManagedTaskFixture(taskName: "alpha", simulator: nil)
+        defer { try? FileManager.default.removeItem(at: fixture.rootDir) }
+
+        let fakeXcodebuild = fixture.rootDir.appendingPathComponent("xcodebuild-fixture")
+        try writeExecutable(fakeXcodebuild, body: """
+        #!/bin/sh
+        printf '%s\\n' "$VCH_TASK_NAME" "$@"
+        """)
+        var env = fixture.gitEnv
+        env["VCH_SHIM_REAL_XCODEBUILD"] = fakeXcodebuild.path
+        let taskPath = try fixture.taskPath.resolvingSymlinks()
+
+        for (cwd, arguments) in [
+            (fixture.taskPath, ["--", "xcodebuild", "-list", "-json"]),
+            (fixture.repoPath, ["alpha", "--", "xcodebuild", "-list", "-json"]),
+            (fixture.repoPath, ["alpha", "xcodebuild", "-list", "-json"]),
+        ] {
+            let result = try runVch(["exec"] + arguments, cwd: cwd, env: env)
+            XCTAssertEqual(result.exitCode, 0, "stderr: \(result.stderr)")
+            XCTAssertEqual(result.stdout, """
+            alpha
+            -clonedSourcePackagesDirPath
+            \(taskPath)/.agent-build/SwiftPM
+            -list
+            -json
+
+            """)
+        }
+
+        let outside = try runVch(["exec", "--", "xcodebuild", "-list", "-json"],
+                                 cwd: fixture.repoPath, env: env)
+        XCTAssertNotEqual(outside.exitCode, 0)
+        XCTAssertTrue(outside.stderr.contains("missing argument: <name>"), outside.stderr)
+    }
+
     func testTestInsideManagedTaskWorktreeCanOmitTaskName() throws {
         try XCTSkipIf(
             !FileManager.default.isExecutableFile(atPath: "/usr/bin/git"),

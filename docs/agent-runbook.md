@@ -13,7 +13,7 @@ the copy that matches the installed binary.
 Prefer `vch build`, `vch test`, `vch run`, and `vch logs` for normal
 Apple build loops. Use raw `xcodebuild` only from inside `vch <name>` or
 `vch exec <name> -- ...`, where the PATH shim and task-local caches are
-active.
+active. Inside a task worktree, use `vch exec -- ...` to target that task.
 
 ## Find this runbook
 

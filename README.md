@@ -254,7 +254,7 @@ template trap, and pruning merged tasks.
 | `vch path <name>` | Print the absolute path of a task's worktree. |
 | `vch open [<name>]` | Open the worktree in an IDE (`--with xcode`/`code`/`cursor`/…). |
 | `vch <name>` | Drop into a shell inside the worktree with isolation active. |
-| `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
+| `vch exec [<name>] -- <cmd...>` | Run any command inside a task's worktree with isolation active. Omit `<name>` inside a task worktree. |
 | `vch build [<name>]` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected; `<name>` is optional inside a task worktree (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `--verbose`). |
 | `vch test [<name>]` | `xcodebuild test` with `-resultBundlePath` injected; `<name>` is optional inside a task worktree; lazy sim clone (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`, `--test-execution-idle-timeout`, `--progress-interval`). |
 | `vch run [<name>]` | Build, install, launch on the task's sim clone; `<name>` is optional inside a task worktree (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `-- launch-args`). |

@@ -4,34 +4,35 @@ import VibeChardCore
 
 // MARK: - vch exec
 
-/// `vch exec <name> -- <cmd...>` — fork+wait an arbitrary command
+/// `vch exec [<name>] -- <cmd...>` — run an arbitrary command
 /// inside a task's isolated worktree, with the M2 shim pre-installed
 /// on PATH and isolation env vars set. Foreground only (per Q6/B1).
 struct ExecCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "exec",
-        abstract: "Run a command inside a task's isolated worktree."
+        abstract: "Run a command inside a task's isolated worktree.",
+        usage: "vch exec [<name>] -- <cmd...>"
     )
 
-    @Argument(help: "Task name to enter.",
+    @Argument(help: "Task name to enter. Optional inside a task worktree.",
               completion: .custom(TaskNameCompletion.candidates))
-    var name: String
+    var name: String?
 
-    @Argument(parsing: .captureForPassthrough,
+    @Argument(parsing: .postTerminator,
               help: "Command (and its args) to run. Use `--` to separate from vch flags.")
     var command: [String] = []
 
     func run() throws {
         try CLIBridge.run {
-            let task = try TaskName(name)
             let cwd = FileManager.default.currentDirectoryPath
-            let workspace = try WorkspaceLocator.locate(cwd: cwd)
+            let location = try WorkspaceLocator.locateCurrent(cwd: cwd)
+            let task = try TaskArgumentResolver.resolve(explicit: name, current: location.taskName)
             let env = ProcessInfo.processInfo.environment
 
             let shimPath = try Self.resolveShimPath(env: env)
 
             let service = ExecService(
-                workspace: workspace,
+                workspace: location.workspace,
                 git: DiskGitClient(),
                 developerDir: XcodeSelectDeveloperDirResolver()
             )

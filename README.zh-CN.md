@@ -230,7 +230,7 @@ warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch open [<name>]` | 在 IDE 中打开 worktree（`--with xcode`/`code`/`cursor`/…）。 |
 | `vch <name>` | 进入 worktree shell，隔离环境与 PATH shim 已就绪。 |
-| `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |
+| `vch exec [<name>] -- <cmd...>` | 在任务 worktree 内运行任意命令并启用隔离。从任务 worktree 内调用时可省略 `<name>`。 |
 | `vch build [<name>]` | 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`；在任务 worktree 内可省略 `<name>`（`--scheme`、`--project`、`--workspace`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`--verbose`）。 |
 | `vch test [<name>]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；在任务 worktree 内可省略 `<name>`，懒克隆模拟器（`--device`、`--project`、`--workspace`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`、`--test-execution-idle-timeout`、`--progress-interval`）。 |
 | `vch run [<name>]` | 在任务的模拟器克隆上构建、安装并启动 App；在任务 worktree 内可省略 `<name>`（`--project`、`--workspace`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`-- launch-args`）。 |
