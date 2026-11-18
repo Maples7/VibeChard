@@ -130,18 +130,23 @@ isolation env vars + `.vch/bin` PATH shim active.
 ### `vch exec`
 
 ```text
-vch exec <name> -- <cmd...>
+vch exec [<name>] -- <cmd...>
 ```
 
-Run any command inside a task's worktree with isolation active. See
-the [How isolation works](../README.md#how-isolation-works) section
-of the README for the env vars vch injects.
+Run any command inside a task's worktree with isolation active. Inside a
+task worktree, `vch exec -- <cmd...>` uses the current task. See
+[How isolation works](../README.md#how-isolation-works) for the
+environment variables vch injects.
 
-`vch exec` is the raw escape hatch. When the command resolves to the
-shimmed `xcodebuild`, vch still injects isolation flags and clears a
-stale vch-owned result bundle before exec, but it does not tee,
-summarize, or retain logs. Prefer `vch build` / `vch test` for normal
-build/test loops.
+When the command resolves to the shimmed `xcodebuild`, vch injects
+isolation flags and clears a stale vch-owned result bundle if it injects
+`-resultBundlePath`. For `xcodebuild -list`, the shim only injects the
+SwiftPM checkout path and preserves the previous result bundle. Run
+`vch exec -- xcodebuild -list -json` inside a task to list its project or
+workspace.
+
+`vch exec` forwards command output as-is. Use `vch build` and `vch test`
+for logs and summaries in normal build/test loops.
 
 ## Building, testing, running
 

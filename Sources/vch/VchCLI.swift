@@ -53,7 +53,8 @@ struct VchCLI: ParsableCommand {
         let argv = Array(CommandLine.arguments.dropFirst())
         let env = ProcessInfo.processInfo.environment
 
-        let effective = TaskShortcutDispatcher.rewriteIfSugar(argv, env: env) ?? argv
+        let effective = TaskShortcutDispatcher.rewriteIfSugar(argv, env: env)
+            ?? TaskShortcutDispatcher.normalizeExec(argv)
 
         do {
             var command = try parseAsRoot(effective)

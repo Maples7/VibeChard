@@ -230,7 +230,7 @@ warm 模拟器模板的快速路径、重置每任务的模拟器状态、模板
 | `vch path <name>` | 打印任务 worktree 的绝对路径。 |
 | `vch open [<name>]` | 在 IDE 中打开 worktree（`--with xcode`/`code`/`cursor`/…）。 |
 | `vch <name>` | 进入 worktree shell，隔离环境与 PATH shim 已就绪。 |
-| `vch exec <name> -- <cmd...>` | 在任务 worktree 内跑任意命令，隔离已生效。 |
+| `vch exec [<name>] -- <cmd...>` | 在任务 worktree 内运行任意命令并启用隔离。从任务 worktree 内调用时可省略 `<name>`。 |
 | `vch build [<name>]` | 跑 `xcodebuild build`，自动注入 `-derivedDataPath` / `-clonedSourcePackagesDirPath`；在任务 worktree 内可省略 `<name>`（`--scheme`、`--project`、`--workspace`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`--verbose`）。 |
 | `vch test [<name>]` | 跑 `xcodebuild test`，注入 `-resultBundlePath`；在任务 worktree 内可省略 `<name>`，懒克隆模拟器（`--device`、`--project`、`--workspace`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`、`--test-execution-idle-timeout`、`--progress-interval`）。 |
 | `vch run [<name>]` | 在任务的模拟器克隆上构建、安装并启动 App；在任务 worktree 内可省略 `<name>`（`--project`、`--workspace`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`-- launch-args`）。 |
@@ -266,6 +266,7 @@ shim 读三个环境变量（`VCH_DERIVED_DATA_PATH`、`VCH_SPM_CLONE_DIR`、
 `xcodebuild` 的 argv 里，`mkdir -p` 创建目标目录，然后通过
 `/usr/bin/xcrun -f xcodebuild` 解出真实的 `xcodebuild` 路径并 `execv`
 （绕开 `PATH`，避免递归调用自己）。对 `xcrun` 和 `swift` 是透明转发。
+对于 `xcodebuild -list`，shim 只注入 SwiftPM checkout 路径，并保留上一次测试的结果包。
 
 效果：任何 agent 可能跑的工具——`xcodebuild`、`swift test`、Tuist、内部又会调到 `xcodebuild` 的脚本——都自动被隔离。无需手动传 flag。
 

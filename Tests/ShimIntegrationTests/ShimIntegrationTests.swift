@@ -207,6 +207,33 @@ final class ShimIntegrationTests: XCTestCase {
                        "shim must not mkdir paths it didn't inject")
     }
 
+    func test_xcodebuild_list_keeps_swiftpm_isolation_and_preserves_result_bundle() throws {
+        let xc = try makeShimSymlink(named: "xcodebuild")
+        let derived = tmp.appendingPathComponent("DerivedData")
+        let spm = tmp.appendingPathComponent("SourcePackages")
+        let resultBundle = tmp.appendingPathComponent("Result.xcresult")
+        try FileManager.default.createDirectory(at: resultBundle, withIntermediateDirectories: true)
+        let resultFile = resultBundle.appendingPathComponent("Info.plist")
+        try "previous test result".write(to: resultFile, atomically: true, encoding: .utf8)
+
+        let userArgs = ["-project", "My App.xcodeproj", "-list", "-json"]
+        let res = try runShim(
+            argv0: xc,
+            userArgs: userArgs,
+            extraEnv: [
+                "VCH_DERIVED_DATA_PATH": derived.path,
+                "VCH_SPM_CLONE_DIR": spm.path,
+                "VCH_RESULT_BUNDLE_PATH": resultBundle.path,
+            ]
+        )
+
+        XCTAssertEqual(res.exitCode, 0, "stderr: \(res.stderr)")
+        XCTAssertEqual(res.capturedArgv, ["-clonedSourcePackagesDirPath", spm.path] + userArgs)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: derived.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: spm.path))
+        XCTAssertEqual(try String(contentsOf: resultFile, encoding: .utf8), "previous test result")
+    }
+
     func test_xcodebuild_removes_stale_injected_result_bundle() throws {
         let xc = try makeShimSymlink(named: "xcodebuild")
         let resultBundle = tmp.appendingPathComponent("stale/Result.xcresult")

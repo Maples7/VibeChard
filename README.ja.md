@@ -237,7 +237,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 | `vch path <name>` | タスクの worktree の絶対パスを表示。 |
 | `vch open [<name>]` | worktree を IDE で開く（`--with xcode`/`code`/`cursor`/…）。 |
 | `vch <name>` | worktree のシェルに入る。分離環境と PATH shim が有効。 |
-| `vch exec <name> -- <cmd...>` | タスクの worktree 内で任意コマンドを実行（分離有効）。 |
+| `vch exec [<name>] -- <cmd...>` | タスクの worktree 内で任意コマンドを実行（分離有効）。タスクの worktree 内では `<name>` を省略できます。 |
 | `vch build [<name>]` | `xcodebuild build` を実行し `-derivedDataPath` / `-clonedSourcePackagesDirPath` を自動注入。タスク worktree 内では `<name>` を省略可（`--scheme`、`--project`、`--workspace`、`--runtime`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`--verbose`）。 |
 | `vch test [<name>]` | `xcodebuild test` を実行し `-resultBundlePath` を注入。タスク worktree 内では `<name>` を省略可。シミュレーターは遅延クローン（`--device`、`--project`、`--workspace`、`--runtime`、`--only-testing`、`--skip-testing`、`--rerun`、`--rerun-failed`、`--erase-clone`、`--shutdown-template`、`--test-execution-idle-timeout`、`--progress-interval`）。 |
 | `vch run [<name>]` | タスクのシミュレータークローン上でビルド・インストール・起動。タスク worktree 内では `<name>` を省略可（`--project`、`--workspace`、`--erase-clone`、`--shutdown-template`、`--existing-sim`、`-- launch-args`）。 |
@@ -271,6 +271,7 @@ vch test task-a --scheme MyApp --device 'iPhone 16' \
 `VCH_RESULT_BUNDLE_PATH`）を読み、ユーザーが明示的に渡していない場合は対応するフラグを `xcodebuild` の argv に注入し、ターゲットディレクトリを
 `mkdir -p` で作成、その後 `/usr/bin/xcrun -f xcodebuild` で本物の
 `xcodebuild` のパスを解決して `execv`（`PATH` を経由しないので自分自身を再帰呼び出しすることはありません）。`xcrun` と `swift` に対しては透過的にパススルーします。
+`xcodebuild -list` では SwiftPM のチェックアウト先だけを注入し、前回のテスト結果バンドルを保持します。
 
 結果：エージェントが起動しうるあらゆるツール——`xcodebuild`、`swift test`、
 Tuist、内部で `xcodebuild` を呼び出すスクリプト——が自動的に隔離されます。フラグを手で渡す必要はありません。

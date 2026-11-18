@@ -19,6 +19,19 @@ import Foundation
 /// of dispatching to their `ParsableCommand`).
 public enum TaskShortcutDispatcher {
 
+    /// Normalize the legacy `exec <name> <command>` form for a parser
+    /// that captures the child argv after `--`. An unnamed invocation
+    /// already starts with the separator.
+    public static func normalizeExec(_ arguments: [String]) -> [String] {
+        guard arguments.count >= 3, arguments[0] == "exec",
+              !arguments[1].hasPrefix("-"), arguments[2] != "--" else {
+            return arguments
+        }
+        var normalized = arguments
+        normalized.insert("--", at: 2)
+        return normalized
+    }
+
     /// Returns a rewritten argv if the input is a sugar invocation,
     /// otherwise nil. `arguments` should NOT include argv[0] (vch
     /// itself); pass `Array(CommandLine.arguments.dropFirst())`.

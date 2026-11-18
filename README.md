@@ -254,7 +254,7 @@ template trap, and pruning merged tasks.
 | `vch path <name>` | Print the absolute path of a task's worktree. |
 | `vch open [<name>]` | Open the worktree in an IDE (`--with xcode`/`code`/`cursor`/…). |
 | `vch <name>` | Drop into a shell inside the worktree with isolation active. |
-| `vch exec <name> -- <cmd...>` | Run any command inside a task's worktree with isolation active. |
+| `vch exec [<name>] -- <cmd...>` | Run any command inside a task's worktree with isolation active. Omit `<name>` inside a task worktree. |
 | `vch build [<name>]` | `xcodebuild build` with `-derivedDataPath` / `-clonedSourcePackagesDirPath` injected; `<name>` is optional inside a task worktree (`--scheme`, `--project`, `--workspace`, `--runtime`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `--verbose`). |
 | `vch test [<name>]` | `xcodebuild test` with `-resultBundlePath` injected; `<name>` is optional inside a task worktree; lazy sim clone (`--device`, `--project`, `--workspace`, `--runtime`, `--only-testing`, `--skip-testing`, `--rerun`, `--rerun-failed`, `--erase-clone`, `--shutdown-template`, `--test-execution-idle-timeout`, `--progress-interval`). |
 | `vch run [<name>]` | Build, install, launch on the task's sim clone; `<name>` is optional inside a task worktree (`--project`, `--workspace`, `--erase-clone`, `--shutdown-template`, `--existing-sim`, `-- launch-args`). |
@@ -291,7 +291,9 @@ The shim reads three env vars (`VCH_DERIVED_DATA_PATH`,
 into the `xcodebuild` argv if the user hasn't already passed them,
 `mkdir -p`'s the directories, then `execv`'s the real binary resolved
 via `/usr/bin/xcrun -f xcodebuild` (bypasses `PATH`, no recursion). For
-`xcrun` and `swift` the shim is a transparent passthrough.
+`xcrun` and `swift` the shim is a transparent passthrough. For
+`xcodebuild -list`, the shim only injects the SwiftPM checkout path
+and leaves the previous test result bundle intact.
 
 Result: any tool an agent might run — `xcodebuild`, `swift test`,
 `Tuist`, custom scripts, anything that calls `xcodebuild` internally —
